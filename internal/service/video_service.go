@@ -103,11 +103,11 @@ func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Du
 
 	return &model.VideoDetail{
 		VideoWithTags: model.VideoWithTags{
-			Video: *video,
-			Tags:  tags,
+			Video:        *video,
+			Tags:         tags,
+			ThumbnailURL: thumbnailURL,
 		},
-		StreamURL:    streamURL,
-		ThumbnailURL: thumbnailURL,
+		StreamURL: streamURL,
 	}, nil
 }
 

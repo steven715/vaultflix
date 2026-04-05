@@ -25,8 +25,7 @@ type VideoWithTags struct {
 
 type VideoDetail struct {
 	VideoWithTags
-	StreamURL    string `json:"stream_url"`
-	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	StreamURL string `json:"stream_url"`
 }
 
 type UpdateVideoInput struct {
