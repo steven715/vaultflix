@@ -31,6 +31,8 @@ export interface VideoWithTags extends Video {
 export interface VideoDetail extends VideoWithTags {
   stream_url: string
   thumbnail_url: string
+  is_favorited: boolean
+  watch_progress: number
 }
 
 export interface PaginatedResponse<T> {
@@ -56,4 +58,25 @@ export interface VideoListParams {
   sort_order?: string
   q?: string
   tag_ids?: string
+}
+
+export interface WatchHistoryItem {
+  id: string
+  video_id: string
+  title: string
+  thumbnail_url?: string
+  duration_seconds: number
+  progress_seconds: number
+  completed: boolean
+  watched_at: string
+}
+
+export interface VideoSummaryWithURL {
+  id: string
+  title: string
+  thumbnail_url?: string
+  duration_seconds: number
+  resolution: string
+  file_size_bytes: number
+  created_at: string
 }

@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getVideo } from '../api/videos'
+import { saveProgress } from '../api/watchHistory'
+import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
 
 function formatDuration(seconds: number): string {
@@ -27,13 +29,22 @@ function formatDate(dateStr: string): string {
   })
 }
 
+const PROGRESS_THROTTLE_MS = 10_000
+
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [favorited, setFavorited] = useState(false)
+  const [toast, setToast] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
+
+  // Progress reporting refs (no state to avoid re-renders)
+  const lastReportTimeRef = useRef(0)
+  const lastReportSecondsRef = useRef(-1)
+  const videoIDRef = useRef<string>('')
 
   useEffect(() => {
     let cancelled = false
@@ -44,8 +55,10 @@ export default function PlayerPage() {
         const data = await getVideo(id)
         if (!cancelled) {
           setVideo(data)
+          setFavorited(data.is_favorited)
           setError('')
           retryCountRef.current = 0
+          videoIDRef.current = data.id
         }
       } catch {
         if (!cancelled) {
@@ -59,8 +72,85 @@ export default function PlayerPage() {
     }
 
     fetchVideo()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Send final progress on unmount
+      sendProgressBeacon()
+    }
   }, [id])
+
+  // Send progress via sendBeacon for unmount/page leave
+  function sendProgressBeacon() {
+    const vid = videoIDRef.current
+    const el = videoRef.current
+    if (!vid || !el || el.currentTime < 1) return
+
+    const seconds = Math.floor(el.currentTime)
+    if (seconds === lastReportSecondsRef.current) return
+
+    // sendBeacon doesn't support custom headers, use sync XHR for auth
+    try {
+      const token = localStorage.getItem('token')
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/watch-history', false)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      }
+      xhr.send(JSON.stringify({ video_id: vid, progress_seconds: seconds }))
+    } catch {
+      // Best effort — ignore errors
+    }
+  }
+
+  // Throttled progress reporter
+  const reportProgress = useCallback((currentTime: number) => {
+    const now = Date.now()
+    const seconds = Math.floor(currentTime)
+    if (
+      seconds === lastReportSecondsRef.current ||
+      now - lastReportTimeRef.current < PROGRESS_THROTTLE_MS
+    ) {
+      return
+    }
+
+    lastReportTimeRef.current = now
+    lastReportSecondsRef.current = seconds
+
+    saveProgress(videoIDRef.current, seconds).catch((err) => {
+      console.warn('failed to report progress', err)
+    })
+  }, [])
+
+  function handleTimeUpdate() {
+    const el = videoRef.current
+    if (!el) return
+    reportProgress(el.currentTime)
+  }
+
+  function handlePause() {
+    const el = videoRef.current
+    if (!el || el.currentTime < 1) return
+    const seconds = Math.floor(el.currentTime)
+    if (seconds === lastReportSecondsRef.current) return
+
+    lastReportTimeRef.current = Date.now()
+    lastReportSecondsRef.current = seconds
+
+    saveProgress(videoIDRef.current, seconds).catch((err) => {
+      console.warn('failed to report progress on pause', err)
+    })
+  }
+
+  // Resume playback from watch_progress
+  function handleLoadedMetadata() {
+    if (!video || !videoRef.current) return
+    if (video.watch_progress > 0) {
+      videoRef.current.currentTime = video.watch_progress
+      setToast(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
+      setTimeout(() => setToast(''), 3000)
+    }
+  }
 
   // Handle presigned URL expiry: re-fetch on video error (max 1 retry)
   function handleVideoError() {
@@ -81,6 +171,30 @@ export default function PlayerPage() {
       .catch(() => {
         setError('影片 URL 已過期，重新取得失敗')
       })
+  }
+
+  // Favorite toggle with optimistic UI
+  const favoriteInFlightRef = useRef(false)
+  async function handleFavoriteToggle() {
+    if (!video || favoriteInFlightRef.current) return
+    favoriteInFlightRef.current = true
+
+    const prev = favorited
+    setFavorited(!prev)
+
+    try {
+      if (prev) {
+        await removeFavorite(video.id)
+      } else {
+        await addFavorite(video.id)
+      }
+    } catch {
+      setFavorited(prev)
+      setToast(prev ? '取消收藏失敗' : '加入收藏失敗')
+      setTimeout(() => setToast(''), 3000)
+    } finally {
+      favoriteInFlightRef.current = false
+    }
   }
 
   if (loading) {
@@ -113,7 +227,7 @@ export default function PlayerPage() {
 
       {/* Video player */}
       <div className="max-w-5xl mx-auto px-4">
-        <div className="bg-black rounded-lg overflow-hidden">
+        <div className="bg-black rounded-lg overflow-hidden relative">
           <video
             ref={videoRef}
             controls
@@ -121,12 +235,45 @@ export default function PlayerPage() {
             src={video.stream_url}
             className="w-full"
             onError={handleVideoError}
+            onTimeUpdate={handleTimeUpdate}
+            onPause={handlePause}
+            onLoadedMetadata={handleLoadedMetadata}
           />
+          {/* Toast */}
+          {toast && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/80 text-white text-sm px-4 py-2 rounded-lg pointer-events-none">
+              {toast}
+            </div>
+          )}
         </div>
 
         {/* Video info */}
         <div className="mt-4 space-y-3">
-          <h1 className="text-xl font-semibold text-white">{video.title}</h1>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-xl font-semibold text-white">{video.title}</h1>
+
+            {/* Favorite button */}
+            <button
+              onClick={handleFavoriteToggle}
+              className="shrink-0 p-2 rounded-full hover:bg-gray-800 transition-all active:scale-90"
+              title={favorited ? '取消收藏' : '加入收藏'}
+            >
+              <svg
+                className={`w-6 h-6 transition-colors duration-200 ${
+                  favorited ? 'text-red-500 fill-red-500' : 'text-gray-400 fill-none'
+                }`}
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
+                />
+              </svg>
+            </button>
+          </div>
 
           {video.description && (
             <p className="text-sm text-gray-400">{video.description}</p>

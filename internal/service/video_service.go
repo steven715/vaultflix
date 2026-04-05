@@ -11,9 +11,11 @@ import (
 )
 
 type VideoService struct {
-	videoRepo repository.VideoRepository
-	tagRepo   repository.TagRepository
-	minioSvc  MinIOClient
+	videoRepo   repository.VideoRepository
+	tagRepo     repository.TagRepository
+	minioSvc    MinIOClient
+	favoriteSvc FavoriteService
+	historySvc  WatchHistoryService
 }
 
 func NewVideoService(videoRepo repository.VideoRepository, tagRepo repository.TagRepository, minioSvc MinIOClient) *VideoService {
@@ -22,6 +24,13 @@ func NewVideoService(videoRepo repository.VideoRepository, tagRepo repository.Ta
 		tagRepo:   tagRepo,
 		minioSvc:  minioSvc,
 	}
+}
+
+// SetUserServices injects optional user-interaction services for enriching video detail.
+// Called after all services are created to avoid circular dependency.
+func (s *VideoService) SetUserServices(favoriteSvc FavoriteService, historySvc WatchHistoryService) {
+	s.favoriteSvc = favoriteSvc
+	s.historySvc = historySvc
 }
 
 func (s *VideoService) List(ctx context.Context, filter model.VideoFilter) ([]model.VideoWithTags, int64, error) {
@@ -74,7 +83,7 @@ func (s *VideoService) List(ctx context.Context, filter model.VideoFilter) ([]mo
 	return result, total, nil
 }
 
-func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Duration) (*model.VideoDetail, error) {
+func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Duration, userID string) (*model.VideoDetail, error) {
 	video, err := s.videoRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video %s: %w", id, err)
@@ -101,14 +110,43 @@ func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Du
 		}
 	}
 
-	return &model.VideoDetail{
+	detail := &model.VideoDetail{
 		VideoWithTags: model.VideoWithTags{
 			Video:        *video,
 			Tags:         tags,
 			ThumbnailURL: thumbnailURL,
 		},
 		StreamURL: streamURL,
-	}, nil
+	}
+
+	// Enrich with user-specific data if services are available and userID is provided
+	if userID != "" && s.favoriteSvc != nil {
+		favorited, err := s.favoriteSvc.IsFavorited(ctx, userID, id)
+		if err != nil {
+			slog.Warn("failed to check favorite status",
+				"video_id", id,
+				"user_id", userID,
+				"error", err,
+			)
+		} else {
+			detail.IsFavorited = favorited
+		}
+	}
+
+	if userID != "" && s.historySvc != nil {
+		progress, err := s.historySvc.GetProgress(ctx, userID, id)
+		if err != nil {
+			slog.Warn("failed to get watch progress",
+				"video_id", id,
+				"user_id", userID,
+				"error", err,
+			)
+		} else {
+			detail.WatchProgress = progress
+		}
+	}
+
+	return detail, nil
 }
 
 func (s *VideoService) Update(ctx context.Context, id string, input model.UpdateVideoInput) (*model.Video, error) {

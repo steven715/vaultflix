@@ -25,7 +25,9 @@ type VideoWithTags struct {
 
 type VideoDetail struct {
 	VideoWithTags
-	StreamURL string `json:"stream_url"`
+	StreamURL     string `json:"stream_url"`
+	IsFavorited   bool   `json:"is_favorited"`
+	WatchProgress int    `json:"watch_progress"`
 }
 
 type UpdateVideoInput struct {

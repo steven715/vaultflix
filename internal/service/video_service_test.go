@@ -44,7 +44,7 @@ func TestVideoService_GetByID_Success(t *testing.T) {
 	}
 
 	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
-	detail, err := svc.GetByID(context.Background(), "vid-1", 2*time.Hour)
+	detail, err := svc.GetByID(context.Background(), "vid-1", 2*time.Hour, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestVideoService_GetByID_NotFound(t *testing.T) {
 	minioSvc := &mock.MinIOClient{}
 
 	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
-	_, err := svc.GetByID(context.Background(), "nonexistent", 2*time.Hour)
+	_, err := svc.GetByID(context.Background(), "nonexistent", 2*time.Hour, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

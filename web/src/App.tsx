@@ -4,6 +4,8 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import BrowsePage from './pages/BrowsePage'
 import PlayerPage from './pages/PlayerPage'
+import FavoritesPage from './pages/FavoritesPage'
+import HistoryPage from './pages/HistoryPage'
 
 function RootLayout() {
   return (
@@ -31,6 +33,14 @@ const router = createBrowserRouter([
           {
             path: '/videos/:id',
             element: <PlayerPage />,
+          },
+          {
+            path: '/favorites',
+            element: <FavoritesPage />,
+          },
+          {
+            path: '/history',
+            element: <HistoryPage />,
           },
         ],
       },

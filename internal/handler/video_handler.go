@@ -108,7 +108,8 @@ func (h *VideoHandler) GetByID(c *gin.Context) {
 
 	expiry := time.Duration(expiryMinutes) * time.Minute
 
-	detail, err := h.videoService.GetByID(c.Request.Context(), id, expiry)
+	userID := c.GetString("user_id")
+	detail, err := h.videoService.GetByID(c.Request.Context(), id, expiry, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
