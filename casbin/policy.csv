@@ -1,0 +1,16 @@
+p, admin, /api/*, GET
+p, admin, /api/*, POST
+p, admin, /api/*, PUT
+p, admin, /api/*, DELETE
+
+p, viewer, /api/videos, GET
+p, viewer, /api/videos/:id, GET
+p, viewer, /api/tags, GET
+p, viewer, /api/watch-history, GET
+p, viewer, /api/watch-history, POST
+p, viewer, /api/watch-history, PUT
+p, viewer, /api/favorites, GET
+p, viewer, /api/favorites, POST
+p, viewer, /api/favorites, DELETE
+p, viewer, /api/me, GET
+p, viewer, /api/recommendations/today, GET
