@@ -29,6 +29,7 @@ Thumbs.db
 
 # Claude Code
 .claude/
+!.claude/commands/
 .superpowers/
 
 # Screenshots (debug artifacts)
