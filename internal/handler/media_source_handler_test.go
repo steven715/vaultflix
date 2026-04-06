@@ -69,6 +69,47 @@ func TestMediaSourceHandler_List_Empty(t *testing.T) {
 	}
 }
 
+func TestMediaSourceHandler_List_WithVideoCount(t *testing.T) {
+	now := time.Now()
+	repo := &mock.MediaSourceRepository{
+		ListFunc: func(ctx context.Context) ([]model.MediaSource, error) {
+			return []model.MediaSource{
+				{ID: "ms-1", Label: "Videos", MountPath: "/mnt/host/Videos", Enabled: true, CreatedAt: now, UpdatedAt: now, VideoCount: 42},
+				{ID: "ms-2", Label: "Anime", MountPath: "/mnt/host/Anime", Enabled: false, CreatedAt: now, UpdatedAt: now, VideoCount: 0},
+			}, nil
+		},
+	}
+	svc := service.NewMediaSourceService(repo, "/mnt/host/")
+	r := setupMediaSourceRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media-sources", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Data []struct {
+			ID         string `json:"id"`
+			VideoCount int    `json:"video_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(resp.Data))
+	}
+	if resp.Data[0].VideoCount != 42 {
+		t.Errorf("expected video_count 42, got %d", resp.Data[0].VideoCount)
+	}
+	if resp.Data[1].VideoCount != 0 {
+		t.Errorf("expected video_count 0, got %d", resp.Data[1].VideoCount)
+	}
+}
+
 func TestMediaSourceHandler_Create_Success(t *testing.T) {
 	prefix, validPath := setupTempMountForHandler(t)
 
