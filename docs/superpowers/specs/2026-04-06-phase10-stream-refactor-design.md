@@ -41,7 +41,7 @@ Phase 9 完成後，新匯入的影片記錄本機路徑（`source_id` + `file_p
    - **新模式**（`source_id` + `file_path` 有值）：
      - 查 media source → 檢查 `source.Enabled`（停用 → 503）
      - `filepath.Join(source.MountPath, *video.FilePath)` → `filepath.Clean`
-     - 路徑穿越防護：`strings.HasPrefix(cleanPath, AllowedMountPrefix)`（失敗 → 403）
+     - 路徑穿越防護：`strings.HasPrefix(cleanPath, filepath.Clean(source.MountPath))`（失敗 → 403）。mount path 在 source 建立時已驗證過 `AllowedMountPrefix`
      - `os.Stat` 檢查檔案存在（不存在 → 404 + 明確訊息）
      - 設定 `Content-Type` header（從 `video.MimeType`）
      - `http.ServeFile(c.Writer, c.Request, cleanPath)`
@@ -53,7 +53,7 @@ Phase 9 完成後，新匯入的影片記錄本機路徑（`source_id` + `file_p
 
 **依賴**：Stream handler 需要存取 `MediaSourceService`。`VideoHandler` 需新增此依賴。
 
-**AllowedMountPrefix**：目前定義在 `media_source_service.go`。需 export 為 `AllowedMountPrefix`（已是 exported），stream handler 直接引用 `service.AllowedMountPrefix`。
+**路徑驗證**：stream handler 驗證解析後的路徑落在 `source.MountPath` 內（mount path 在建立時已由 `MediaSourceService.ValidateMountPath` 驗證過 `AllowedMountPrefix`）。
 
 ### 3. Video Service 改動
 
