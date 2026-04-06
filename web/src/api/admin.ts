@@ -5,6 +5,7 @@ import type {
   Tag,
   DailyRecommendation,
   RecommendationItem,
+  User,
 } from '../types'
 
 export async function importVideos(sourceDir: string): Promise<ImportResult> {
@@ -58,4 +59,22 @@ export async function updateRecommendationSortOrder(id: string, sortOrder: numbe
 
 export async function deleteRecommendation(id: string): Promise<void> {
   await client.delete(`/recommendations/${id}`)
+}
+
+export async function listUsers(): Promise<User[]> {
+  const res = await client.get<User[]>('/users')
+  return res.data
+}
+
+export async function createUser(username: string, password: string, role: string): Promise<User> {
+  const res = await client.post<User>('/users', { username, password, role })
+  return res.data
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await client.delete(`/users/${id}`)
+}
+
+export async function resetUserPassword(id: string, password: string): Promise<void> {
+  await client.put(`/users/${id}/password`, { password })
 }

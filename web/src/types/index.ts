@@ -125,3 +125,12 @@ export interface RecommendationWithVideo {
   resolution: string
   file_size_bytes: number
 }
+
+export interface User {
+  id: string
+  username: string
+  role: string
+  disabled_at: string | null
+  created_at: string
+  updated_at: string
+}
