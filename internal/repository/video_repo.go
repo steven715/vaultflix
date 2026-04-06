@@ -24,6 +24,9 @@ type VideoRepository interface {
 	GetByID(ctx context.Context, id string) (*model.Video, error)
 	Update(ctx context.Context, id string, input model.UpdateVideoInput) error
 	Delete(ctx context.Context, id string) error
+	// FindBySourceAndPath looks up a video by source_id + file_path.
+	// Returns model.ErrNotFound when no matching video exists.
+	FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
 }
 
 var allowedSortColumns = map[string]string{
@@ -42,17 +45,26 @@ const queryExistsVideoByFilenameAndSize = `
 
 const queryCreateVideo = `
     INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key,
-                        duration_seconds, resolution, file_size_bytes, mime_type, original_filename)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        duration_seconds, resolution, file_size_bytes, mime_type,
+                        original_filename, source_id, file_path)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING created_at, updated_at
 `
 
 const queryGetVideoByID = `
     SELECT id, title, description, minio_object_key, thumbnail_key,
            duration_seconds, resolution, file_size_bytes, mime_type,
-           original_filename, created_at, updated_at
+           original_filename, created_at, updated_at, source_id, file_path
     FROM videos
     WHERE id = $1
+`
+
+const queryFindBySourceAndPath = `
+    SELECT id, title, description, minio_object_key, thumbnail_key,
+           duration_seconds, resolution, file_size_bytes, mime_type,
+           original_filename, created_at, updated_at, source_id, file_path
+    FROM videos
+    WHERE source_id = $1 AND file_path = $2
 `
 
 const queryUpdateVideo = `
@@ -87,7 +99,8 @@ func (r *videoRepository) ExistsByFilenameAndSize(ctx context.Context, filename 
 func (r *videoRepository) Create(ctx context.Context, video *model.Video) error {
 	err := r.pool.QueryRow(ctx, queryCreateVideo,
 		video.ID, video.Title, video.Description, video.MinIOObjectKey, video.ThumbnailKey,
-		video.DurationSeconds, video.Resolution, video.FileSizeBytes, video.MimeType, video.OriginalFilename,
+		video.DurationSeconds, video.Resolution, video.FileSizeBytes, video.MimeType,
+		video.OriginalFilename, video.SourceID, video.FilePath,
 	).Scan(&video.CreatedAt, &video.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create video %s: %w", video.OriginalFilename, err)
@@ -101,7 +114,7 @@ func (r *videoRepository) GetByID(ctx context.Context, id string) (*model.Video,
 	err := r.pool.QueryRow(ctx, queryGetVideoByID, id).Scan(
 		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey,
 		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
-		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt,
+		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -157,7 +170,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 
 	dataQuery := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, " +
 		"v.duration_seconds, v.resolution, v.file_size_bytes, v.mime_type, " +
-		"v.original_filename, v.created_at, v.updated_at " +
+		"v.original_filename, v.created_at, v.updated_at, v.source_id, v.file_path " +
 		"FROM videos v" + whereClause +
 		" ORDER BY " + sortCol + " " + sortOrder +
 		" LIMIT $" + strconv.Itoa(nextArg) + " OFFSET $" + strconv.Itoa(nextArg+1)
@@ -175,7 +188,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 		if err := rows.Scan(
 			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey,
 			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
-			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt,
+			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt, &v.SourceID, &v.FilePath,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan video: %w", err)
 		}
@@ -187,6 +200,22 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	}
 
 	return videos, total, nil
+}
+
+func (r *videoRepository) FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error) {
+	var video model.Video
+	err := r.pool.QueryRow(ctx, queryFindBySourceAndPath, sourceID, filePath).Scan(
+		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey,
+		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
+		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, model.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find video by source %s and path %s: %w", sourceID, filePath, err)
+	}
+	return &video, nil
 }
 
 func buildWhereClause(filter model.VideoFilter) (string, []interface{}) {

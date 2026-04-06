@@ -14,6 +14,7 @@ type VideoRepository struct {
 	GetByIDFunc                 func(ctx context.Context, id string) (*model.Video, error)
 	UpdateFunc                  func(ctx context.Context, id string, input model.UpdateVideoInput) error
 	DeleteFunc                  func(ctx context.Context, id string) error
+	FindBySourceAndPathFunc     func(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -56,4 +57,11 @@ func (m *VideoRepository) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("mock: DeleteFunc not set")
 	}
 	return m.DeleteFunc(ctx, id)
+}
+
+func (m *VideoRepository) FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error) {
+	if m.FindBySourceAndPathFunc == nil {
+		return nil, fmt.Errorf("mock: FindBySourceAndPathFunc not set")
+	}
+	return m.FindBySourceAndPathFunc(ctx, sourceID, filePath)
 }
