@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -330,5 +331,216 @@ func TestImportHandler_SourceDisabled(t *testing.T) {
 	}
 	if resp.Message != "media source is disabled" {
 		t.Errorf("expected message 'media source is disabled', got %s", resp.Message)
+	}
+}
+
+func setupStreamRouter(videoSvc *service.VideoService, mediaSourceSvc *service.MediaSourceService) (*gin.Engine, *VideoHandler) {
+	r := gin.New()
+	h := NewVideoHandler(nil, videoSvc, mediaSourceSvc)
+	r.GET("/api/videos/:id/stream", h.Stream)
+	return r, h
+}
+
+func TestStreamVideo(t *testing.T) {
+	tmpDir := t.TempDir()
+	videoContent := []byte("fake video content for testing")
+	videoFile := tmpDir + "/test.mp4"
+	if err := os.WriteFile(videoFile, videoContent, 0644); err != nil {
+		t.Fatalf("failed to write temp video file: %v", err)
+	}
+
+	sourceID := "src-1"
+	filePath := "test.mp4"
+
+	tests := []struct {
+		name           string
+		videoID        string
+		video          *model.Video
+		videoErr       error
+		source         *model.MediaSource
+		sourceErr      error
+		expectedStatus int
+		expectedBody   string
+		rangeHeader    string
+	}{
+		{
+			name:    "success - new mode",
+			videoID: "vid-1",
+			video: &model.Video{
+				ID:       "vid-1",
+				MimeType: "video/mp4",
+				SourceID: &sourceID,
+				FilePath: &filePath,
+			},
+			source: &model.MediaSource{
+				ID:        "src-1",
+				MountPath: tmpDir,
+				Enabled:   true,
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "fake video content for testing",
+		},
+		{
+			name:    "range request",
+			videoID: "vid-1",
+			video: &model.Video{
+				ID:       "vid-1",
+				MimeType: "video/mp4",
+				SourceID: &sourceID,
+				FilePath: &filePath,
+			},
+			source: &model.MediaSource{
+				ID:        "src-1",
+				MountPath: tmpDir,
+				Enabled:   true,
+			},
+			expectedStatus: http.StatusPartialContent,
+			rangeHeader:    "bytes=0-9",
+		},
+		{
+			name:           "video not found in DB",
+			videoID:        "nonexistent",
+			videoErr:       model.ErrNotFound,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:    "source disabled",
+			videoID: "vid-1",
+			video: &model.Video{
+				ID:       "vid-1",
+				MimeType: "video/mp4",
+				SourceID: &sourceID,
+				FilePath: &filePath,
+			},
+			source: &model.MediaSource{
+				ID:        "src-1",
+				MountPath: tmpDir,
+				Enabled:   false,
+			},
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:    "file not on disk",
+			videoID: "vid-1",
+			video: func() *model.Video {
+				fp := "nonexistent.mp4"
+				return &model.Video{
+					ID:       "vid-1",
+					MimeType: "video/mp4",
+					SourceID: &sourceID,
+					FilePath: &fp,
+				}
+			}(),
+			source: &model.MediaSource{
+				ID:        "src-1",
+				MountPath: tmpDir,
+				Enabled:   true,
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:    "path traversal attempt",
+			videoID: "vid-1",
+			video: func() *model.Video {
+				fp := "../../etc/passwd"
+				return &model.Video{
+					ID:       "vid-1",
+					MimeType: "video/mp4",
+					SourceID: &sourceID,
+					FilePath: &fp,
+				}
+			}(),
+			source: &model.MediaSource{
+				ID:        "src-1",
+				MountPath: "/mnt/host/videos",
+				Enabled:   true,
+			},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:    "legacy mode - redirect to presigned URL",
+			videoID: "vid-legacy",
+			video: &model.Video{
+				ID:             "vid-legacy",
+				MinIOObjectKey: "videos/vid-legacy/test.mp4",
+				MimeType:       "video/mp4",
+			},
+			expectedStatus: http.StatusTemporaryRedirect,
+		},
+		{
+			name:    "source_id is nil and no minio key",
+			videoID: "vid-broken",
+			video: &model.Video{
+				ID:       "vid-broken",
+				MimeType: "video/mp4",
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			videoRepo := &mock.VideoRepository{
+				GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+					if tt.videoErr != nil {
+						return nil, tt.videoErr
+					}
+					return tt.video, nil
+				},
+			}
+			tagRepo := &mock.TagRepository{
+				GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
+					return []model.Tag{}, nil
+				},
+			}
+			minioSvc := &mock.MinIOClient{
+				GeneratePresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+					return "https://minio/legacy-stream", nil
+				},
+				GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+					return "", nil
+				},
+			}
+
+			videoSvc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+
+			var mediaSourceSvc *service.MediaSourceService
+			if tt.source != nil || tt.sourceErr != nil {
+				mediaSourceRepo := &mock.MediaSourceRepository{
+					FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
+						if tt.sourceErr != nil {
+							return nil, tt.sourceErr
+						}
+						return tt.source, nil
+					},
+				}
+				mediaSourceSvc = service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
+			}
+
+			r, _ := setupStreamRouter(videoSvc, mediaSourceSvc)
+
+			url := "/api/videos/" + tt.videoID + "/stream"
+			req := httptest.NewRequest(http.MethodGet, url, nil)
+			if tt.rangeHeader != "" {
+				req.Header.Set("Range", tt.rangeHeader)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Fatalf("expected status %d, got %d, body: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+
+			if tt.expectedBody != "" && w.Body.String() != tt.expectedBody {
+				t.Errorf("expected body %q, got %q", tt.expectedBody, w.Body.String())
+			}
+
+			if tt.expectedStatus == http.StatusTemporaryRedirect {
+				loc := w.Header().Get("Location")
+				if loc != "https://minio/legacy-stream" {
+					t.Errorf("expected redirect to presigned URL, got Location: %s", loc)
+				}
+			}
+		})
 	}
 }

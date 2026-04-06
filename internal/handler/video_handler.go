@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -209,6 +211,108 @@ func (h *VideoHandler) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// Stream serves a video file directly from disk using http.ServeFile.
+// Supports HTTP Range Request (seeking), Content-Length, and If-Modified-Since (304).
+// Authentication: JWT from Authorization header or ?token= query param.
+func (h *VideoHandler) Stream(c *gin.Context) {
+	ctx := c.Request.Context()
+	videoID := c.Param("id")
+
+	video, err := h.videoService.GetByID(ctx, videoID, "")
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "video not found",
+			})
+			return
+		}
+		slog.Error("failed to get video for streaming", "error", err, "video_id", videoID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to get video",
+		})
+		return
+	}
+
+	// Legacy mode: video stored in MinIO (no source_id, has minio_object_key)
+	if video.SourceID == nil && video.MinIOObjectKey != "" {
+		presignedURL, err := h.videoService.GetPresignedURL(ctx, video.MinIOObjectKey)
+		if err != nil {
+			slog.Error("failed to generate presigned url for legacy video",
+				"error", err, "video_id", videoID)
+			c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+				Error:   "internal_error",
+				Message: "failed to generate stream url",
+			})
+			return
+		}
+		c.Redirect(http.StatusTemporaryRedirect, presignedURL)
+		return
+	}
+
+	// New mode: video stored on local disk via media source
+	if video.SourceID == nil || video.FilePath == nil {
+		slog.Error("video has no source and no minio key", "video_id", videoID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "video has no playable source",
+		})
+		return
+	}
+
+	source, err := h.mediaSourceService.GetByID(ctx, *video.SourceID)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			slog.Error("media source not found for video",
+				"video_id", videoID, "source_id", *video.SourceID)
+			c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+				Error:   "internal_error",
+				Message: "media source not found",
+			})
+			return
+		}
+		slog.Error("failed to get media source", "error", err, "source_id", *video.SourceID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to get media source",
+		})
+		return
+	}
+
+	if !source.Enabled {
+		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{
+			Error:   "source_unavailable",
+			Message: "media source is currently disabled",
+		})
+		return
+	}
+
+	fullPath := filepath.Join(source.MountPath, *video.FilePath)
+	cleanPath := filepath.Clean(fullPath)
+
+	// Path traversal protection: resolved path must stay within the source's mount path.
+	cleanMount := filepath.Clean(source.MountPath)
+	if !strings.HasPrefix(cleanPath, cleanMount) {
+		c.JSON(http.StatusForbidden, model.ErrorResponse{
+			Error:   "path_not_allowed",
+			Message: "resolved file path is outside allowed area",
+		})
+		return
+	}
+
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, model.ErrorResponse{
+			Error:   "file_not_found",
+			Message: "video file not found on disk (may have been moved or drive unmounted)",
+		})
+		return
+	}
+
+	c.Header("Content-Type", video.MimeType)
+	http.ServeFile(c.Writer, c.Request, cleanPath)
 }
 
 func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
