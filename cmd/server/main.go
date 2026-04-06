@@ -143,6 +143,7 @@ func main() {
 		api.PUT("/videos/:id", videoHandler.Update)
 		api.DELETE("/videos/:id", videoHandler.Delete)
 		api.POST("/videos/import", videoHandler.Import)
+		api.GET("/videos/:id/stream", videoHandler.Stream)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
 
