@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource, importVideos, getActiveImportJob } from '../../api/admin'
 import type { MediaSource } from '../../types'
 import Header from '../../components/Header'
@@ -8,6 +8,7 @@ export default function MediaSourcePage() {
   const [sources, setSources] = useState<MediaSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
 
   // Import state
   const [importingSourceId, setImportingSourceId] = useState<string | null>(null)
@@ -18,22 +19,31 @@ export default function MediaSourcePage() {
   const [editingSource, setEditingSource] = useState<MediaSource | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ type: 'disable' | 'enable' | 'delete'; source: MediaSource } | null>(null)
 
-  const fetchSources = useCallback(async () => {
+  async function fetchSources() {
     setLoading(true)
     setError(null)
+    setLoadFailed(false)
     try {
       const data = await listMediaSources()
       setSources(data)
     } catch {
       setError('無法載入媒體來源，請確認服務是否正常運作')
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }
 
+  // Fetch sources on mount
   useEffect(() => {
-    fetchSources()
-  }, [fetchSources])
+    let cancelled = false
+    setLoading(true)
+    listMediaSources()
+      .then((data) => { if (!cancelled) setSources(data) })
+      .catch(() => { if (!cancelled) { setError('無法載入媒體來源，請確認服務是否正常運作'); setLoadFailed(true) } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   // Check for active import on mount
   useEffect(() => {
@@ -42,7 +52,9 @@ export default function MediaSourcePage() {
       if (cancelled || !job) return
       setImportingSourceId(job.source_id)
       setCurrentJobId(job.id)
-    }).catch(() => {})
+    }).catch(() => {
+      // Non-critical: active job detection failure doesn't block page usage
+    })
     return () => { cancelled = true }
   }, [])
 
@@ -118,7 +130,7 @@ export default function MediaSourcePage() {
         {/* Content */}
         {loading ? (
           <div className="text-gray-500 text-center py-20">載入中...</div>
-        ) : error && sources.length === 0 ? (
+        ) : loadFailed && sources.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-gray-400 mb-4">無法載入媒體來源</p>
             <button onClick={fetchSources} className="text-indigo-400 hover:text-indigo-300 text-sm">重試</button>

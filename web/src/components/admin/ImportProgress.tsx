@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useWS } from '../../contexts/WebSocketContext'
 import { getActiveImportJob } from '../../api/admin'
 import type { ImportJob, ImportProgress as ImportProgressType, ImportError } from '../../types'
@@ -11,6 +11,8 @@ interface ImportProgressProps {
 }
 
 export default function ImportProgress({ jobId, onComplete }: ImportProgressProps) {
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
   const [importState, setImportState] = useState<ImportState>('importing')
   const [currentFile, setCurrentFile] = useState('')
   const [processed, setProcessed] = useState(0)
@@ -66,7 +68,7 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
         if (result.id !== jobId) break
         setFinalResult(result)
         setImportState(result.failed > 0 && result.imported === 0 ? 'failed' : 'completed')
-        onComplete?.()
+        onCompleteRef.current?.()
         break
       }
       case 'import_error': {
@@ -74,7 +76,7 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
         break
       }
     }
-  }, [lastMessage, jobId, onComplete])
+  }, [lastMessage, jobId])
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-4 mt-3">
