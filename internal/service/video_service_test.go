@@ -305,3 +305,110 @@ func TestVideoService_Delete_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestVideoService_GetByID_LocalPathMode(t *testing.T) {
+	sourceID := "src-1"
+	filePath := "movies/test.mp4"
+	video := &model.Video{
+		ID:             "vid-1",
+		Title:          "Test Video",
+		MinIOObjectKey: "",
+		ThumbnailKey:   "thumbnails/vid-1.jpg",
+		SourceID:       &sourceID,
+		FilePath:       &filePath,
+	}
+
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return video, nil
+		},
+	}
+	tagRepo := &mock.TagRepository{
+		GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
+			return []model.Tag{}, nil
+		},
+	}
+
+	presignedURLCalled := false
+	minioSvc := &mock.MinIOClient{
+		GeneratePresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+			presignedURLCalled = true
+			return "https://minio/stream", nil
+		},
+		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+			return "https://minio/thumb", nil
+		},
+	}
+
+	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	detail, err := svc.GetByID(context.Background(), "vid-1", 2*time.Hour, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if presignedURLCalled {
+		t.Error("expected GeneratePresignedURL NOT to be called for local path video")
+	}
+	if detail.StreamURL != "" {
+		t.Errorf("expected empty stream url for local path video, got %s", detail.StreamURL)
+	}
+	if detail.ThumbnailURL != "https://minio/thumb" {
+		t.Errorf("expected thumbnail url, got %s", detail.ThumbnailURL)
+	}
+	if detail.SourceID == nil || *detail.SourceID != "src-1" {
+		t.Errorf("expected source_id src-1, got %v", detail.SourceID)
+	}
+}
+
+func TestVideoService_Delete_LocalPathMode(t *testing.T) {
+	sourceID := "src-1"
+	filePath := "movies/test.mp4"
+	video := &model.Video{
+		ID:             "vid-1",
+		MinIOObjectKey: "",
+		ThumbnailKey:   "thumbnails/vid-1.jpg",
+		SourceID:       &sourceID,
+		FilePath:       &filePath,
+	}
+
+	dbDeleted := false
+	deleteVideoCalled := false
+	deleteThumbnailCalled := false
+
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return video, nil
+		},
+		DeleteFunc: func(ctx context.Context, id string) error {
+			dbDeleted = true
+			return nil
+		},
+	}
+	tagRepo := &mock.TagRepository{}
+	minioSvc := &mock.MinIOClient{
+		DeleteVideoFunc: func(ctx context.Context, objectKey string) error {
+			deleteVideoCalled = true
+			return nil
+		},
+		DeleteThumbnailFunc: func(ctx context.Context, objectKey string) error {
+			deleteThumbnailCalled = true
+			return nil
+		},
+	}
+
+	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	err := svc.Delete(context.Background(), "vid-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !dbDeleted {
+		t.Error("expected DB record to be deleted")
+	}
+	if deleteVideoCalled {
+		t.Error("expected MinIO DeleteVideo NOT to be called for local path video")
+	}
+	if !deleteThumbnailCalled {
+		t.Error("expected MinIO DeleteThumbnail to be called")
+	}
+}

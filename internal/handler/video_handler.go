@@ -68,6 +68,14 @@ func (h *VideoHandler) Import(c *gin.Context) {
 		return
 	}
 
+	if !source.Enabled {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Error:   "bad_request",
+			Message: "media source is disabled",
+		})
+		return
+	}
+
 	result, err := h.importService.Run(ctx, source)
 	if err != nil {
 		slog.Error("video import failed", "error", err, "source_id", req.SourceID)

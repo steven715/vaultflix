@@ -94,9 +94,12 @@ func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Du
 		return nil, fmt.Errorf("failed to get tags for video %s: %w", id, err)
 	}
 
-	streamURL, err := s.minioSvc.GeneratePresignedURL(ctx, video.MinIOObjectKey, urlExpiry)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate stream url for video %s: %w", id, err)
+	var streamURL string
+	if video.MinIOObjectKey != "" {
+		streamURL, err = s.minioSvc.GeneratePresignedURL(ctx, video.MinIOObjectKey, urlExpiry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate stream url for video %s: %w", id, err)
+		}
 	}
 
 	var thumbnailURL string

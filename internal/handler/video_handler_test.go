@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,5 +252,96 @@ func TestListVideos_InvalidTagIDs(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestImportHandler_MissingSourceID(t *testing.T) {
+	r := gin.New()
+	h := NewVideoHandler(nil, nil, nil)
+	r.POST("/api/videos/import", h.Import)
+
+	body := strings.NewReader(`{}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Error != "bad_request" {
+		t.Errorf("expected error 'bad_request', got %s", resp.Error)
+	}
+}
+
+func TestImportHandler_SourceNotFound(t *testing.T) {
+	mediaSourceRepo := &mock.MediaSourceRepository{
+		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
+			return nil, model.ErrNotFound
+		},
+	}
+	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
+
+	r := gin.New()
+	h := NewVideoHandler(nil, nil, mediaSourceSvc)
+	r.POST("/api/videos/import", h.Import)
+
+	body := strings.NewReader(`{"source_id": "nonexistent-id"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Error != "not_found" {
+		t.Errorf("expected error 'not_found', got %s", resp.Error)
+	}
+}
+
+func TestImportHandler_SourceDisabled(t *testing.T) {
+	mediaSourceRepo := &mock.MediaSourceRepository{
+		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
+			return &model.MediaSource{
+				ID:        "src-1",
+				Label:     "Test",
+				MountPath: "/mnt/host/videos",
+				Enabled:   false,
+			}, nil
+		},
+	}
+	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
+
+	r := gin.New()
+	h := NewVideoHandler(nil, nil, mediaSourceSvc)
+	r.POST("/api/videos/import", h.Import)
+
+	body := strings.NewReader(`{"source_id": "src-1"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Message != "media source is disabled" {
+		t.Errorf("expected message 'media source is disabled', got %s", resp.Message)
 	}
 }
