@@ -9,6 +9,7 @@ import FavoritesPage from './pages/FavoritesPage'
 import HistoryPage from './pages/HistoryPage'
 import VideoManagePage from './pages/admin/VideoManagePage'
 import RecommendationManagePage from './pages/admin/RecommendationManagePage'
+import UserManagePage from './pages/admin/UserManagePage'
 
 function RootLayout() {
   return (
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
             children: [
               { path: '/admin', element: <VideoManagePage /> },
               { path: '/admin/recommendations', element: <RecommendationManagePage /> },
+              { path: '/admin/users', element: <UserManagePage /> },
             ],
           },
         ],
