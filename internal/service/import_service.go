@@ -79,10 +79,12 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 	defer func() {
 		now := time.Now()
 		job.FinishedAt = &now
-		if job.Failed > 0 && job.Imported == 0 {
-			job.Status = "failed"
-		} else {
-			job.Status = "completed"
+		if job.Status != "failed" {
+			if job.Failed > 0 && job.Imported == 0 {
+				job.Status = "failed"
+			} else {
+				job.Status = "completed"
+			}
 		}
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type:    websocket.TypeImportComplete,
