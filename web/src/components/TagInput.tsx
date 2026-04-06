@@ -14,6 +14,7 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
   const [input, setInput] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [highlightIdx, setHighlightIdx] = useState(0)
+  const [error, setError] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -43,6 +44,11 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
     setHighlightIdx(0)
   }, [input])
 
+  function flashError() {
+    setError(true)
+    setTimeout(() => setError(false), 1500)
+  }
+
   // Total selectable items: filtered tags + optional create
   const totalItems = filtered.length + (showCreate ? 1 : 0)
 
@@ -54,7 +60,7 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
       setShowDropdown(false)
       inputRef.current?.focus()
       onTagsChange?.()
-    } catch { /* ignore */ }
+    } catch { flashError() }
   }
 
   async function handleCreateAndAdd() {
@@ -68,7 +74,7 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
       setShowDropdown(false)
       inputRef.current?.focus()
       onTagsChange?.()
-    } catch { /* ignore */ }
+    } catch { flashError() }
   }
 
   async function handleRemoveTag(tagId: number) {
@@ -76,7 +82,7 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
       await removeVideoTag(videoId, tagId)
       setTags((prev) => prev.filter((t) => t.id !== tagId))
       onTagsChange?.()
-    } catch { /* ignore */ }
+    } catch { flashError() }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -116,7 +122,9 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
   return (
     <div ref={containerRef} className="relative">
       <div
-        className="flex flex-wrap gap-1 items-center bg-gray-800 border border-gray-700 rounded px-1.5 py-1 min-h-[32px] cursor-text"
+        className={`flex flex-wrap gap-1 items-center bg-gray-800 border rounded px-1.5 py-1 min-h-[32px] cursor-text transition-colors ${
+          error ? 'border-red-500' : 'border-gray-700'
+        }`}
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((tag) => (
