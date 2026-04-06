@@ -28,9 +28,12 @@ type MediaSourceRepository interface {
 }
 
 const queryListMediaSources = `
-    SELECT id, label, mount_path, enabled, created_at, updated_at
-    FROM media_sources
-    ORDER BY created_at
+    SELECT ms.id, ms.label, ms.mount_path, ms.enabled, ms.created_at, ms.updated_at,
+           COUNT(v.id) AS video_count
+    FROM media_sources ms
+    LEFT JOIN videos v ON v.source_id = ms.id
+    GROUP BY ms.id
+    ORDER BY ms.created_at ASC
 `
 
 const queryFindMediaSourceByID = `
@@ -73,7 +76,7 @@ func (r *mediaSourceRepository) List(ctx context.Context) ([]model.MediaSource, 
 	var sources []model.MediaSource
 	for rows.Next() {
 		var s model.MediaSource
-		if err := rows.Scan(&s.ID, &s.Label, &s.MountPath, &s.Enabled, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Label, &s.MountPath, &s.Enabled, &s.CreatedAt, &s.UpdatedAt, &s.VideoCount); err != nil {
 			return nil, fmt.Errorf("failed to scan media source: %w", err)
 		}
 		sources = append(sources, s)

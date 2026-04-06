@@ -8,5 +8,6 @@ type MediaSource struct {
 	MountPath string    `json:"mount_path"`
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	VideoCount int       `json:"video_count"`
 }
