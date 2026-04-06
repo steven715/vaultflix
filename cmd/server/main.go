@@ -88,6 +88,13 @@ func main() {
 	}
 	slog.Info("casbin enforcer initialized")
 
+	// Initialize WebSocket hub (before services, since ImportService depends on it)
+	hub := websocket.NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+	slog.Info("websocket hub started")
+
 	// Initialize layers
 	userRepo := repository.NewUserRepository(pool)
 	videoRepo := repository.NewVideoRepository(pool)
@@ -100,7 +107,7 @@ func main() {
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
 	userService := service.NewUserService(userRepo)
-	importService := service.NewImportService(videoRepo, minioService)
+	importService := service.NewImportService(videoRepo, minioService, hub)
 	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
@@ -119,13 +126,6 @@ func main() {
 	recHandler := handler.NewRecommendationHandler(recService)
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
-
-	// Initialize WebSocket hub
-	hub := websocket.NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go hub.Run(ctx)
-	slog.Info("websocket hub started")
 
 	wsHandler := handler.NewWSHandler(hub)
 
@@ -155,6 +155,9 @@ func main() {
 		api.PUT("/videos/:id", videoHandler.Update)
 		api.DELETE("/videos/:id", videoHandler.Delete)
 		api.POST("/videos/import", videoHandler.Import)
+		// Import job endpoints
+		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
+		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
 		api.GET("/videos/:id/stream", videoHandler.Stream)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
@@ -195,9 +198,7 @@ func main() {
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)
 
-		// Admin WebSocket test endpoint
-		// TODO: remove or keep as admin tool after Phase 12
-		api.POST("/admin/ws-test", wsHandler.TestSend)
+
 	}
 
 	// Graceful shutdown: cancel Hub context on SIGINT/SIGTERM

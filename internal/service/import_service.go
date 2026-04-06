@@ -11,11 +11,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
+	"github.com/steven/vaultflix/internal/websocket"
 )
 
 var supportedExtensions = map[string]bool{
@@ -26,74 +29,250 @@ var supportedExtensions = map[string]bool{
 	".mov": true,
 }
 
-type ImportFailure struct {
-	Filename string `json:"filename"`
-	Error    string `json:"error"`
-}
-
-type ImportResult struct {
-	TotalScanned int             `json:"total_scanned"`
-	Imported     int             `json:"imported"`
-	Skipped      int             `json:"skipped"`
-	Failed       int             `json:"failed"`
-	Failures     []ImportFailure `json:"failures"`
+type fileResult struct {
+	Status string // "success", "skipped", "error"
+	Error  string
 }
 
 type ImportService struct {
-	videoRepo repository.VideoRepository
-	minioSvc  MinIOClient
+	videoRepo  repository.VideoRepository
+	minioSvc   MinIOClient
+	notifier   websocket.Notifier
+	activeJobs sync.Map
+	importMu   sync.Mutex
 }
 
-func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient) *ImportService {
+func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient, notifier websocket.Notifier) *ImportService {
 	return &ImportService{
 		videoRepo: videoRepo,
 		minioSvc:  minioSvc,
+		notifier:  notifier,
 	}
 }
 
-func (s *ImportService) Run(ctx context.Context, source *model.MediaSource) (*ImportResult, error) {
+// StartAsync builds a job and launches a background import, returning job info immediately.
+// Only one import job may run at a time; duplicate calls return model.ErrConflict.
+func (s *ImportService) StartAsync(ctx context.Context, source *model.MediaSource, userID string) (*model.ImportJob, error) {
+	if !s.importMu.TryLock() {
+		return nil, model.ErrConflict
+	}
+
+	job := &model.ImportJob{
+		ID:          uuid.New().String(),
+		SourceID:    source.ID,
+		SourceLabel: source.Label,
+		Status:      "running",
+		Errors:      []model.ImportError{},
+		StartedAt:   time.Now(),
+	}
+	s.activeJobs.Store(job.ID, job)
+
+	go func() {
+		defer s.importMu.Unlock()
+		s.runImport(context.Background(), job, source, userID)
+	}()
+
+	return job, nil
+}
+
+func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, source *model.MediaSource, userID string) {
+	defer func() {
+		now := time.Now()
+		job.FinishedAt = &now
+		if job.Status != "failed" {
+			if job.Failed > 0 && job.Imported == 0 {
+				job.Status = "failed"
+			} else {
+				job.Status = "completed"
+			}
+		}
+		s.notifier.SendToUser(userID, &websocket.Message{
+			Type:    websocket.TypeImportComplete,
+			Payload: job,
+		})
+	}()
+
 	files, err := s.scanVideoFiles(source.MountPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan video files: %w", err)
+		job.Status = "failed"
+		job.Errors = append(job.Errors, model.ImportError{
+			FileName: source.MountPath,
+			Error:    err.Error(),
+		})
+		s.notifier.SendToUser(userID, &websocket.Message{
+			Type:    websocket.TypeImportError,
+			Payload: map[string]string{"job_id": job.ID, "error": err.Error()},
+		})
+		return
 	}
 
-	result := &ImportResult{
-		TotalScanned: len(files),
-		Failures:     []ImportFailure{},
-	}
+	job.Total = len(files)
 
-	for _, filePath := range files {
-		err := s.processFile(ctx, source, filePath)
-		if err != nil {
-			if isSkipError(err) {
-				result.Skipped++
-				continue
-			}
-			filename := filepath.Base(filePath)
-			slog.Error("failed to import video",
-				"file", filePath,
-				"error", err,
-			)
-			result.Failed++
-			result.Failures = append(result.Failures, ImportFailure{
-				Filename: filename,
-				Error:    err.Error(),
+	for i, filePath := range files {
+		fileName := filepath.Base(filePath)
+
+		s.notifier.SendToUser(userID, &websocket.Message{
+			Type: websocket.TypeImportProgress,
+			Payload: model.ImportProgress{
+				JobID:    job.ID,
+				FileName: fileName,
+				Current:  i + 1,
+				Total:    job.Total,
+				Status:   "processing",
+			},
+		})
+
+		result := s.processOneFile(ctx, source, filePath)
+
+		job.Processed = i + 1
+		switch result.Status {
+		case "success":
+			job.Imported++
+		case "skipped":
+			job.Skipped++
+		case "error":
+			job.Failed++
+			job.Errors = append(job.Errors, model.ImportError{
+				FileName: fileName,
+				Error:    result.Error,
 			})
-			continue
 		}
-		result.Imported++
+
+		s.notifier.SendToUser(userID, &websocket.Message{
+			Type: websocket.TypeImportProgress,
+			Payload: model.ImportProgress{
+				JobID:    job.ID,
+				FileName: fileName,
+				Current:  i + 1,
+				Total:    job.Total,
+				Status:   result.Status,
+				Error:    result.Error,
+			},
+		})
 	}
 
 	slog.Info("import completed",
 		"source_id", source.ID,
 		"source_label", source.Label,
-		"total_scanned", result.TotalScanned,
-		"imported", result.Imported,
-		"skipped", result.Skipped,
-		"failed", result.Failed,
+		"total_scanned", job.Total,
+		"imported", job.Imported,
+		"skipped", job.Skipped,
+		"failed", job.Failed,
+	)
+}
+
+func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) fileResult {
+	filename := filepath.Base(filePath)
+
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to stat file %s: %v", filename, err)}
+	}
+	fileSize := stat.Size()
+
+	relPath, err := filepath.Rel(source.MountPath, filePath)
+	if err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to calculate relative path for %s: %v", filename, err)}
+	}
+	relPath = filepath.ToSlash(relPath)
+
+	_, err = s.videoRepo.FindBySourceAndPath(ctx, source.ID, relPath)
+	if err == nil {
+		slog.Info("video skipped, already imported",
+			"file", filename,
+			"source_id", source.ID,
+			"file_path", relPath,
+		)
+		return fileResult{Status: "skipped"}
+	}
+	if !errors.Is(err, model.ErrNotFound) {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to check duplicate for %s: %v", filename, err)}
+	}
+
+	metadata, err := s.probeMetadata(ctx, filePath)
+	if err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to probe metadata for %s: %v", filename, err)}
+	}
+
+	videoID := uuid.New().String()
+
+	thumbnailPath, err := s.generateThumbnail(ctx, filePath, metadata.durationSeconds)
+	if err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to generate thumbnail for %s: %v", filename, err)}
+	}
+	defer os.Remove(thumbnailPath)
+
+	thumbnailObjectKey := fmt.Sprintf("thumbnails/%s.jpg", videoID)
+
+	if err := s.minioSvc.UploadThumbnail(ctx, thumbnailObjectKey, thumbnailPath); err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to upload thumbnail for %s: %v", filename, err)}
+	}
+
+	title := strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	video := &model.Video{
+		ID:               videoID,
+		Title:            title,
+		Description:      "",
+		MinIOObjectKey:   "",
+		ThumbnailKey:     thumbnailObjectKey,
+		DurationSeconds:  metadata.durationSeconds,
+		Resolution:       metadata.resolution,
+		FileSizeBytes:    fileSize,
+		MimeType:         metadata.mimeType,
+		OriginalFilename: filename,
+		SourceID:         &source.ID,
+		FilePath:         &relPath,
+	}
+
+	if err := s.videoRepo.Create(ctx, video); err != nil {
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
+	}
+
+	slog.Info("video imported",
+		"video_id", videoID,
+		"file", filename,
+		"source_id", source.ID,
+		"file_path", relPath,
+		"duration", metadata.durationSeconds,
+		"resolution", metadata.resolution,
+		"size_bytes", fileSize,
 	)
 
-	return result, nil
+	return fileResult{Status: "success"}
+}
+
+// GetJob returns the job with the given ID. Returns model.ErrNotFound if not found.
+func (s *ImportService) GetJob(jobID string) (*model.ImportJob, error) {
+	val, ok := s.activeJobs.Load(jobID)
+	if !ok {
+		return nil, model.ErrNotFound
+	}
+	return val.(*model.ImportJob), nil
+}
+
+// GetActiveJob returns the currently running job, if any. Returns nil when idle.
+func (s *ImportService) GetActiveJob() *model.ImportJob {
+	var active *model.ImportJob
+	s.activeJobs.Range(func(key, value interface{}) bool {
+		job := value.(*model.ImportJob)
+		if job.Status == "running" {
+			active = job
+			return false
+		}
+		return true
+	})
+	return active
+}
+
+// LockForTest locks the import mutex for testing purposes.
+func (s *ImportService) LockForTest() {
+	s.importMu.Lock()
+}
+
+// UnlockForTest unlocks the import mutex for testing purposes.
+func (s *ImportService) UnlockForTest() {
+	s.importMu.Unlock()
 }
 
 func (s *ImportService) scanVideoFiles(sourceDir string) ([]string, error) {
@@ -120,104 +299,6 @@ func (s *ImportService) scanVideoFiles(sourceDir string) ([]string, error) {
 	}
 
 	return files, nil
-}
-
-type skipError struct {
-	reason string
-}
-
-func (e *skipError) Error() string {
-	return e.reason
-}
-
-func isSkipError(err error) bool {
-	_, ok := err.(*skipError)
-	return ok
-}
-
-func (s *ImportService) processFile(ctx context.Context, source *model.MediaSource, filePath string) error {
-	filename := filepath.Base(filePath)
-
-	stat, err := os.Stat(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to stat file %s: %w", filePath, err)
-	}
-	fileSize := stat.Size()
-
-	// Calculate relative path from source mount path
-	relPath, err := filepath.Rel(source.MountPath, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to calculate relative path for %s: %w", filePath, err)
-	}
-	// Normalize to forward slashes for consistent storage (Linux paths in container)
-	relPath = filepath.ToSlash(relPath)
-
-	// Check if already imported using source_id + file_path
-	_, err = s.videoRepo.FindBySourceAndPath(ctx, source.ID, relPath)
-	if err == nil {
-		// Already exists, skip
-		slog.Info("video skipped, already imported",
-			"file", filename,
-			"source_id", source.ID,
-			"file_path", relPath,
-		)
-		return &skipError{reason: "already imported"}
-	}
-	if !errors.Is(err, model.ErrNotFound) {
-		return fmt.Errorf("failed to check duplicate for %s: %w", filename, err)
-	}
-
-	metadata, err := s.probeMetadata(ctx, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to probe metadata for %s: %w", filename, err)
-	}
-
-	videoID := uuid.New().String()
-
-	thumbnailPath, err := s.generateThumbnail(ctx, filePath, metadata.durationSeconds)
-	if err != nil {
-		return fmt.Errorf("failed to generate thumbnail for %s: %w", filename, err)
-	}
-	defer os.Remove(thumbnailPath)
-
-	thumbnailObjectKey := fmt.Sprintf("thumbnails/%s.jpg", videoID)
-
-	if err := s.minioSvc.UploadThumbnail(ctx, thumbnailObjectKey, thumbnailPath); err != nil {
-		return fmt.Errorf("failed to upload thumbnail for %s: %w", filename, err)
-	}
-
-	title := strings.TrimSuffix(filename, filepath.Ext(filename))
-
-	video := &model.Video{
-		ID:               videoID,
-		Title:            title,
-		Description:      "",
-		MinIOObjectKey:   "",
-		ThumbnailKey:     thumbnailObjectKey,
-		DurationSeconds:  metadata.durationSeconds,
-		Resolution:       metadata.resolution,
-		FileSizeBytes:    fileSize,
-		MimeType:         metadata.mimeType,
-		OriginalFilename: filename,
-		SourceID:         &source.ID,
-		FilePath:         &relPath,
-	}
-
-	if err := s.videoRepo.Create(ctx, video); err != nil {
-		return fmt.Errorf("failed to save video record for %s: %w", filename, err)
-	}
-
-	slog.Info("video imported",
-		"video_id", videoID,
-		"file", filename,
-		"source_id", source.ID,
-		"file_path", relPath,
-		"duration", metadata.durationSeconds,
-		"resolution", metadata.resolution,
-		"size_bytes", fileSize,
-	)
-
-	return nil
 }
 
 type videoMetadata struct {

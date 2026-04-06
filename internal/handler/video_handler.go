@@ -71,25 +71,32 @@ func (h *VideoHandler) Import(c *gin.Context) {
 
 	if !source.Enabled {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "media source is disabled",
+			Error:   "source_disabled",
+			Message: "media source is currently disabled",
 		})
 		return
 	}
 
-	result, err := h.importService.Run(ctx, source)
+	userID := c.GetString("user_id")
+
+	job, err := h.importService.StartAsync(ctx, source, userID)
 	if err != nil {
-		slog.Error("video import failed", "error", err, "source_id", req.SourceID)
+		if errors.Is(err, model.ErrConflict) {
+			c.JSON(http.StatusConflict, model.ErrorResponse{
+				Error:   "import_in_progress",
+				Message: "another import job is already running",
+			})
+			return
+		}
+		slog.Error("failed to start import", "error", err, "source_id", req.SourceID)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "import_failed",
-			Message: "failed to import videos",
+			Error:   "internal_error",
+			Message: "failed to start import",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.SuccessResponse{
-		Data: result,
-	})
+	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: job})
 }
 
 func (h *VideoHandler) List(c *gin.Context) {
@@ -322,6 +329,31 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 
 	c.Header("Content-Type", video.MimeType)
 	http.ServeFile(c.Writer, c.Request, cleanPath)
+}
+
+func (h *VideoHandler) GetImportJob(c *gin.Context) {
+	jobID := c.Param("id")
+	job, err := h.importService.GetJob(jobID)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "import job not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to get import job",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
+}
+
+func (h *VideoHandler) GetActiveImportJob(c *gin.Context) {
+	job := h.importService.GetActiveJob()
+	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
 }
 
 func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {

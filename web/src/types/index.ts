@@ -81,17 +81,42 @@ export interface VideoSummaryWithURL {
   created_at: string
 }
 
-export interface ImportFailure {
-  filename: string
+export interface ImportError {
+  file_name: string
   error: string
 }
 
-export interface ImportResult {
-  total_scanned: number
+export interface ImportJob {
+  id: string
+  source_id: string
+  source_label: string
+  status: 'running' | 'completed' | 'failed'
+  total: number
+  processed: number
   imported: number
   skipped: number
   failed: number
-  failures: ImportFailure[]
+  errors: ImportError[]
+  started_at: string
+  finished_at?: string
+}
+
+export interface ImportProgress {
+  job_id: string
+  file_name: string
+  current: number
+  total: number
+  status: 'processing' | 'success' | 'skipped' | 'error'
+  error?: string
+}
+
+export interface MediaSource {
+  id: string
+  label: string
+  mount_path: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface RecommendationItem {
