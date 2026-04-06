@@ -22,8 +22,8 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttemptRef = useRef(0)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval>>()
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const intentionalCloseRef = useRef(false)
 
   const cleanup = useCallback(() => {

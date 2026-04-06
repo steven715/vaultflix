@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
-import { importVideos, updateVideo, deleteVideo } from '../../api/admin'
-import type { VideoWithTags, TagWithCount, ImportResult } from '../../types'
+import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob } from '../../api/admin'
+import type { VideoWithTags, TagWithCount, ImportJob, ImportProgress, ImportError as ImportErr, MediaSource } from '../../types'
+import { useWS } from '../../contexts/WebSocketContext'
 import Header from '../../components/Header'
 import Pagination from '../../components/Pagination'
 import TagInput from '../../components/TagInput'
@@ -16,11 +17,24 @@ export default function VideoManagePage() {
   const [loading, setLoading] = useState(true)
   const [allTags, setAllTags] = useState<TagWithCount[]>([])
 
-  // Import modal state
+  // Import state
+  type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
   const [showImport, setShowImport] = useState(false)
-  const [importDir, setImportDir] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importState, setImportState] = useState<ImportState>('idle')
+  const [mediaSources, setMediaSources] = useState<MediaSource[]>([])
+  const [selectedSourceID, setSelectedSourceID] = useState('')
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [currentFile, setCurrentFile] = useState('')
+  const [processed, setProcessed] = useState(0)
+  const [importTotal, setImportTotal] = useState(0)
+  const [imported, setImported] = useState(0)
+  const [skipped, setSkipped] = useState(0)
+  const [failed, setFailed] = useState(0)
+  const [importErrors, setImportErrors] = useState<ImportErr[]>([])
+  const [finalResult, setFinalResult] = useState<ImportJob | null>(null)
+  const [showErrors, setShowErrors] = useState(false)
+
+  const { lastMessage } = useWS()
 
   // Edit modal state
   const [editingVideo, setEditingVideo] = useState<VideoWithTags | null>(null)
@@ -82,20 +96,108 @@ export default function VideoManagePage() {
     listTags().then(setAllTags).catch(() => {})
   }, [])
 
-  // Import handler
-  async function handleImport() {
-    if (!importDir.trim()) return
-    setImporting(true)
-    setImportResult(null)
+  // Fetch media sources when import modal opens
+  useEffect(() => {
+    if (!showImport) return
+    listMediaSources()
+      .then((sources) => {
+        const enabled = sources.filter((s) => s.enabled)
+        setMediaSources(enabled)
+        if (enabled.length > 0 && !selectedSourceID) {
+          setSelectedSourceID(enabled[0].id)
+        }
+      })
+      .catch(() => setMediaSources([]))
+  }, [showImport])
+
+  // Check for active import job on mount
+  useEffect(() => {
+    let cancelled = false
+    getActiveImportJob().then((job) => {
+      if (cancelled || !job) return
+      setShowImport(true)
+      setCurrentJobId(job.id)
+      setImportState('importing')
+      setProcessed(job.processed)
+      setImportTotal(job.total)
+      setImported(job.imported)
+      setSkipped(job.skipped)
+      setFailed(job.failed)
+      setImportErrors(job.errors)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  // WebSocket progress listener
+  useEffect(() => {
+    if (!lastMessage) return
+
+    switch (lastMessage.type) {
+      case 'import_progress': {
+        const p = lastMessage.payload as ImportProgress
+        if (p.job_id !== currentJobId) break
+        if (p.status === 'processing') {
+          setCurrentFile(p.file_name)
+        } else {
+          setProcessed(p.current)
+          setImportTotal(p.total)
+          if (p.status === 'success') setImported((prev) => prev + 1)
+          if (p.status === 'skipped') setSkipped((prev) => prev + 1)
+          if (p.status === 'error') {
+            setFailed((prev) => prev + 1)
+            setImportErrors((prev) => [...prev, { file_name: p.file_name, error: p.error || '' }])
+          }
+        }
+        break
+      }
+      case 'import_complete': {
+        const result = lastMessage.payload as ImportJob
+        if (result.id !== currentJobId) break
+        setFinalResult(result)
+        setImportState(result.failed > 0 && result.imported === 0 ? 'failed' : 'completed')
+        updateParams({ page: '1' })
+        break
+      }
+      case 'import_error': {
+        setImportState('failed')
+        break
+      }
+    }
+  }, [lastMessage, currentJobId])
+
+  function resetImportState() {
+    setImportState('idle')
+    setCurrentJobId(null)
+    setCurrentFile('')
+    setProcessed(0)
+    setImportTotal(0)
+    setImported(0)
+    setSkipped(0)
+    setFailed(0)
+    setImportErrors([])
+    setFinalResult(null)
+    setShowErrors(false)
+  }
+
+  async function handleStartImport() {
+    if (!selectedSourceID) return
     try {
-      const result = await importVideos(importDir.trim())
-      setImportResult(result)
-      // Refresh video list
-      updateParams({ page: '1' })
-    } catch {
-      setImportResult({ total_scanned: 0, imported: 0, skipped: 0, failed: 0, failures: [{ filename: '', error: 'import request failed' }] })
-    } finally {
-      setImporting(false)
+      const job = await importVideos(selectedSourceID)
+      setCurrentJobId(job.id)
+      setImportState('importing')
+      setImportTotal(job.total)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number } }
+      if (axiosErr?.response?.status === 409) {
+        getActiveImportJob().then((activeJob) => {
+          if (activeJob) {
+            setCurrentJobId(activeJob.id)
+            setImportState('importing')
+            setProcessed(activeJob.processed)
+            setImportTotal(activeJob.total)
+          }
+        }).catch(() => {})
+      }
     }
   }
 
@@ -144,7 +246,7 @@ export default function VideoManagePage() {
             </Link>
           </div>
           <button
-            onClick={() => { setShowImport(true); setImportResult(null); setImportDir('') }}
+            onClick={() => { setShowImport(true); resetImportState() }}
             className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded transition-colors"
           >
             匯入影片
@@ -225,48 +327,113 @@ export default function VideoManagePage() {
 
       {/* Import Modal */}
       {showImport && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => !importing && setShowImport(false)}>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => importState !== 'importing' && setShowImport(false)}>
           <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-white mb-4">匯入影片</h2>
-            {!importResult ? (
+
+            {importState === 'idle' && (
               <>
-                <input
-                  value={importDir}
-                  onChange={(e) => setImportDir(e.target.value)}
-                  placeholder="來源目錄路徑 (例: /data/videos)"
-                  className="w-full bg-gray-800 text-white text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-                  disabled={importing}
-                />
+                <label className="block text-sm text-gray-400 mb-1">選擇媒體來源</label>
+                {mediaSources.length === 0 ? (
+                  <p className="text-sm text-gray-500 mb-4">沒有可用的媒體來源</p>
+                ) : (
+                  <select
+                    value={selectedSourceID}
+                    onChange={(e) => setSelectedSourceID(e.target.value)}
+                    className="w-full bg-gray-800 text-white text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+                  >
+                    {mediaSources.map((s) => (
+                      <option key={s.id} value={s.id}>{s.label} ({s.mount_path})</option>
+                    ))}
+                  </select>
+                )}
                 <div className="flex justify-end gap-2">
-                  <button onClick={() => setShowImport(false)} disabled={importing} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">取消</button>
-                  <button onClick={handleImport} disabled={importing || !importDir.trim()} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded">
-                    {importing ? '匯入中...' : '開始匯入'}
+                  <button onClick={() => setShowImport(false)} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">取消</button>
+                  <button
+                    onClick={handleStartImport}
+                    disabled={!selectedSourceID || mediaSources.length === 0}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded"
+                  >
+                    開始匯入
                   </button>
                 </div>
               </>
-            ) : (
+            )}
+
+            {importState === 'importing' && (
               <>
-                <div className="space-y-2 text-sm mb-4">
-                  <div className="flex justify-between text-gray-300"><span>掃描檔案</span><span>{importResult.total_scanned}</span></div>
-                  <div className="flex justify-between text-green-400"><span>成功匯入</span><span>{importResult.imported}</span></div>
-                  <div className="flex justify-between text-gray-400"><span>已跳過（重複）</span><span>{importResult.skipped}</span></div>
-                  <div className="flex justify-between text-red-400"><span>失敗</span><span>{importResult.failed}</span></div>
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-400 mb-1">
+                    <span>進度</span>
+                    <span>{processed} / {importTotal || '...'}</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-2">
+                    <div
+                      className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: importTotal > 0 ? `${(processed / importTotal) * 100}%` : '0%' }}
+                    />
+                  </div>
                 </div>
-                {importResult.failures.length > 0 && (
+                {currentFile && (
+                  <p className="text-xs text-gray-500 mb-3 truncate">處理中: {currentFile}</p>
+                )}
+                <div className="grid grid-cols-3 gap-2 text-sm mb-4">
+                  <div className="text-center">
+                    <div className="text-green-400 font-medium">{imported}</div>
+                    <div className="text-gray-500 text-xs">成功</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-400 font-medium">{skipped}</div>
+                    <div className="text-gray-500 text-xs">跳過</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-red-400 font-medium">{failed}</div>
+                    <div className="text-gray-500 text-xs">失敗</div>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600 text-center">匯入進行中，請勿關閉此視窗...</p>
+              </>
+            )}
+
+            {(importState === 'completed' || importState === 'failed') && (
+              <>
+                <div className={`text-sm mb-3 ${importState === 'failed' ? 'text-red-400' : 'text-green-400'}`}>
+                  {importState === 'completed' ? '匯入完成' : '匯入失敗'}
+                </div>
+                <div className="space-y-2 text-sm mb-4">
+                  <div className="flex justify-between text-gray-300"><span>掃描檔案</span><span>{finalResult?.total ?? importTotal}</span></div>
+                  <div className="flex justify-between text-green-400"><span>成功匯入</span><span>{finalResult?.imported ?? imported}</span></div>
+                  <div className="flex justify-between text-gray-400"><span>已跳過（重複）</span><span>{finalResult?.skipped ?? skipped}</span></div>
+                  <div className="flex justify-between text-red-400"><span>失敗</span><span>{finalResult?.failed ?? failed}</span></div>
+                </div>
+                {(finalResult?.errors?.length ?? importErrors.length) > 0 && (
                   <div className="mb-4">
-                    <h3 className="text-xs font-medium text-red-400 mb-1">失敗詳情</h3>
-                    <div className="bg-gray-800 rounded p-2 max-h-40 overflow-y-auto space-y-1">
-                      {importResult.failures.map((f, i) => (
-                        <div key={i} className="text-xs">
-                          <span className="text-gray-300">{f.filename}</span>
-                          <span className="text-gray-600 ml-1">— {f.error}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <button
+                      onClick={() => setShowErrors(!showErrors)}
+                      className="text-xs text-red-400 hover:text-red-300 mb-1"
+                    >
+                      {showErrors ? '收起' : '展開'}失敗詳情 ({finalResult?.errors?.length ?? importErrors.length})
+                    </button>
+                    {showErrors && (
+                      <div className="bg-gray-800 rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                        {(finalResult?.errors ?? importErrors).map((e, i) => (
+                          <div key={i} className="text-xs">
+                            <span className="text-gray-300">{e.file_name}</span>
+                            <span className="text-gray-600 ml-1">— {e.error}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-                <div className="flex justify-end">
-                  <button onClick={() => setShowImport(false)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded">關閉</button>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { resetImportState(); setShowImport(false) }} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">關閉</button>
+                  <button
+                    onClick={resetImportState}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded"
+                  >
+                    重新匯入
+                  </button>
                 </div>
               </>
             )}
