@@ -13,7 +13,14 @@ client.interceptors.request.use((config) => {
 })
 
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Unwrap SuccessResponse { data: ... } wrapper
+    // PaginatedResponse has 'total' at top level, so skip those
+    if (response.data && 'data' in response.data && !('total' in response.data)) {
+      response.data = response.data.data
+    }
+    return response
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')

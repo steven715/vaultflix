@@ -91,6 +91,7 @@ func main() {
 	tagRepo := repository.NewTagRepository(pool)
 	historyRepo := repository.NewWatchHistoryRepository(pool)
 	favoriteRepo := repository.NewFavoriteRepository(pool)
+	recRepo := repository.NewRecommendationRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
@@ -98,6 +99,8 @@ func main() {
 	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
+
+	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
 
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
@@ -107,6 +110,7 @@ func main() {
 	tagHandler := handler.NewTagHandler(tagRepo, videoRepo)
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
+	recHandler := handler.NewRecommendationHandler(recService)
 
 	// Initialize default admin account
 	initDefaultAdmin(context.Background(), userRepo, authService, cfg)
@@ -149,6 +153,13 @@ func main() {
 		api.GET("/favorites", favoriteHandler.List)
 		api.POST("/favorites", favoriteHandler.Add)
 		api.DELETE("/favorites/:videoId", favoriteHandler.Remove)
+
+		// Recommendation endpoints
+		api.GET("/recommendations/today", recHandler.GetToday)
+		api.GET("/recommendations", recHandler.ListByDate)
+		api.POST("/recommendations", recHandler.Create)
+		api.PUT("/recommendations/:id", recHandler.UpdateSortOrder)
+		api.DELETE("/recommendations/:id", recHandler.Delete)
 	}
 
 	slog.Info("starting server", "port", cfg.ServerPort)

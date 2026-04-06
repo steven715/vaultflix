@@ -13,6 +13,7 @@ interface AuthContextValue {
   user: JWTPayload | null
   token: string | null
   isAuthenticated: boolean
+  isAdmin: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, isAdmin: user?.role === 'admin', login, logout }}>
       {children}
     </AuthContext.Provider>
   )

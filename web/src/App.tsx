@@ -1,11 +1,14 @@
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import LoginPage from './pages/LoginPage'
 import BrowsePage from './pages/BrowsePage'
 import PlayerPage from './pages/PlayerPage'
 import FavoritesPage from './pages/FavoritesPage'
 import HistoryPage from './pages/HistoryPage'
+import VideoManagePage from './pages/admin/VideoManagePage'
+import RecommendationManagePage from './pages/admin/RecommendationManagePage'
 
 function RootLayout() {
   return (
@@ -41,6 +44,18 @@ const router = createBrowserRouter([
           {
             path: '/history',
             element: <HistoryPage />,
+          },
+        ],
+      },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          {
+            element: <AdminRoute />,
+            children: [
+              { path: '/admin', element: <VideoManagePage /> },
+              { path: '/admin/recommendations', element: <RecommendationManagePage /> },
+            ],
           },
         ],
       },

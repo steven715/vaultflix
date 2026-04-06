@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { listVideos } from '../api/videos'
-import type { VideoWithTags } from '../types'
+import { getTodayRecommendations } from '../api/recommendations'
+import type { VideoWithTags, RecommendationItem } from '../types'
 import Header from '../components/Header'
 import TagSidebar from '../components/TagSidebar'
 import VideoCard from '../components/VideoCard'
 import Pagination from '../components/Pagination'
+import { formatDuration } from '../utils/format'
 
 const SORT_OPTIONS = [
   { value: 'created_at', label: '最新' },
@@ -19,6 +21,8 @@ export default function BrowsePage() {
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
+  const [recsLoaded, setRecsLoaded] = useState(false)
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || 20
@@ -79,6 +83,16 @@ export default function BrowsePage() {
     updateParams({ sort_order: sortOrder === 'asc' ? 'desc' : 'asc', page: '1' })
   }
 
+  // Fetch today's recommendations once
+  useEffect(() => {
+    let cancelled = false
+    getTodayRecommendations()
+      .then((items) => { if (!cancelled) setRecommendations(items) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setRecsLoaded(true) })
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -118,6 +132,44 @@ export default function BrowsePage() {
         <TagSidebar selectedTagIds={selectedTagIds} onTagsChange={handleTagsChange} />
 
         <main className="flex-1 p-4 overflow-y-auto">
+          {/* Today's recommendations */}
+          {recsLoaded && recommendations.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-white mb-3">
+                {recommendations[0].is_fallback ? '為你推薦' : '今日推薦'}
+              </h2>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {recommendations.map((rec) => (
+                  <Link
+                    key={rec.id}
+                    to={`/videos/${rec.video_id}`}
+                    className="shrink-0 w-44 group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-indigo-500 transition-all"
+                  >
+                    <div className="aspect-video bg-gray-800 relative">
+                      {rec.thumbnail_url ? (
+                        <img src={rec.thumbnail_url} alt={rec.title} className="w-full h-full object-cover" loading="lazy" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+                          </svg>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded">
+                        {formatDuration(rec.duration_seconds)}
+                      </span>
+                    </div>
+                    <div className="p-2">
+                      <h3 className="text-xs text-white font-medium line-clamp-2 group-hover:text-indigo-400 transition-colors">
+                        {rec.title}
+                      </h3>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Sort controls */}
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-gray-500">
