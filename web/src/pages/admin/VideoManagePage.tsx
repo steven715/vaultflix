@@ -3,11 +3,11 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
 import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob } from '../../api/admin'
-import type { VideoWithTags, TagWithCount, ImportJob, ImportProgress, ImportError as ImportErr, MediaSource } from '../../types'
-import { useWS } from '../../contexts/WebSocketContext'
+import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
 import Header from '../../components/Header'
 import Pagination from '../../components/Pagination'
 import TagInput from '../../components/TagInput'
+import ImportProgress from '../../components/admin/ImportProgress'
 import { formatDuration, formatFileSize } from '../../utils/format'
 
 export default function VideoManagePage() {
@@ -24,17 +24,6 @@ export default function VideoManagePage() {
   const [mediaSources, setMediaSources] = useState<MediaSource[]>([])
   const [selectedSourceID, setSelectedSourceID] = useState('')
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
-  const [currentFile, setCurrentFile] = useState('')
-  const [processed, setProcessed] = useState(0)
-  const [importTotal, setImportTotal] = useState(0)
-  const [imported, setImported] = useState(0)
-  const [skipped, setSkipped] = useState(0)
-  const [failed, setFailed] = useState(0)
-  const [importErrors, setImportErrors] = useState<ImportErr[]>([])
-  const [finalResult, setFinalResult] = useState<ImportJob | null>(null)
-  const [showErrors, setShowErrors] = useState(false)
-
-  const { lastMessage } = useWS()
 
   // Edit modal state
   const [editingVideo, setEditingVideo] = useState<VideoWithTags | null>(null)
@@ -118,65 +107,13 @@ export default function VideoManagePage() {
       setShowImport(true)
       setCurrentJobId(job.id)
       setImportState('importing')
-      setProcessed(job.processed)
-      setImportTotal(job.total)
-      setImported(job.imported)
-      setSkipped(job.skipped)
-      setFailed(job.failed)
-      setImportErrors(job.errors)
     }).catch(() => {})
     return () => { cancelled = true }
   }, [])
 
-  // WebSocket progress listener
-  useEffect(() => {
-    if (!lastMessage) return
-
-    switch (lastMessage.type) {
-      case 'import_progress': {
-        const p = lastMessage.payload as ImportProgress
-        if (p.job_id !== currentJobId) break
-        if (p.status === 'processing') {
-          setCurrentFile(p.file_name)
-        } else {
-          setProcessed(p.current)
-          setImportTotal(p.total)
-          if (p.status === 'success') setImported((prev) => prev + 1)
-          if (p.status === 'skipped') setSkipped((prev) => prev + 1)
-          if (p.status === 'error') {
-            setFailed((prev) => prev + 1)
-            setImportErrors((prev) => [...prev, { file_name: p.file_name, error: p.error || '' }])
-          }
-        }
-        break
-      }
-      case 'import_complete': {
-        const result = lastMessage.payload as ImportJob
-        if (result.id !== currentJobId) break
-        setFinalResult(result)
-        setImportState(result.failed > 0 && result.imported === 0 ? 'failed' : 'completed')
-        updateParams({ page: '1' })
-        break
-      }
-      case 'import_error': {
-        setImportState('failed')
-        break
-      }
-    }
-  }, [lastMessage, currentJobId])
-
   function resetImportState() {
     setImportState('idle')
     setCurrentJobId(null)
-    setCurrentFile('')
-    setProcessed(0)
-    setImportTotal(0)
-    setImported(0)
-    setSkipped(0)
-    setFailed(0)
-    setImportErrors([])
-    setFinalResult(null)
-    setShowErrors(false)
   }
 
   async function handleStartImport() {
@@ -185,7 +122,6 @@ export default function VideoManagePage() {
       const job = await importVideos(selectedSourceID)
       setCurrentJobId(job.id)
       setImportState('importing')
-      setImportTotal(job.total)
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number } }
       if (axiosErr?.response?.status === 409) {
@@ -193,8 +129,6 @@ export default function VideoManagePage() {
           if (activeJob) {
             setCurrentJobId(activeJob.id)
             setImportState('importing')
-            setProcessed(activeJob.processed)
-            setImportTotal(activeJob.total)
           }
         }).catch(() => {})
       }
@@ -360,81 +294,21 @@ export default function VideoManagePage() {
               </>
             )}
 
-            {importState === 'importing' && (
+            {(importState === 'importing' || importState === 'completed' || importState === 'failed') && currentJobId && (
               <>
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm text-gray-400 mb-1">
-                    <span>進度</span>
-                    <span>{processed} / {importTotal || '...'}</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-2">
-                    <div
-                      className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: importTotal > 0 ? `${(processed / importTotal) * 100}%` : '0%' }}
-                    />
-                  </div>
-                </div>
-                {currentFile && (
-                  <p className="text-xs text-gray-500 mb-3 truncate">處理中: {currentFile}</p>
-                )}
-                <div className="grid grid-cols-3 gap-2 text-sm mb-4">
-                  <div className="text-center">
-                    <div className="text-green-400 font-medium">{imported}</div>
-                    <div className="text-gray-500 text-xs">成功</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-gray-400 font-medium">{skipped}</div>
-                    <div className="text-gray-500 text-xs">跳過</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-red-400 font-medium">{failed}</div>
-                    <div className="text-gray-500 text-xs">失敗</div>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 text-center">匯入進行中，請勿關閉此視窗...</p>
-              </>
-            )}
-
-            {(importState === 'completed' || importState === 'failed') && (
-              <>
-                <div className={`text-sm mb-3 ${importState === 'failed' ? 'text-red-400' : 'text-green-400'}`}>
-                  {importState === 'completed' ? '匯入完成' : '匯入失敗'}
-                </div>
-                <div className="space-y-2 text-sm mb-4">
-                  <div className="flex justify-between text-gray-300"><span>掃描檔案</span><span>{finalResult?.total ?? importTotal}</span></div>
-                  <div className="flex justify-between text-green-400"><span>成功匯入</span><span>{finalResult?.imported ?? imported}</span></div>
-                  <div className="flex justify-between text-gray-400"><span>已跳過（重複）</span><span>{finalResult?.skipped ?? skipped}</span></div>
-                  <div className="flex justify-between text-red-400"><span>失敗</span><span>{finalResult?.failed ?? failed}</span></div>
-                </div>
-                {(finalResult?.errors?.length ?? importErrors.length) > 0 && (
-                  <div className="mb-4">
-                    <button
-                      onClick={() => setShowErrors(!showErrors)}
-                      className="text-xs text-red-400 hover:text-red-300 mb-1"
-                    >
-                      {showErrors ? '收起' : '展開'}失敗詳情 ({finalResult?.errors?.length ?? importErrors.length})
-                    </button>
-                    {showErrors && (
-                      <div className="bg-gray-800 rounded p-2 max-h-40 overflow-y-auto space-y-1">
-                        {(finalResult?.errors ?? importErrors).map((e, i) => (
-                          <div key={i} className="text-xs">
-                            <span className="text-gray-300">{e.file_name}</span>
-                            <span className="text-gray-600 ml-1">— {e.error}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                <ImportProgress jobId={currentJobId} onComplete={() => {
+                  setImportState('completed')
+                  updateParams({ page: '1' })
+                }} />
+                {importState !== 'importing' && (
+                  <div className="flex justify-end gap-2 mt-3">
+                    <button onClick={() => { resetImportState(); setShowImport(false) }} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">關閉</button>
+                    <button onClick={resetImportState} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded">重新匯入</button>
                   </div>
                 )}
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => { resetImportState(); setShowImport(false) }} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">關閉</button>
-                  <button
-                    onClick={resetImportState}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded"
-                  >
-                    重新匯入
-                  </button>
-                </div>
+                {importState === 'importing' && (
+                  <p className="text-xs text-gray-600 text-center mt-3">匯入進行中，請勿關閉此視窗...</p>
+                )}
               </>
             )}
           </div>
