@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,9 +17,13 @@ func init() {
 
 const testJWTSecret = "test-secret-key"
 
-func generateTestToken(secret string, claims jwt.MapClaims) string {
+func generateTestToken(t testing.TB, secret string, claims jwt.MapClaims) string {
+	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, _ := token.SignedString([]byte(secret))
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("failed to sign test token: %v", err)
+	}
 	return signed
 }
 
@@ -45,7 +50,7 @@ func setupAuthRouter(secret string) *gin.Engine {
 }
 
 func TestJWTAuth_TokenSources(t *testing.T) {
-	validToken := generateTestToken(testJWTSecret, validClaims())
+	validToken := generateTestToken(t, testJWTSecret, validClaims())
 	invalidToken := "invalid.token.here"
 
 	tests := []struct {
@@ -90,7 +95,7 @@ func TestJWTAuth_TokenSources(t *testing.T) {
 		},
 		{
 			name: "expired token from header",
-			headerToken: generateTestToken(testJWTSecret, jwt.MapClaims{
+			headerToken: generateTestToken(t, testJWTSecret, jwt.MapClaims{
 				"user_id":  "u1",
 				"username": "u",
 				"role":     "viewer",
@@ -120,6 +125,16 @@ func TestJWTAuth_TokenSources(t *testing.T) {
 			if w.Code != tt.expectedStatus {
 				t.Fatalf("expected status %d, got %d, body: %s",
 					tt.expectedStatus, w.Code, w.Body.String())
+			}
+
+			if tt.expectedUserID != "" {
+				var resp map[string]string
+				if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+					t.Fatalf("failed to parse response: %v", err)
+				}
+				if resp["user_id"] != tt.expectedUserID {
+					t.Errorf("expected user_id %s, got %s", tt.expectedUserID, resp["user_id"])
+				}
 			}
 		})
 	}
