@@ -544,3 +544,79 @@ func TestStreamVideo(t *testing.T) {
 		})
 	}
 }
+
+func TestImportHandler_Async_Conflict(t *testing.T) {
+	notifier := &mock.Notifier{}
+	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+	importSvc.LockForTest() // simulate a running job
+
+	mediaSourceRepo := &mock.MediaSourceRepository{
+		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
+			return &model.MediaSource{ID: "src-1", Label: "Test", MountPath: "/tmp", Enabled: true}, nil
+		},
+	}
+	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/")
+
+	r := gin.New()
+	h := NewVideoHandler(importSvc, nil, mediaSourceSvc)
+	r.POST("/api/videos/import", func(c *gin.Context) {
+		c.Set("user_id", "test-user")
+		h.Import(c)
+	})
+
+	body := strings.NewReader(`{"source_id":"src-1"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	importSvc.UnlockForTest()
+}
+
+func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
+	notifier := &mock.Notifier{}
+	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+
+	r := gin.New()
+	h := NewVideoHandler(importSvc, nil, nil)
+	r.GET("/api/import-jobs/active", h.GetActiveImportJob)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/import-jobs/active", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Data interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Data != nil {
+		t.Errorf("expected null data, got %v", resp.Data)
+	}
+}
+
+func TestGetImportJobHandler_NotFound(t *testing.T) {
+	notifier := &mock.Notifier{}
+	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+
+	r := gin.New()
+	h := NewVideoHandler(importSvc, nil, nil)
+	r.GET("/api/import-jobs/:id", h.GetImportJob)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/import-jobs/nonexistent", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
