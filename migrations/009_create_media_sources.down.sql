@@ -1,0 +1,3 @@
+ALTER TABLE videos DROP COLUMN IF EXISTS file_path;
+ALTER TABLE videos DROP COLUMN IF EXISTS source_id;
+DROP TABLE IF EXISTS media_sources;
