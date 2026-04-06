@@ -5,9 +5,10 @@ import { useAuth } from '../contexts/AuthContext'
 interface HeaderProps {
   searchQuery: string
   onSearch: (query: string) => void
+  onLogoClick?: () => void
 }
 
-export default function Header({ searchQuery, onSearch }: HeaderProps) {
+export default function Header({ searchQuery, onSearch, onLogoClick }: HeaderProps) {
   const { user, isAdmin, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
@@ -21,7 +22,16 @@ export default function Header({ searchQuery, onSearch }: HeaderProps) {
 
   return (
     <header className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-4">
-      <Link to="/" className="text-xl font-bold text-white shrink-0 hover:text-indigo-400 transition-colors">
+      <Link
+        to="/"
+        onClick={(e) => {
+          if (location.pathname === '/' && onLogoClick) {
+            e.preventDefault()
+            onLogoClick()
+          }
+        }}
+        className="text-xl font-bold text-white shrink-0 hover:text-indigo-400 transition-colors"
+      >
         Vaultflix
       </Link>
 

@@ -328,6 +328,28 @@ volumes:
 
 ---
 
+## Chrome DevTools MCP（前端除錯）
+
+Claude Code 透過 Chrome DevTools Protocol 連接瀏覽器進行前端除錯（截圖、DOM 檢查、Network 監控、Console 讀取等）。
+
+### 前置需求
+
+- **Google Chrome**：安裝於預設路徑 `C:\Program Files\Google\Chrome\Application\chrome.exe`
+- **PowerShell 7+（pwsh）**：hook 使用 `shell: "powershell"`，需要 `pwsh` 指令可用。安裝方式：`winget install Microsoft.PowerShell`
+
+### 運作方式
+
+- Plugin 設定在 `.claude/settings.json` 的 `enabledPlugins` 中，clone 後自動啟用
+- `PreToolUse` hook 會在 Claude 呼叫任何 chrome-devtools 工具前，自動檢查 port 9222 並啟動 Chrome debug 模式
+- 使用獨立的 user-data-dir（`$env:USERPROFILE\.chrome-debug-profile`），不影響日常瀏覽器
+
+### 注意事項
+
+- Chrome 路徑非預設時，需在 `.claude/settings.local.json` 覆寫 hook command
+- 若 port 9222 已被佔用（如另一個 Chrome debug instance），hook 會跳過啟動
+
+---
+
 ## WebSocket 規範
 
 ### Hub Pattern

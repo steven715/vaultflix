@@ -83,7 +83,9 @@ export default function BrowsePage() {
     updateParams({ sort_order: sortOrder === 'asc' ? 'desc' : 'asc', page: '1' })
   }
 
-  // Fetch today's recommendations once
+  const [recsKey, setRecsKey] = useState(0)
+
+  // Fetch today's recommendations (re-fetch when recsKey changes)
   useEffect(() => {
     let cancelled = false
     getTodayRecommendations()
@@ -91,7 +93,7 @@ export default function BrowsePage() {
       .catch(() => {})
       .finally(() => { if (!cancelled) setRecsLoaded(true) })
     return () => { cancelled = true }
-  }, [])
+  }, [recsKey])
 
   useEffect(() => {
     let cancelled = false
@@ -126,7 +128,7 @@ export default function BrowsePage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
-      <Header searchQuery={searchInput} onSearch={handleSearch} />
+      <Header searchQuery={searchInput} onSearch={handleSearch} onLogoClick={() => setRecsKey((k) => k + 1)} />
 
       <div className="flex flex-1 overflow-hidden">
         <TagSidebar selectedTagIds={selectedTagIds} onTagsChange={handleTagsChange} />

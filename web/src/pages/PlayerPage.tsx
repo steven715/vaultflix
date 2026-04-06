@@ -4,7 +4,7 @@ import { getVideo } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
-import { formatDuration, formatFileSize, formatDate } from '../utils/format'
+import { formatDuration, formatDate } from '../utils/format'
 import { useAuth } from '../contexts/AuthContext'
 
 const PROGRESS_THROTTLE_MS = 10_000
@@ -118,14 +118,23 @@ export default function PlayerPage() {
     })
   }
 
-  // Resume playback from watch_progress
+  // Resume playback from watch_progress + restore volume
   function handleLoadedMetadata() {
     if (!video || !videoRef.current) return
+    const savedVolume = localStorage.getItem('vaultflix-volume')
+    if (savedVolume !== null) {
+      videoRef.current.volume = parseFloat(savedVolume)
+    }
     if (video.watch_progress > 0) {
       videoRef.current.currentTime = video.watch_progress
       setToast(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
       setTimeout(() => setToast(''), 3000)
     }
+  }
+
+  function handleVolumeChange() {
+    if (!videoRef.current) return
+    localStorage.setItem('vaultflix-volume', String(videoRef.current.volume))
   }
 
   // Handle presigned URL expiry: re-fetch on video error (max 1 retry)
@@ -214,6 +223,7 @@ export default function PlayerPage() {
             onTimeUpdate={handleTimeUpdate}
             onPause={handlePause}
             onLoadedMetadata={handleLoadedMetadata}
+            onVolumeChange={handleVolumeChange}
           />
           {/* Toast */}
           {toast && (
@@ -258,7 +268,6 @@ export default function PlayerPage() {
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
             <span>{formatDuration(video.duration_seconds)}</span>
             <span>{video.resolution}</span>
-            <span>{formatFileSize(video.file_size_bytes)}</span>
             <span>{video.mime_type}</span>
             <span>{formatDate(video.created_at)}</span>
           </div>
