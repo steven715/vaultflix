@@ -14,8 +14,24 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 	secret := []byte(jwtSecret)
 
 	return func(c *gin.Context) {
+		var tokenString string
+
+		// Priority 1: Authorization header
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		// Priority 2: query parameter fallback for contexts where custom headers
+		// cannot be set (e.g. <video src>, WebSocket upgrade, SSE, file download).
+		// Trade-off: token appears in server access logs and browser history.
+		// Acceptable for self-hosted use; production-grade systems should use
+		// short-lived tokens or a separate cookie-based auth for streaming.
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
 				Error:   "unauthorized",
 				Message: "missing token",
@@ -23,16 +39,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
-				Message: "invalid or expired token",
-			})
-			return
-		}
-
-		token, err := jwt.Parse(parts[1], func(t *jwt.Token) (interface{}, error) {
+		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, jwt.ErrSignatureInvalid
 			}
