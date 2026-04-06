@@ -95,6 +95,7 @@ func main() {
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
+	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService)
 	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
@@ -111,6 +112,7 @@ func main() {
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
 	recHandler := handler.NewRecommendationHandler(recService)
+	userHandler := handler.NewUserHandler(userService)
 
 	// Initialize default admin account
 	initDefaultAdmin(context.Background(), userRepo, authService, cfg)
@@ -153,6 +155,12 @@ func main() {
 		api.GET("/favorites", favoriteHandler.List)
 		api.POST("/favorites", favoriteHandler.Add)
 		api.DELETE("/favorites/:videoId", favoriteHandler.Remove)
+
+		// User management endpoints (admin only, enforced by Casbin)
+		api.GET("/users", userHandler.List)
+		api.POST("/users", userHandler.Create)
+		api.DELETE("/users/:id", userHandler.Delete)
+		api.PUT("/users/:id/password", userHandler.ResetPassword)
 
 		// Recommendation endpoints
 		api.GET("/recommendations/today", recHandler.GetToday)
