@@ -18,7 +18,7 @@ var upgrader = gorillaWS.Upgrader{
 	},
 }
 
-// WSHandler handles WebSocket upgrade requests and admin test endpoints.
+// WSHandler handles WebSocket upgrade requests.
 type WSHandler struct {
 	hub *websocket.Hub
 }
@@ -56,34 +56,4 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 
 	go client.WritePump()
 	go client.ReadPump()
-}
-
-type wsTestRequest struct {
-	UserID  string `json:"user_id" binding:"required"`
-	Message string `json:"message" binding:"required"`
-}
-
-// TestSend is a temporary admin-only endpoint for verifying WebSocket delivery.
-// POST /api/admin/ws-test
-// TODO: remove or keep as admin tool after Phase 12
-func (h *WSHandler) TestSend(c *gin.Context) {
-	var req wsTestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "user_id and message are required",
-		})
-		return
-	}
-
-	h.hub.SendToUser(req.UserID, &websocket.Message{
-		Type: websocket.TypeNotification,
-		Payload: websocket.NotificationPayload{
-			Title:   "Test",
-			Message: req.Message,
-			Level:   "info",
-		},
-	})
-
-	c.JSON(http.StatusOK, model.SuccessResponse{Data: "sent"})
 }
