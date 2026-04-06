@@ -5,11 +5,13 @@ import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
 import { formatDuration, formatFileSize, formatDate } from '../utils/format'
+import { useAuth } from '../contexts/AuthContext'
 
 const PROGRESS_THROTTLE_MS = 10_000
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
+  const { token } = useAuth()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -206,7 +208,7 @@ export default function PlayerPage() {
             ref={videoRef}
             controls
             preload="metadata"
-            src={video.stream_url}
+            src={token ? `${video.stream_url}?token=${token}` : undefined}
             className="w-full"
             onError={handleVideoError}
             onTimeUpdate={handleTimeUpdate}

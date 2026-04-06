@@ -6,8 +6,7 @@ export async function listVideos(params: VideoListParams): Promise<PaginatedResp
   return res.data
 }
 
-export async function getVideo(id: string, urlExpiryMinutes?: number): Promise<VideoDetail> {
-  const params = urlExpiryMinutes ? { url_expiry_minutes: urlExpiryMinutes } : undefined
-  const res = await client.get<VideoDetail>(`/videos/${id}`, { params })
+export async function getVideo(id: string): Promise<VideoDetail> {
+  const res = await client.get<VideoDetail>(`/videos/${id}`)
   return res.data
 }
