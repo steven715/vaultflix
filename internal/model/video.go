@@ -15,6 +15,8 @@ type Video struct {
 	OriginalFilename string    `json:"original_filename"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	SourceID         *string   `json:"source_id,omitempty"`
+	FilePath         *string   `json:"file_path,omitempty"`
 }
 
 type VideoWithTags struct {
