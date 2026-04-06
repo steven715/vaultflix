@@ -21,7 +21,7 @@ func init() {
 
 func setupVideoRouter(videoService *service.VideoService) (*gin.Engine, *VideoHandler) {
 	r := gin.New()
-	h := NewVideoHandler(nil, videoService)
+	h := NewVideoHandler(nil, videoService, nil)
 	r.GET("/api/videos", h.List)
 	r.GET("/api/videos/:id", h.GetByID)
 	r.DELETE("/api/videos/:id", h.Delete)

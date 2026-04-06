@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -50,8 +51,8 @@ func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient
 	}
 }
 
-func (s *ImportService) Run(ctx context.Context, sourceDir string) (*ImportResult, error) {
-	files, err := s.scanVideoFiles(sourceDir)
+func (s *ImportService) Run(ctx context.Context, source *model.MediaSource) (*ImportResult, error) {
+	files, err := s.scanVideoFiles(source.MountPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan video files: %w", err)
 	}
@@ -62,7 +63,7 @@ func (s *ImportService) Run(ctx context.Context, sourceDir string) (*ImportResul
 	}
 
 	for _, filePath := range files {
-		err := s.processFile(ctx, filePath)
+		err := s.processFile(ctx, source, filePath)
 		if err != nil {
 			if isSkipError(err) {
 				result.Skipped++
@@ -84,6 +85,8 @@ func (s *ImportService) Run(ctx context.Context, sourceDir string) (*ImportResul
 	}
 
 	slog.Info("import completed",
+		"source_id", source.ID,
+		"source_label", source.Label,
 		"total_scanned", result.TotalScanned,
 		"imported", result.Imported,
 		"skipped", result.Skipped,
@@ -132,7 +135,7 @@ func isSkipError(err error) bool {
 	return ok
 }
 
-func (s *ImportService) processFile(ctx context.Context, filePath string) error {
+func (s *ImportService) processFile(ctx context.Context, source *model.MediaSource, filePath string) error {
 	filename := filepath.Base(filePath)
 
 	stat, err := os.Stat(filePath)
@@ -141,16 +144,27 @@ func (s *ImportService) processFile(ctx context.Context, filePath string) error 
 	}
 	fileSize := stat.Size()
 
-	exists, err := s.videoRepo.ExistsByFilenameAndSize(ctx, filename, fileSize)
+	// Calculate relative path from source mount path
+	relPath, err := filepath.Rel(source.MountPath, filePath)
 	if err != nil {
-		return fmt.Errorf("failed to check idempotency for %s: %w", filename, err)
+		return fmt.Errorf("failed to calculate relative path for %s: %w", filePath, err)
 	}
-	if exists {
+	// Normalize to forward slashes for consistent storage (Linux paths in container)
+	relPath = filepath.ToSlash(relPath)
+
+	// Check if already imported using source_id + file_path
+	_, err = s.videoRepo.FindBySourceAndPath(ctx, source.ID, relPath)
+	if err == nil {
+		// Already exists, skip
 		slog.Info("video skipped, already imported",
 			"file", filename,
-			"size_bytes", fileSize,
+			"source_id", source.ID,
+			"file_path", relPath,
 		)
 		return &skipError{reason: "already imported"}
+	}
+	if !errors.Is(err, model.ErrNotFound) {
+		return fmt.Errorf("failed to check duplicate for %s: %w", filename, err)
 	}
 
 	metadata, err := s.probeMetadata(ctx, filePath)
@@ -166,12 +180,7 @@ func (s *ImportService) processFile(ctx context.Context, filePath string) error 
 	}
 	defer os.Remove(thumbnailPath)
 
-	videoObjectKey := fmt.Sprintf("videos/%s/%s", videoID, filename)
 	thumbnailObjectKey := fmt.Sprintf("thumbnails/%s.jpg", videoID)
-
-	if err := s.minioSvc.UploadVideo(ctx, videoObjectKey, filePath); err != nil {
-		return fmt.Errorf("failed to upload video %s: %w", filename, err)
-	}
 
 	if err := s.minioSvc.UploadThumbnail(ctx, thumbnailObjectKey, thumbnailPath); err != nil {
 		return fmt.Errorf("failed to upload thumbnail for %s: %w", filename, err)
@@ -183,13 +192,15 @@ func (s *ImportService) processFile(ctx context.Context, filePath string) error 
 		ID:               videoID,
 		Title:            title,
 		Description:      "",
-		MinIOObjectKey:   videoObjectKey,
+		MinIOObjectKey:   "",
 		ThumbnailKey:     thumbnailObjectKey,
 		DurationSeconds:  metadata.durationSeconds,
 		Resolution:       metadata.resolution,
 		FileSizeBytes:    fileSize,
 		MimeType:         metadata.mimeType,
 		OriginalFilename: filename,
+		SourceID:         &source.ID,
+		FilePath:         &relPath,
 	}
 
 	if err := s.videoRepo.Create(ctx, video); err != nil {
@@ -199,6 +210,8 @@ func (s *ImportService) processFile(ctx context.Context, filePath string) error 
 	slog.Info("video imported",
 		"video_id", videoID,
 		"file", filename,
+		"source_id", source.ID,
+		"file_path", relPath,
 		"duration", metadata.durationSeconds,
 		"resolution", metadata.resolution,
 		"size_bytes", fileSize,

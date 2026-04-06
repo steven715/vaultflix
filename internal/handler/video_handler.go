@@ -22,19 +22,21 @@ var allowedSortBy = map[string]bool{
 }
 
 type VideoHandler struct {
-	importService *service.ImportService
-	videoService  *service.VideoService
+	importService      *service.ImportService
+	videoService       *service.VideoService
+	mediaSourceService *service.MediaSourceService
 }
 
-func NewVideoHandler(importService *service.ImportService, videoService *service.VideoService) *VideoHandler {
+func NewVideoHandler(importService *service.ImportService, videoService *service.VideoService, mediaSourceService *service.MediaSourceService) *VideoHandler {
 	return &VideoHandler{
-		importService: importService,
-		videoService:  videoService,
+		importService:      importService,
+		videoService:       videoService,
+		mediaSourceService: mediaSourceService,
 	}
 }
 
 type importRequest struct {
-	SourceDir string `json:"source_dir" binding:"required"`
+	SourceID string `json:"source_id" binding:"required"`
 }
 
 func (h *VideoHandler) Import(c *gin.Context) {
@@ -42,14 +44,33 @@ func (h *VideoHandler) Import(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
-			Message: "source_dir is required",
+			Message: "source_id is required",
 		})
 		return
 	}
 
-	result, err := h.importService.Run(c.Request.Context(), req.SourceDir)
+	ctx := c.Request.Context()
+
+	source, err := h.mediaSourceService.GetByID(ctx, req.SourceID)
 	if err != nil {
-		slog.Error("video import failed", "error", err, "source_dir", req.SourceDir)
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "media source not found",
+			})
+			return
+		}
+		slog.Error("failed to get media source", "error", err, "source_id", req.SourceID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to get media source",
+		})
+		return
+	}
+
+	result, err := h.importService.Run(ctx, source)
+	if err != nil {
+		slog.Error("video import failed", "error", err, "source_id", req.SourceID)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "import_failed",
 			Message: "failed to import videos",

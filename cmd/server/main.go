@@ -109,7 +109,7 @@ func main() {
 	videoService.SetUserServices(favoriteService, historyService)
 
 	authHandler := handler.NewAuthHandler(authService)
-	videoHandler := handler.NewVideoHandler(importService, videoService)
+	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService)
 	tagHandler := handler.NewTagHandler(tagRepo, videoRepo)
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
