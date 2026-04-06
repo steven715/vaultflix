@@ -9,12 +9,13 @@ React SPA (localhost:3000)
     |
     |-- API requests --> Nginx reverse proxy --> Go API Server (:8080) --> PostgreSQL
     |                                               |
-    |                                               +--> MinIO (generate pre-signed URLs)
+    |                                               +--> MinIO (thumbnails only)
+    |                                               +--> Local disk (video streaming via API)
     |
-    +-- Video streaming --> MinIO (:9000) directly (pre-signed URL, no API proxy)
+    +-- WebSocket --> Go API Server (real-time import progress)
 ```
 
-**Key design decision**: Video bytes never pass through the Go API server. The API generates time-limited pre-signed URLs, and the browser's `<video>` element fetches directly from MinIO. MinIO natively handles HTTP Range Requests for seeking.
+**Key design decision**: Video files stay on local disk. The Go API server streams video bytes directly via `http.ServeFile`, which natively handles HTTP Range Requests for seeking. MinIO is used only for thumbnails. Import progress is pushed in real-time via WebSocket.
 
 ### Tech Stack
 
@@ -36,20 +37,22 @@ React SPA (localhost:3000)
 - **Authorization**: Casbin RBAC with admin and viewer roles
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
-- **Video Streaming**: Pre-signed URL based playback with HTTP Range Request support (seeking)
+- **Video Streaming**: API-based streaming via `http.ServeFile` with HTTP Range Request support (seeking)
 - **Tag System**: Categorized tags (genre, actor, studio, custom) with video-tag associations
-- **React Frontend**: Login, browse, and player pages with responsive dark theme
+- **Media Source Management**: Admin UI for managing media sources (CRUD) with real-time import progress
+- **Watch History**: Track and resume video playback progress
+- **Favorites**: Bookmark videos for quick access
+- **Daily Recommendations**: Admin-curated daily video picks
+- **User Management**: Admin UI for user CRUD, enable/disable, password reset
+- **WebSocket**: Real-time import progress notifications
+- **React Frontend**: Login, browse, player, and admin pages with responsive dark theme
 
 ### Planned
 
-- Watch history with resume playback
-- Favorites / bookmarks
-- Daily recommendations (admin-curated)
-- Admin dashboard
 - Meilisearch full-text search
 - LLM-powered semantic search
-- Mobile client
 - Automatic tagging
+- Mobile client
 
 ## Prerequisites
 
@@ -67,16 +70,19 @@ cp .env.example .env
 
 Edit `.env` and set your passwords and secrets. The defaults work for local development, but you should at minimum change `JWT_SECRET`, `DB_PASSWORD`, `MINIO_SECRET_KEY`, and `ADMIN_DEFAULT_PASSWORD`.
 
-### 2. Configure video source directory
+### 2. Configure disk mounts
 
-Edit `docker-compose.yml` and update the video mount path in the `vaultflix-api` service to point to your local video directory:
+Edit `docker-compose.yml` and mount your video disk(s) as read-only volumes in the `vaultflix-api` service:
 
 ```yaml
   vaultflix-api:
     volumes:
       # ...
-      - /path/to/your/videos:/mnt/videos  # <-- change this
+      - D:/:/mnt/host/D:ro    # Mount D: drive
+      - E:/:/mnt/host/E:ro    # Mount E: drive (optional)
 ```
+
+Each mounted disk will be accessible under `/mnt/host/<drive>/` inside the container.
 
 ### 3. Start all services
 
@@ -95,20 +101,13 @@ This automatically:
 
 Open **http://localhost:3000** in your browser. Log in with the admin credentials from your `.env` file (defaults: `admin` / `change-me-admin-password`).
 
-### 5. Import videos
+### 5. Add media sources and import videos
 
-Trigger a video import via the API. This scans the mounted directory, uploads files to MinIO, and extracts metadata:
+Open **http://localhost:3000**, log in as admin, then navigate to **媒體來源** (Media Sources) in the top navigation bar.
 
-```bash
-curl -X POST http://localhost:8080/api/videos/import \
-  -H "Authorization: Bearer $(curl -s -X POST http://localhost:8080/api/auth/login \
-    -H 'Content-Type: application/json' \
-    -d '{"username":"admin","password":"YOUR_ADMIN_PASSWORD"}' | jq -r '.data.token')" \
-  -H 'Content-Type: application/json' \
-  -d '{"source_dir": "/mnt/videos"}'
-```
-
-Import runs synchronously. For large libraries this may take a while (~4m40s for 18 GB in testing).
+1. Click **+ 新增來源** to add a media source (e.g., label: "D槽影片", path: `/mnt/host/D/Videos`)
+2. Click **掃描匯入** on the source card to start importing
+3. Watch the real-time progress bar as videos are scanned, metadata extracted, and thumbnails generated
 
 ### 6. Browse and play
 
@@ -249,18 +248,52 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | POST | `/api/videos/:id/tags` | Add tag to video | admin |
 | DELETE | `/api/videos/:id/tags/:tagId` | Remove tag from video | admin |
 
+### Watch History
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/watch-history` | Save playback progress | viewer+ |
+| GET | `/api/watch-history` | List watch history | viewer+ |
+
+### Favorites
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/favorites` | List favorites | viewer+ |
+| POST | `/api/favorites` | Add favorite | viewer+ |
+| DELETE | `/api/favorites/:videoId` | Remove favorite | viewer+ |
+
+### Media Sources
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/media-sources` | List all media sources (with video counts) | admin |
+| POST | `/api/media-sources` | Create a media source | admin |
+| PUT | `/api/media-sources/:id` | Update media source label/enabled | admin |
+| DELETE | `/api/media-sources/:id` | Delete a media source | admin |
+
+### Import Jobs
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/videos/import` | Start async video import | admin |
+| GET | `/api/import-jobs/active` | Get currently running import job | admin |
+| GET | `/api/import-jobs/:id` | Get import job by ID | admin |
+
+### WebSocket
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/ws` | WebSocket connection (import progress, notifications) | Any |
+
 For full request/response details, see the handler source code in [`internal/handler/`](internal/handler/).
 
 ## Roadmap
 
-- **Watch history & resume**: Track playback progress, continue where you left off
-- **Favorites**: Bookmark videos for quick access
-- **Daily recommendations**: Admin-curated daily picks
 - **Full-text search**: Meilisearch integration for fast, typo-tolerant search
 - **Semantic search**: LLM-powered natural language video discovery
 - **Auto-tagging**: Automated metadata extraction and categorization
 - **Mobile client**: Dedicated mobile app or responsive PWA
-- **Admin dashboard**: Web UI for import management, user management, and system monitoring
 
 ## License
 

@@ -2,7 +2,7 @@
 
 ## 專案概述
 
-Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 Go API Server，前端為 React SPA，影片存放在 MinIO，metadata 存於 PostgreSQL。
+Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 Go API Server，前端為 React SPA，影片保留在本機磁碟，系統直接讀取串流；MinIO 僅存縮圖與預覽，metadata 存於 PostgreSQL。
 
 ---
 
@@ -310,6 +310,102 @@ useEffect(() => { fetchData() }, [fetchData])
 - 環境變數透過 `.env` 檔案注入，不寫死在 `docker-compose.yml` 中
 - Health check 必須配置在每個服務上
 - 對外暴露 port 的服務（如 MinIO），`.env` 中必須同時定義 internal endpoint（Docker hostname）和 public endpoint（host-accessible），命名慣例：`<SERVICE>_ENDPOINT` / `<SERVICE>_PUBLIC_ENDPOINT`
+
+### 磁碟層級掛載策略
+
+影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟：
+
+```yaml
+volumes:
+  - D:/:/mnt/host/D:ro
+  - E:/:/mnt/host/E:ro
+```
+
+- 掛載點統一在 `/mnt/host/<磁碟代號>/` 下
+- 使用 `:ro`（read-only）防止容器內程式修改原始檔案
+- Media source 的 `mount_path` 必須在 `/mnt/host/` 前綴下
+- 新增磁碟時只需在 `docker-compose.yml` 加一行 volume mount + 在 Admin UI 新增 media source
+
+---
+
+## WebSocket 規範
+
+### Hub Pattern
+
+- WebSocket 連線管理集中在 `internal/websocket/` package
+- `Hub` struct 透過 channel 序列化所有 client 註冊/移除/訊息推送，避免 map 並發存取
+- 支援 per-user targeted message（`SendToUser`）和全域 broadcast
+- 同一使用者可有多個連線（多分頁）
+
+### 訊息協議
+
+```go
+type Message struct {
+    Type    string      `json:"type"`
+    Payload interface{} `json:"payload"`
+}
+```
+
+已定義的 type：
+- `import_progress` — 逐檔匯入進度
+- `import_complete` — 匯入完成（含最終 ImportJob）
+- `import_error` — 匯入致命錯誤
+- `notification` — 通用通知
+- `ping` — 心跳
+
+### Notifier Interface
+
+跨層依賴透過 `Notifier` interface 解耦，定義在 `internal/websocket/hub.go`：
+
+```go
+type Notifier interface {
+    SendToUser(userID string, msg *Message)
+    Broadcast(msg *Message)
+}
+```
+
+Service 層（如 `ImportService`）依賴此 interface，不直接依賴 `Hub` struct。
+
+### 前端重連策略
+
+- 使用 exponential backoff：初始 1s，每次 ×2，上限 30s
+- 重連次數上限 20 次，超過停止重連
+- 用 `useRef` 追蹤重連次數，避免 re-render 導致計數重置
+- 心跳間隔 50s，保持連線活躍
+
+---
+
+## 路徑安全規範
+
+### 基本原則
+
+所有使用者可控的檔案路徑必須經過驗證，防止路徑穿越攻擊。
+
+### 標準 Pattern
+
+```go
+// 1. 定義允許的前綴
+const AllowedMountPrefix = "/mnt/host/"
+
+// 2. Clean + prefix 檢查
+cleaned := filepath.Clean(path)
+if !strings.HasPrefix(cleaned, strings.TrimSuffix(prefix, string(filepath.Separator))) {
+    return model.ErrPathNotAllowed
+}
+
+// 3. 拒絕 Clean 後與原始路徑不一致的輸入（含 .., //, 結尾斜線等）
+if cleaned != path {
+    return model.ErrPathNotAllowed
+}
+
+// 4. 驗證路徑存在且為目錄
+info, err := os.Stat(cleaned)
+```
+
+### Sentinel Errors
+
+- `model.ErrPathNotAllowed` — 路徑不在允許前綴內，或包含非法組件
+- `model.ErrPathNotExist` — 路徑不存在於檔案系統
 
 ---
 
