@@ -1,4 +1,5 @@
 # Go
+/server
 *.exe
 *.exe~
 *.dll

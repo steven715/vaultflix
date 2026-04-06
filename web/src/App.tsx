@@ -1,5 +1,6 @@
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { WebSocketProvider } from './contexts/WebSocketContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import LoginPage from './pages/LoginPage'
@@ -14,7 +15,9 @@ import UserManagePage from './pages/admin/UserManagePage'
 function RootLayout() {
   return (
     <AuthProvider>
-      <Outlet />
+      <WebSocketProvider>
+        <Outlet />
+      </WebSocketProvider>
     </AuthProvider>
   )
 }

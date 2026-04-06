@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
@@ -17,6 +19,7 @@ import (
 	"github.com/steven/vaultflix/internal/middleware"
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/service"
+	"github.com/steven/vaultflix/internal/websocket"
 )
 
 func main() {
@@ -117,6 +120,15 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 
+	// Initialize WebSocket hub
+	hub := websocket.NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+	slog.Info("websocket hub started")
+
+	wsHandler := handler.NewWSHandler(hub)
+
 	// Initialize default admin account
 	initDefaultAdmin(context.Background(), userRepo, authService, cfg)
 
@@ -179,7 +191,23 @@ func main() {
 		api.POST("/media-sources", mediaSourceHandler.Create)
 		api.PUT("/media-sources/:id", mediaSourceHandler.Update)
 		api.DELETE("/media-sources/:id", mediaSourceHandler.Delete)
+
+		// WebSocket endpoint
+		api.GET("/ws", wsHandler.HandleWebSocket)
+
+		// Admin WebSocket test endpoint
+		// TODO: remove or keep as admin tool after Phase 12
+		api.POST("/admin/ws-test", wsHandler.TestSend)
 	}
+
+	// Graceful shutdown: cancel Hub context on SIGINT/SIGTERM
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		slog.Info("shutting down server")
+		cancel()
+	}()
 
 	slog.Info("starting server", "port", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
