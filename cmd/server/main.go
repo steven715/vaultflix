@@ -92,6 +92,7 @@ func main() {
 	historyRepo := repository.NewWatchHistoryRepository(pool)
 	favoriteRepo := repository.NewFavoriteRepository(pool)
 	recRepo := repository.NewRecommendationRepository(pool)
+	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
@@ -102,6 +103,7 @@ func main() {
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
 
 	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
+	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
@@ -113,6 +115,7 @@ func main() {
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
 	recHandler := handler.NewRecommendationHandler(recService)
 	userHandler := handler.NewUserHandler(userService)
+	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 
 	// Initialize default admin account
 	initDefaultAdmin(context.Background(), userRepo, authService, cfg)
@@ -169,6 +172,12 @@ func main() {
 		api.POST("/recommendations", recHandler.Create)
 		api.PUT("/recommendations/:id", recHandler.UpdateSortOrder)
 		api.DELETE("/recommendations/:id", recHandler.Delete)
+
+		// Media source endpoints (admin only, enforced by Casbin)
+		api.GET("/media-sources", mediaSourceHandler.List)
+		api.POST("/media-sources", mediaSourceHandler.Create)
+		api.PUT("/media-sources/:id", mediaSourceHandler.Update)
+		api.DELETE("/media-sources/:id", mediaSourceHandler.Delete)
 	}
 
 	slog.Info("starting server", "port", cfg.ServerPort)
