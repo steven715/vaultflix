@@ -80,3 +80,48 @@ export interface VideoSummaryWithURL {
   file_size_bytes: number
   created_at: string
 }
+
+export interface ImportFailure {
+  filename: string
+  error: string
+}
+
+export interface ImportResult {
+  total_scanned: number
+  imported: number
+  skipped: number
+  failed: number
+  failures: ImportFailure[]
+}
+
+export interface RecommendationItem {
+  id: string
+  video_id: string
+  title: string
+  thumbnail_url?: string
+  duration_seconds: number
+  resolution: string
+  file_size_bytes: number
+  sort_order: number
+  is_fallback: boolean
+}
+
+export interface DailyRecommendation {
+  id: string
+  video_id: string
+  recommend_date: string
+  sort_order: number
+  created_at: string
+}
+
+export interface RecommendationWithVideo {
+  id: string
+  video_id: string
+  recommend_date: string
+  sort_order: number
+  title: string
+  thumbnail_url?: string
+  duration_seconds: number
+  resolution: string
+  file_size_bytes: number
+}

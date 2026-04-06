@@ -25,11 +25,17 @@ var supportedExtensions = map[string]bool{
 	".mov": true,
 }
 
+type ImportFailure struct {
+	Filename string `json:"filename"`
+	Error    string `json:"error"`
+}
+
 type ImportResult struct {
-	TotalScanned int `json:"total_scanned"`
-	Imported     int `json:"imported"`
-	Skipped      int `json:"skipped"`
-	Failed       int `json:"failed"`
+	TotalScanned int             `json:"total_scanned"`
+	Imported     int             `json:"imported"`
+	Skipped      int             `json:"skipped"`
+	Failed       int             `json:"failed"`
+	Failures     []ImportFailure `json:"failures"`
 }
 
 type ImportService struct {
@@ -52,6 +58,7 @@ func (s *ImportService) Run(ctx context.Context, sourceDir string) (*ImportResul
 
 	result := &ImportResult{
 		TotalScanned: len(files),
+		Failures:     []ImportFailure{},
 	}
 
 	for _, filePath := range files {
@@ -61,11 +68,16 @@ func (s *ImportService) Run(ctx context.Context, sourceDir string) (*ImportResul
 				result.Skipped++
 				continue
 			}
+			filename := filepath.Base(filePath)
 			slog.Error("failed to import video",
 				"file", filePath,
 				"error", err,
 			)
 			result.Failed++
+			result.Failures = append(result.Failures, ImportFailure{
+				Filename: filename,
+				Error:    err.Error(),
+			})
 			continue
 		}
 		result.Imported++

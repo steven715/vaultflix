@@ -8,7 +8,7 @@ interface HeaderProps {
 }
 
 export default function Header({ searchQuery, onSearch }: HeaderProps) {
-  const { user, logout } = useAuth()
+  const { user, isAdmin, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
 
@@ -37,6 +37,20 @@ export default function Header({ searchQuery, onSearch }: HeaderProps) {
 
       {/* Navigation links */}
       <nav className="flex items-center gap-3 shrink-0">
+        {isAdmin && (
+          <Link
+            to="/admin"
+            className={`flex items-center gap-1 text-sm transition-colors ${
+              location.pathname.startsWith('/admin') ? 'text-white' : 'text-gray-400 hover:text-white'
+            }`}
+            title="管理"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+            </svg>
+            <span className="hidden sm:inline">管理</span>
+          </Link>
+        )}
         <Link
           to="/favorites"
           className={`flex items-center gap-1 text-sm transition-colors ${
