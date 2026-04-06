@@ -82,10 +82,10 @@ services:
       - .:/app
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
-      # 影片來源目錄：將本機路徑掛載到容器的 /mnt/videos，API 的 source_dir 使用容器內路徑
-      # 測試：D:\TestVideos:/mnt/videos
-      # 全量：D:\AdultsV:/mnt/videos
-      - D:\TestVideos:/mnt/videos
+      # 影片來源目錄：掛載到 /mnt/host/ 下，符合 AllowedMountPrefix 安全驗證
+      # 測試：D:\TestVideos:/mnt/host/videos
+      # 全量：D:\AdultsV:/mnt/host/videos
+      - D:\TestVideos:/mnt/host/videos
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
