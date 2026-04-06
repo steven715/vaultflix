@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestUserService_Disable_CannotDisableAdmin(t *testing.T) {
 	svc := NewUserService(repo)
 
 	err := svc.Disable(context.Background(), "admin-id")
-	if err != ErrCannotDisableAdmin {
+	if !errors.Is(err, model.ErrCannotDisableAdmin) {
 		t.Fatalf("expected ErrCannotDisableAdmin, got %v", err)
 	}
 }
@@ -113,7 +114,7 @@ func TestUserService_Disable_UserNotFound(t *testing.T) {
 	svc := NewUserService(repo)
 
 	err := svc.Disable(context.Background(), "nope")
-	if err != model.ErrNotFound {
+	if !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -147,7 +148,7 @@ func TestUserService_ResetPassword_UserNotFound(t *testing.T) {
 	svc := NewUserService(repo)
 
 	err := svc.ResetPassword(context.Background(), "nope", "pass")
-	if err != model.ErrNotFound {
+	if !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

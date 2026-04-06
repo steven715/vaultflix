@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
@@ -10,8 +9,6 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
 )
-
-var ErrCannotDisableAdmin = errors.New("cannot disable admin account")
 
 type UserService struct {
 	userRepo repository.UserRepository
@@ -59,11 +56,11 @@ func (s *UserService) Create(ctx context.Context, username, password, role strin
 func (s *UserService) Disable(ctx context.Context, id string) error {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get user %s: %w", id, err)
 	}
 
 	if user.Role == "admin" {
-		return ErrCannotDisableAdmin
+		return model.ErrCannotDisableAdmin
 	}
 
 	if err := s.userRepo.DisableUser(ctx, id); err != nil {
@@ -76,7 +73,7 @@ func (s *UserService) Disable(ctx context.Context, id string) error {
 func (s *UserService) ResetPassword(ctx context.Context, id, newPassword string) error {
 	_, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get user %s: %w", id, err)
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
