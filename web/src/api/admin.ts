@@ -1,6 +1,7 @@
 import client from './client'
 import type {
-  ImportResult,
+  ImportJob,
+  MediaSource,
   Video,
   Tag,
   DailyRecommendation,
@@ -8,8 +9,23 @@ import type {
   User,
 } from '../types'
 
-export async function importVideos(sourceDir: string): Promise<ImportResult> {
-  const res = await client.post<ImportResult>('/videos/import', { source_dir: sourceDir })
+export async function importVideos(sourceID: string): Promise<ImportJob> {
+  const res = await client.post<ImportJob>('/videos/import', { source_id: sourceID })
+  return res.data
+}
+
+export async function getActiveImportJob(): Promise<ImportJob | null> {
+  const res = await client.get<ImportJob | null>('/import-jobs/active')
+  return res.data
+}
+
+export async function getImportJob(id: string): Promise<ImportJob> {
+  const res = await client.get<ImportJob>(`/import-jobs/${id}`)
+  return res.data
+}
+
+export async function listMediaSources(): Promise<MediaSource[]> {
+  const res = await client.get<MediaSource[]>('/media-sources')
   return res.data
 }
 
