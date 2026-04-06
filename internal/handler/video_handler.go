@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -122,23 +121,8 @@ func (h *VideoHandler) List(c *gin.Context) {
 func (h *VideoHandler) GetByID(c *gin.Context) {
 	id := c.Param("id")
 
-	expiryMinutes := 120
-	if raw := c.Query("url_expiry_minutes"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 1440 {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
-				Message: "url_expiry_minutes must be between 1 and 1440",
-			})
-			return
-		}
-		expiryMinutes = parsed
-	}
-
-	expiry := time.Duration(expiryMinutes) * time.Minute
-
 	userID := c.GetString("user_id")
-	detail, err := h.videoService.GetByID(c.Request.Context(), id, expiry, userID)
+	detail, err := h.videoService.GetByID(c.Request.Context(), id, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{

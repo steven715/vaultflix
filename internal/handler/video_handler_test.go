@@ -153,7 +153,7 @@ func TestGetVideo_Success(t *testing.T) {
 	if resp.Data.ID != "vid-1" {
 		t.Errorf("expected id vid-1, got %s", resp.Data.ID)
 	}
-	if resp.Data.StreamURL != "https://minio/stream" {
+	if resp.Data.StreamURL != "/api/videos/vid-1/stream" {
 		t.Errorf("expected stream url, got %s", resp.Data.StreamURL)
 	}
 	if len(resp.Data.Tags) != 1 {
@@ -226,19 +226,6 @@ func TestDeleteVideo_Success(t *testing.T) {
 	}
 	if w.Body.Len() != 0 {
 		t.Errorf("expected empty body, got %s", w.Body.String())
-	}
-}
-
-func TestGetVideo_InvalidExpiry(t *testing.T) {
-	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
-	r, _ := setupVideoRouter(svc)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/videos/vid-1?url_expiry_minutes=9999", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
 
