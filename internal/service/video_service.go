@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -83,7 +82,7 @@ func (s *VideoService) List(ctx context.Context, filter model.VideoFilter) ([]mo
 	return result, total, nil
 }
 
-func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Duration, userID string) (*model.VideoDetail, error) {
+func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*model.VideoDetail, error) {
 	video, err := s.videoRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video %s: %w", id, err)
@@ -94,17 +93,11 @@ func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Du
 		return nil, fmt.Errorf("failed to get tags for video %s: %w", id, err)
 	}
 
-	var streamURL string
-	if video.MinIOObjectKey != "" {
-		streamURL, err = s.minioSvc.GeneratePresignedURL(ctx, video.MinIOObjectKey, urlExpiry)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate stream url for video %s: %w", id, err)
-		}
-	}
+	streamURL := fmt.Sprintf("/api/videos/%s/stream", id)
 
 	var thumbnailURL string
 	if video.ThumbnailKey != "" {
-		thumbnailURL, err = s.minioSvc.GenerateThumbnailPresignedURL(ctx, video.ThumbnailKey, urlExpiry)
+		thumbnailURL, err = s.minioSvc.GenerateThumbnailPresignedURL(ctx, video.ThumbnailKey, 0)
 		if err != nil {
 			slog.Warn("failed to generate thumbnail url",
 				"video_id", id,
@@ -150,6 +143,11 @@ func (s *VideoService) GetByID(ctx context.Context, id string, urlExpiry time.Du
 	}
 
 	return detail, nil
+}
+
+// GetPresignedURL generates a presigned URL for legacy MinIO-stored videos.
+func (s *VideoService) GetPresignedURL(ctx context.Context, objectKey string) (string, error) {
+	return s.minioSvc.GeneratePresignedURL(ctx, objectKey, 0)
 }
 
 func (s *VideoService) Update(ctx context.Context, id string, input model.UpdateVideoInput) (*model.Video, error) {

@@ -35,16 +35,13 @@ func TestVideoService_GetByID_Success(t *testing.T) {
 		},
 	}
 	minioSvc := &mock.MinIOClient{
-		GeneratePresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
-			return "https://minio/stream-url", nil
-		},
 		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
 			return "https://minio/thumb-url", nil
 		},
 	}
 
 	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
-	detail, err := svc.GetByID(context.Background(), "vid-1", 2*time.Hour, "")
+	detail, err := svc.GetByID(context.Background(), "vid-1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -52,7 +49,7 @@ func TestVideoService_GetByID_Success(t *testing.T) {
 	if detail.ID != "vid-1" {
 		t.Errorf("expected video id vid-1, got %s", detail.ID)
 	}
-	if detail.StreamURL != "https://minio/stream-url" {
+	if detail.StreamURL != "/api/videos/vid-1/stream" {
 		t.Errorf("expected stream url, got %s", detail.StreamURL)
 	}
 	if detail.ThumbnailURL != "https://minio/thumb-url" {
@@ -73,7 +70,7 @@ func TestVideoService_GetByID_NotFound(t *testing.T) {
 	minioSvc := &mock.MinIOClient{}
 
 	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
-	_, err := svc.GetByID(context.Background(), "nonexistent", 2*time.Hour, "")
+	_, err := svc.GetByID(context.Background(), "nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -329,28 +326,20 @@ func TestVideoService_GetByID_LocalPathMode(t *testing.T) {
 		},
 	}
 
-	presignedURLCalled := false
 	minioSvc := &mock.MinIOClient{
-		GeneratePresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
-			presignedURLCalled = true
-			return "https://minio/stream", nil
-		},
 		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
 			return "https://minio/thumb", nil
 		},
 	}
 
 	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
-	detail, err := svc.GetByID(context.Background(), "vid-1", 2*time.Hour, "")
+	detail, err := svc.GetByID(context.Background(), "vid-1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if presignedURLCalled {
-		t.Error("expected GeneratePresignedURL NOT to be called for local path video")
-	}
-	if detail.StreamURL != "" {
-		t.Errorf("expected empty stream url for local path video, got %s", detail.StreamURL)
+	if detail.StreamURL != "/api/videos/vid-1/stream" {
+		t.Errorf("expected stream url /api/videos/vid-1/stream, got %s", detail.StreamURL)
 	}
 	if detail.ThumbnailURL != "https://minio/thumb" {
 		t.Errorf("expected thumbnail url, got %s", detail.ThumbnailURL)
