@@ -1,6 +1,5 @@
 import client from './client'
 import type {
-  SuccessResponse,
   ImportResult,
   Video,
   Tag,
@@ -9,13 +8,13 @@ import type {
 } from '../types'
 
 export async function importVideos(sourceDir: string): Promise<ImportResult> {
-  const res = await client.post<SuccessResponse<ImportResult>>('/videos/import', { source_dir: sourceDir })
-  return res.data.data
+  const res = await client.post<ImportResult>('/videos/import', { source_dir: sourceDir })
+  return res.data
 }
 
 export async function updateVideo(id: string, data: { title: string; description: string }): Promise<Video> {
-  const res = await client.put<SuccessResponse<Video>>(`/videos/${id}`, data)
-  return res.data.data
+  const res = await client.put<Video>(`/videos/${id}`, data)
+  return res.data
 }
 
 export async function deleteVideo(id: string): Promise<void> {
@@ -23,8 +22,8 @@ export async function deleteVideo(id: string): Promise<void> {
 }
 
 export async function createTag(name: string, category?: string): Promise<Tag> {
-  const res = await client.post<SuccessResponse<Tag>>('/tags', { name, category })
-  return res.data.data
+  const res = await client.post<Tag>('/tags', { name, category })
+  return res.data
 }
 
 export async function addVideoTag(videoId: string, tagId: number): Promise<void> {
@@ -36,8 +35,8 @@ export async function removeVideoTag(videoId: string, tagId: number): Promise<vo
 }
 
 export async function listRecommendationsByDate(date: string): Promise<RecommendationItem[]> {
-  const res = await client.get<SuccessResponse<RecommendationItem[]>>('/recommendations', { params: { date } })
-  return res.data.data
+  const res = await client.get<RecommendationItem[]>('/recommendations', { params: { date } })
+  return res.data
 }
 
 export async function createRecommendation(
@@ -45,12 +44,12 @@ export async function createRecommendation(
   date: string,
   sortOrder: number,
 ): Promise<DailyRecommendation> {
-  const res = await client.post<SuccessResponse<DailyRecommendation>>('/recommendations', {
+  const res = await client.post<DailyRecommendation>('/recommendations', {
     video_id: videoId,
     recommend_date: date,
     sort_order: sortOrder,
   })
-  return res.data.data
+  return res.data
 }
 
 export async function updateRecommendationSortOrder(id: string, sortOrder: number): Promise<void> {

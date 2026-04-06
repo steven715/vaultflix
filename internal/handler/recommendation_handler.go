@@ -181,7 +181,7 @@ func (h *RecommendationHandler) UpdateSortOrder(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, model.SuccessResponse{Data: gin.H{"sort_order": req.SortOrder}})
 }
 
 func (h *RecommendationHandler) Delete(c *gin.Context) {

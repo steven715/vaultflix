@@ -23,6 +23,10 @@ func setupRecommendationRouter(recSvc *mock.RecommendationService) (*gin.Engine,
 		h.GetToday(c)
 	})
 	r.POST("/api/recommendations", h.Create)
+	r.PUT("/api/recommendations/:id", func(c *gin.Context) {
+		c.Set("user_id", "user-1")
+		h.UpdateSortOrder(c)
+	})
 	r.DELETE("/api/recommendations/:id", h.Delete)
 	return r, h
 }
@@ -145,6 +149,97 @@ func TestPostRecommendation_Conflict(t *testing.T) {
 	}
 	if resp.Error != "conflict" {
 		t.Errorf("expected error 'conflict', got %s", resp.Error)
+	}
+}
+
+func TestUpdateSortOrder_Success(t *testing.T) {
+	var capturedID string
+	var capturedOrder int
+	recSvc := &mock.RecommendationService{
+		UpdateSortOrderFunc: func(ctx context.Context, id string, sortOrder int) error {
+			capturedID = id
+			capturedOrder = sortOrder
+			return nil
+		},
+	}
+
+	r, _ := setupRecommendationRouter(recSvc)
+	body := `{"sort_order": 3}`
+	req := httptest.NewRequest(http.MethodPut, "/api/recommendations/rec-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if capturedID != "rec-1" {
+		t.Errorf("expected id rec-1, got %s", capturedID)
+	}
+	if capturedOrder != 3 {
+		t.Errorf("expected sort_order 3, got %d", capturedOrder)
+	}
+
+	var resp struct {
+		Data struct {
+			SortOrder int `json:"sort_order"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Data.SortOrder != 3 {
+		t.Errorf("expected response sort_order 3, got %d", resp.Data.SortOrder)
+	}
+}
+
+func TestUpdateSortOrder_NotFound(t *testing.T) {
+	recSvc := &mock.RecommendationService{
+		UpdateSortOrderFunc: func(ctx context.Context, id string, sortOrder int) error {
+			return model.ErrNotFound
+		},
+	}
+
+	r, _ := setupRecommendationRouter(recSvc)
+	body := `{"sort_order": 3}`
+	req := httptest.NewRequest(http.MethodPut, "/api/recommendations/nonexistent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Error != "not_found" {
+		t.Errorf("expected error 'not_found', got %s", resp.Error)
+	}
+}
+
+func TestUpdateSortOrder_BadRequest(t *testing.T) {
+	recSvc := &mock.RecommendationService{}
+
+	r, _ := setupRecommendationRouter(recSvc)
+	body := `{"sort_order": 0}`
+	req := httptest.NewRequest(http.MethodPut, "/api/recommendations/rec-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Error != "bad_request" {
+		t.Errorf("expected error 'bad_request', got %s", resp.Error)
 	}
 }
 

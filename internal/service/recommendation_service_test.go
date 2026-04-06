@@ -172,3 +172,148 @@ func TestCreate_DuplicateConflict(t *testing.T) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
 }
+
+func TestListByDate_Success(t *testing.T) {
+	recs := []model.RecommendationWithVideo{
+		{
+			ID:              "rec-1",
+			VideoID:         "vid-1",
+			Title:           "Video One",
+			ThumbnailKey:    "thumbnails/vid-1.jpg",
+			DurationSeconds: 3600,
+			SortOrder:       1,
+		},
+		{
+			ID:              "rec-2",
+			VideoID:         "vid-2",
+			Title:           "Video Two",
+			ThumbnailKey:    "thumbnails/vid-2.jpg",
+			DurationSeconds: 1800,
+			SortOrder:       2,
+		},
+	}
+
+	recRepo := &mock.RecommendationRepository{
+		ListByDateFunc: func(ctx context.Context, date time.Time) ([]model.RecommendationWithVideo, error) {
+			return recs, nil
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{
+		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+			return "https://minio/thumb-" + objectKey, nil
+		},
+	}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	items, err := svc.ListByDate(context.Background(), time.Now().Truncate(24*time.Hour))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].Title != "Video One" {
+		t.Errorf("expected title 'Video One', got %s", items[0].Title)
+	}
+	if items[0].ThumbnailURL != "https://minio/thumb-thumbnails/vid-1.jpg" {
+		t.Errorf("expected thumbnail url, got %s", items[0].ThumbnailURL)
+	}
+	if items[1].Title != "Video Two" {
+		t.Errorf("expected title 'Video Two', got %s", items[1].Title)
+	}
+	if items[0].IsFallback {
+		t.Error("expected is_fallback to be false")
+	}
+}
+
+func TestListByDate_Empty(t *testing.T) {
+	recRepo := &mock.RecommendationRepository{
+		ListByDateFunc: func(ctx context.Context, date time.Time) ([]model.RecommendationWithVideo, error) {
+			return []model.RecommendationWithVideo{}, nil
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	items, err := svc.ListByDate(context.Background(), time.Now().Truncate(24*time.Hour))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(items))
+	}
+}
+
+func TestUpdateSortOrder_Success(t *testing.T) {
+	recRepo := &mock.RecommendationRepository{
+		UpdateSortOrderFunc: func(ctx context.Context, id string, sortOrder int) error {
+			return nil
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	err := svc.UpdateSortOrder(context.Background(), "rec-1", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdateSortOrder_NotFound(t *testing.T) {
+	recRepo := &mock.RecommendationRepository{
+		UpdateSortOrderFunc: func(ctx context.Context, id string, sortOrder int) error {
+			return model.ErrNotFound
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	err := svc.UpdateSortOrder(context.Background(), "nonexistent", 5)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestDelete_Success(t *testing.T) {
+	recRepo := &mock.RecommendationRepository{
+		DeleteFunc: func(ctx context.Context, id string) error {
+			return nil
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	err := svc.Delete(context.Background(), "rec-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	recRepo := &mock.RecommendationRepository{
+		DeleteFunc: func(ctx context.Context, id string) error {
+			return model.ErrNotFound
+		},
+	}
+	videoRepo := &mock.VideoRepository{}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
+	err := svc.Delete(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
