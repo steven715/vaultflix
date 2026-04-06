@@ -98,3 +98,16 @@ export async function enableUser(id: string): Promise<void> {
 export async function resetUserPassword(id: string, password: string): Promise<void> {
   await client.put(`/users/${id}/password`, { password })
 }
+
+export async function createMediaSource(data: { label: string; mount_path: string }): Promise<MediaSource> {
+  const res = await client.post<MediaSource>('/media-sources', data)
+  return res.data
+}
+
+export async function updateMediaSource(id: string, data: { label: string; enabled: boolean }): Promise<void> {
+  await client.put(`/media-sources/${id}`, data)
+}
+
+export async function deleteMediaSource(id: string): Promise<void> {
+  await client.delete(`/media-sources/${id}`)
+}

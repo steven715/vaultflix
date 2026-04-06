@@ -115,6 +115,7 @@ export interface MediaSource {
   label: string
   mount_path: string
   enabled: boolean
+  video_count: number
   created_at: string
   updated_at: string
 }
