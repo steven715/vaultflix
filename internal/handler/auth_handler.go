@@ -81,6 +81,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, model.ErrAccountDisabled) {
+			c.JSON(http.StatusForbidden, model.ErrorResponse{
+				Error:   "forbidden",
+				Message: "account is disabled",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "internal_error",
 			Message: "failed to login",

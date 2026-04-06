@@ -68,6 +68,10 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 		return "", fmt.Errorf("failed to get user: %w", err)
 	}
 
+	if user.DisabledAt != nil {
+		return "", model.ErrAccountDisabled
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return "", ErrInvalidCredentials
 	}
