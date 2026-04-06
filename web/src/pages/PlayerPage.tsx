@@ -88,19 +88,16 @@ export default function PlayerPage() {
     const seconds = Math.floor(el.currentTime)
     if (seconds === lastReportSecondsRef.current) return
 
-    // sendBeacon doesn't support custom headers, use sync XHR for auth
-    try {
-      const token = localStorage.getItem('token')
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', '/api/watch-history', false)
-      xhr.setRequestHeader('Content-Type', 'application/json')
-      if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-      }
-      xhr.send(JSON.stringify({ video_id: vid, progress_seconds: seconds }))
-    } catch {
-      // Best effort — ignore errors
-    }
+    const token = localStorage.getItem('token')
+    fetch('/api/watch-history', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ video_id: vid, progress_seconds: seconds }),
+      keepalive: true,
+    }).catch(() => {})
   }
 
   // Throttled progress reporter
