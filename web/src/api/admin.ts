@@ -75,6 +75,10 @@ export async function deleteUser(id: string): Promise<void> {
   await client.delete(`/users/${id}`)
 }
 
+export async function enableUser(id: string): Promise<void> {
+  await client.put(`/users/${id}/enable`)
+}
+
 export async function resetUserPassword(id: string, password: string): Promise<void> {
   await client.put(`/users/${id}/password`, { password })
 }

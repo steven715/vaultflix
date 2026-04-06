@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { listUsers, createUser, deleteUser, resetUserPassword } from '../../api/admin'
+import { listUsers, createUser, deleteUser, enableUser, resetUserPassword } from '../../api/admin'
 import type { User } from '../../types'
 import Header from '../../components/Header'
 
@@ -63,6 +63,15 @@ export default function UserManagePage() {
       setDeleteTarget(null)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'failed to disable user')
+    }
+  }
+
+  const handleEnable = async (id: string) => {
+    try {
+      await enableUser(id)
+      setUsers(users.map(u => u.id === id ? { ...u, disabled_at: null } : u))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'failed to enable user')
     }
   }
 
@@ -143,6 +152,14 @@ export default function UserManagePage() {
                         style={{ padding: '0.3rem 0.6rem', backgroundColor: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                       >
                         Disable
+                      </button>
+                    )}
+                    {user.role !== 'admin' && user.disabled_at && (
+                      <button
+                        onClick={() => handleEnable(user.id)}
+                        style={{ padding: '0.3rem 0.6rem', backgroundColor: '#15803d', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                      >
+                        Enable
                       </button>
                     )}
                   </td>

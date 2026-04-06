@@ -105,6 +105,31 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *UserHandler) Enable(c *gin.Context) {
+	id := c.Param("id")
+
+	err := h.userService.Enable(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "user not found",
+			})
+			return
+		}
+		slog.Error("failed to enable user", "user_id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to enable user",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.SuccessResponse{
+		Data: gin.H{"message": "user enabled"},
+	})
+}
+
 type resetPasswordRequest struct {
 	Password string `json:"password" binding:"required"`
 }

@@ -71,6 +71,19 @@ func (s *UserService) Disable(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *UserService) Enable(ctx context.Context, id string) error {
+	_, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to get user %s: %w", id, err)
+	}
+
+	if err := s.userRepo.EnableUser(ctx, id); err != nil {
+		return fmt.Errorf("failed to enable user %s: %w", id, err)
+	}
+
+	return nil
+}
+
 func (s *UserService) ResetPassword(ctx context.Context, id, newPassword string) error {
 	_, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {

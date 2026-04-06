@@ -160,6 +160,7 @@ func main() {
 		api.GET("/users", userHandler.List)
 		api.POST("/users", userHandler.Create)
 		api.DELETE("/users/:id", userHandler.Delete)
+		api.PUT("/users/:id/enable", userHandler.Enable)
 		api.PUT("/users/:id/password", userHandler.ResetPassword)
 
 		// Recommendation endpoints
