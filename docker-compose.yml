@@ -83,9 +83,8 @@ services:
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
       # 影片來源目錄：掛載到 /mnt/host/ 下，符合 AllowedMountPrefix 安全驗證
-      # 測試：D:\TestVideos:/mnt/host/videos
-      # 全量：D:\AdultsV:/mnt/host/videos
-      - D:\TestVideos:/mnt/host/videos
+      - D:\AdultsV:/mnt/host/D/AdultsV:ro
+      - G:\下載:/mnt/host/G/下載:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
@@ -96,11 +95,22 @@ services:
   vaultflix-web:
     build:
       context: ./web
+    volumes:
+      - web_dist:/dist
+
+  vaultflix-nginx:
+    build:
+      context: ./nginx
+    restart: unless-stopped
     depends_on:
       vaultflix-api:
         condition: service_healthy
+      vaultflix-web:
+        condition: service_completed_successfully
     ports:
       - "3000:80"
+    volumes:
+      - web_dist:/usr/share/nginx/html:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
       interval: 10s
@@ -122,3 +132,4 @@ volumes:
   minio_data:
   go_modules:
   go_build_cache:
+  web_dist:

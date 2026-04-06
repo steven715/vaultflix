@@ -98,7 +98,7 @@ func (s *minIOService) GeneratePresignedURL(ctx context.Context, objectKey strin
 		return "", fmt.Errorf("failed to generate presigned url for %s: %w", objectKey, err)
 	}
 
-	return presignedURL.String(), nil
+	return toRelativeMinIOURL(presignedURL), nil
 }
 
 func (s *minIOService) GenerateThumbnailPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
@@ -111,7 +111,14 @@ func (s *minIOService) GenerateThumbnailPresignedURL(ctx context.Context, object
 		return "", fmt.Errorf("failed to generate presigned url for thumbnail %s: %w", objectKey, err)
 	}
 
-	return presignedURL.String(), nil
+	return toRelativeMinIOURL(presignedURL), nil
+}
+
+// toRelativeMinIOURL converts an absolute MinIO presigned URL to a relative
+// path through the nginx /minio/ proxy. This ensures URLs work regardless of
+// the browser's origin (localhost, ngrok, etc.) while preserving the signature.
+func toRelativeMinIOURL(u *url.URL) string {
+	return "/minio" + u.RequestURI()
 }
 
 func (s *minIOService) deleteObject(ctx context.Context, bucket, objectKey string) error {
