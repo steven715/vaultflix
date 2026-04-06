@@ -294,8 +294,9 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 	cleanPath := filepath.Clean(fullPath)
 
 	// Path traversal protection: resolved path must stay within the source's mount path.
+	// Append separator to prevent prefix collision (e.g. /mnt/videos vs /mnt/videos-extra).
 	cleanMount := filepath.Clean(source.MountPath)
-	if !strings.HasPrefix(cleanPath, cleanMount) {
+	if !strings.HasPrefix(cleanPath, cleanMount+string(filepath.Separator)) && cleanPath != cleanMount {
 		c.JSON(http.StatusForbidden, model.ErrorResponse{
 			Error:   "path_not_allowed",
 			Message: "resolved file path is outside allowed area",
@@ -303,10 +304,18 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, model.ErrorResponse{
-			Error:   "file_not_found",
-			Message: "video file not found on disk (may have been moved or drive unmounted)",
+	if _, err := os.Stat(cleanPath); err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "file_not_found",
+				Message: "video file not found on disk (may have been moved or drive unmounted)",
+			})
+			return
+		}
+		slog.Error("failed to stat video file", "error", err, "path", cleanPath)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to access video file",
 		})
 		return
 	}
