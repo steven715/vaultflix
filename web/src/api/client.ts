@@ -23,8 +23,12 @@ client.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+      const url: string = error.config?.url ?? ''
+      const isAuthEndpoint = url.includes('/auth/login')
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('token')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   },

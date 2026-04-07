@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { AxiosError } from 'axios'
+import type { AxiosError } from 'axios'
 import type { ErrorResponse } from '../types'
 
 export default function LoginPage() {
@@ -24,17 +24,18 @@ export default function LoginPage() {
       return
     }
 
-    setError('')
     setLoading(true)
     try {
       await login(username, password)
       navigate('/', { replace: true })
     } catch (err) {
-      if (err instanceof AxiosError && err.response?.data) {
-        const data = err.response.data as ErrorResponse
-        setError(data.message || '登入失敗')
-      } else {
+      const axiosErr = err as AxiosError<ErrorResponse>
+      if (axiosErr.response) {
+        setError(axiosErr.response.data?.message || '帳號或密碼錯誤')
+      } else if (axiosErr.request) {
         setError('伺服器連線失敗，請稍後再試')
+      } else {
+        setError('登入失敗，請稍後再試')
       }
     } finally {
       setLoading(false)

@@ -311,6 +311,21 @@ useEffect(() => { fetchData() }, [fetchData])
 - Health check 必須配置在每個服務上
 - 對外暴露 port 的服務（如 MinIO），`.env` 中必須同時定義 internal endpoint（Docker hostname）和 public endpoint（host-accessible），命名慣例：`<SERVICE>_ENDPOINT` / `<SERVICE>_PUBLIC_ENDPOINT`
 
+### 前端發版流程（named volume 陷阱）
+
+前端 dist 透過 named volume `web_dist` 在 `vaultflix-web`（builder）與 `vaultflix-nginx`（server）之間共享。Docker named volume **只會在 volume 不存在時**從 image 初始化內容，既有 volume 不會被新 image 的內容覆寫。因此單純 `docker compose build vaultflix-web` + 重啟 nginx 無效，nginx 仍會服務舊 bundle。
+
+正確流程：
+
+```bash
+docker compose build vaultflix-web
+docker compose down vaultflix-web vaultflix-nginx
+docker volume rm vaultflix_web_dist
+docker compose up -d vaultflix-nginx
+```
+
+除錯時若發現「改了前端程式碼、重啟容器，瀏覽器行為沒變」，第一反應檢查 `web_dist` volume 是否有被刪掉重建。
+
 ### 磁碟層級掛載策略
 
 影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟：
