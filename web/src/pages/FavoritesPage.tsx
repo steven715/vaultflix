@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { listFavorites, removeFavorite } from '../api/favorites'
 import type { VideoSummaryWithURL } from '../types'
 import Pagination from '../components/Pagination'
+import ErrorBanner from '../components/ErrorBanner'
+import { useToast } from '../contexts/ToastContext'
 import { formatDuration, formatFileSize } from '../utils/format'
 
 const PAGE_SIZE = 20
@@ -12,12 +14,16 @@ export default function FavoritesPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
 
     listFavorites(page, PAGE_SIZE)
       .then((res) => {
@@ -29,13 +35,14 @@ export default function FavoritesPage() {
         if (cancelled) return
         setFavorites([])
         setTotal(0)
+        setLoadError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
 
     return () => { cancelled = true }
-  }, [page])
+  }, [page, reloadKey])
 
   async function handleRemove(videoID: string) {
     // Optimistic UI: remove immediately
@@ -45,13 +52,16 @@ export default function FavoritesPage() {
     try {
       await removeFavorite(videoID)
     } catch {
+      toast.error('取消收藏失敗')
       // Rollback: re-fetch on failure
       listFavorites(page, PAGE_SIZE)
         .then((res) => {
           setFavorites(res.data)
           setTotal(res.total)
         })
-        .catch(() => {})
+        .catch(() => {
+          toast.error('重新載入收藏失敗')
+        })
     }
   }
 
@@ -69,6 +79,11 @@ export default function FavoritesPage() {
           <div className="flex items-center justify-center py-20 text-gray-500">
             載入中...
           </div>
+        ) : loadError ? (
+          <ErrorBanner
+            message="無法載入收藏，請確認服務是否正常運作"
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         ) : favorites.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <div className="text-gray-500">尚無收藏影片</div>

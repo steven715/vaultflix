@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { listVideos } from '../../api/videos'
 import type { VideoWithTags } from '../../types'
+import ErrorBanner from '../ErrorBanner'
 import { formatDuration } from '../../utils/format'
 
 interface VideoPickerModalProps {
@@ -12,6 +13,8 @@ export default function VideoPickerModal({ onSelect, onClose }: VideoPickerModal
   const [query, setQuery] = useState('')
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -26,12 +29,13 @@ export default function VideoPickerModal({ onSelect, onClose }: VideoPickerModal
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
     listVideos({ page: 1, page_size: 20, sort_by: 'created_at', sort_order: 'desc', q: searchTerm || undefined })
       .then((res) => { if (!cancelled) setVideos(res.data) })
-      .catch(() => { if (!cancelled) setVideos([]) })
+      .catch(() => { if (!cancelled) { setVideos([]); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [searchTerm])
+  }, [searchTerm, reloadKey])
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
@@ -47,6 +51,11 @@ export default function VideoPickerModal({ onSelect, onClose }: VideoPickerModal
         <div className="flex-1 overflow-y-auto space-y-1">
           {loading ? (
             <div className="text-gray-500 text-center py-8">搜尋中...</div>
+          ) : loadError ? (
+            <ErrorBanner
+              message="無法載入影片，請確認服務是否正常運作"
+              onRetry={() => setReloadKey((k) => k + 1)}
+            />
           ) : videos.length === 0 ? (
             <div className="text-gray-500 text-center py-8">沒有找到影片</div>
           ) : (

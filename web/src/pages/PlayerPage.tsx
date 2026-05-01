@@ -6,17 +6,18 @@ import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
 import { formatDuration, formatDate } from '../utils/format'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 
 const PROGRESS_THROTTLE_MS = 10_000
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
   const { token } = useAuth()
+  const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
-  const [toast, setToast] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
 
@@ -76,7 +77,9 @@ export default function PlayerPage() {
       },
       body: JSON.stringify({ video_id: vid, progress_seconds: seconds }),
       keepalive: true,
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('failed to send progress beacon', err)
+    })
   }
 
   // Throttled progress reporter
@@ -127,8 +130,7 @@ export default function PlayerPage() {
     }
     if (video.watch_progress > 0) {
       videoRef.current.currentTime = video.watch_progress
-      setToast(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
-      setTimeout(() => setToast(''), 3000)
+      toast.info(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
     }
   }
 
@@ -175,8 +177,7 @@ export default function PlayerPage() {
       }
     } catch {
       setFavorited(prev)
-      setToast(prev ? '取消收藏失敗' : '加入收藏失敗')
-      setTimeout(() => setToast(''), 3000)
+      toast.error(prev ? '取消收藏失敗' : '加入收藏失敗')
     } finally {
       favoriteInFlightRef.current = false
     }
@@ -225,12 +226,6 @@ export default function PlayerPage() {
             onLoadedMetadata={handleLoadedMetadata}
             onVolumeChange={handleVolumeChange}
           />
-          {/* Toast */}
-          {toast && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/80 text-white text-sm px-4 py-2 rounded-lg pointer-events-none">
-              {toast}
-            </div>
-          )}
         </div>
 
         {/* Video info */}

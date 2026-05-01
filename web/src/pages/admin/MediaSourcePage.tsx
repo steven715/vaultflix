@@ -3,12 +3,15 @@ import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSour
 import type { MediaSource } from '../../types'
 import Header from '../../components/Header'
 import ImportProgress from '../../components/admin/ImportProgress'
+import ErrorBanner from '../../components/ErrorBanner'
+import { useToast } from '../../contexts/ToastContext'
+import { getErrorMessage } from '../../utils/error'
 
 export default function MediaSourcePage() {
   const [sources, setSources] = useState<MediaSource[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const toast = useToast()
 
   // Import state
   const [importingSourceId, setImportingSourceId] = useState<string | null>(null)
@@ -21,14 +24,12 @@ export default function MediaSourcePage() {
 
   async function fetchSources() {
     setLoading(true)
-    setError(null)
-    setLoadFailed(false)
+    setLoadError(false)
     try {
       const data = await listMediaSources()
       setSources(data)
     } catch {
-      setError('無法載入媒體來源，請確認服務是否正常運作')
-      setLoadFailed(true)
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -40,7 +41,7 @@ export default function MediaSourcePage() {
     setLoading(true)
     listMediaSources()
       .then((data) => { if (!cancelled) setSources(data) })
-      .catch(() => { if (!cancelled) { setError('無法載入媒體來源，請確認服務是否正常運作'); setLoadFailed(true) } })
+      .catch(() => { if (!cancelled) setLoadError(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
@@ -52,8 +53,8 @@ export default function MediaSourcePage() {
       if (cancelled || !job) return
       setImportingSourceId(job.source_id)
       setCurrentJobId(job.id)
-    }).catch(() => {
-      // Non-critical: active job detection failure doesn't block page usage
+    }).catch((err) => {
+      console.warn('failed to detect active import job', err)
     })
     return () => { cancelled = true }
   }, [])
@@ -66,13 +67,16 @@ export default function MediaSourcePage() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { message?: string } } }
       if (axiosErr?.response?.status === 409) {
-        const activeJob = await getActiveImportJob().catch(() => null)
+        const activeJob = await getActiveImportJob().catch((detectErr) => {
+          console.warn('failed to detect active import job after 409', detectErr)
+          return null
+        })
         if (activeJob) {
           setImportingSourceId(activeJob.source_id)
           setCurrentJobId(activeJob.id)
         }
       } else {
-        setError(axiosErr?.response?.data?.message || '匯入啟動失敗')
+        toast.error(getErrorMessage(err, '匯入啟動失敗'))
       }
     }
   }
@@ -89,7 +93,7 @@ export default function MediaSourcePage() {
       setConfirmAction(null)
       fetchSources()
     } catch {
-      setError('操作失敗，請重試')
+      toast.error('操作失敗，請重試')
     }
   }
 
@@ -99,7 +103,7 @@ export default function MediaSourcePage() {
       setConfirmAction(null)
       fetchSources()
     } catch {
-      setError('刪除失敗，請重試')
+      toast.error('刪除失敗，請重試')
     }
   }
 
@@ -119,22 +123,14 @@ export default function MediaSourcePage() {
           </button>
         </div>
 
-        {/* Error banner */}
-        {error && (
-          <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 mb-4 flex items-center justify-between">
-            <span className="text-sm text-red-400">{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 text-sm ml-4">✕</button>
-          </div>
-        )}
-
         {/* Content */}
         {loading ? (
           <div className="text-gray-500 text-center py-20">載入中...</div>
-        ) : loadFailed && sources.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-gray-400 mb-4">無法載入媒體來源</p>
-            <button onClick={fetchSources} className="text-indigo-400 hover:text-indigo-300 text-sm">重試</button>
-          </div>
+        ) : loadError ? (
+          <ErrorBanner
+            message="無法載入媒體來源，請確認服務是否正常運作"
+            onRetry={fetchSources}
+          />
         ) : sources.length === 0 ? (
           <div className="text-gray-500 text-center py-20">
             尚未設定媒體來源，請點擊右上角新增

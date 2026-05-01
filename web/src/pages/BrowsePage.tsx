@@ -7,6 +7,7 @@ import Header from '../components/Header'
 import TagSidebar from '../components/TagSidebar'
 import VideoCard from '../components/VideoCard'
 import Pagination from '../components/Pagination'
+import ErrorBanner from '../components/ErrorBanner'
 import { formatDuration } from '../utils/format'
 
 const SORT_OPTIONS = [
@@ -23,6 +24,8 @@ export default function BrowsePage() {
   const [loading, setLoading] = useState(true)
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const [recsLoaded, setRecsLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || 20
@@ -90,7 +93,9 @@ export default function BrowsePage() {
     let cancelled = false
     getTodayRecommendations()
       .then((items) => { if (!cancelled) setRecommendations(items) })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn('failed to load recommendations', err)
+      })
       .finally(() => { if (!cancelled) setRecsLoaded(true) })
     return () => { cancelled = true }
   }, [recsKey])
@@ -98,6 +103,7 @@ export default function BrowsePage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
 
     listVideos({
       page,
@@ -116,6 +122,7 @@ export default function BrowsePage() {
         if (cancelled) return
         setVideos([])
         setTotal(0)
+        setLoadError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -124,7 +131,7 @@ export default function BrowsePage() {
     return () => {
       cancelled = true
     }
-  }, [page, pageSize, sortBy, sortOrder, query, tagIdsStr])
+  }, [page, pageSize, sortBy, sortOrder, query, tagIdsStr, reloadKey])
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
@@ -204,6 +211,11 @@ export default function BrowsePage() {
             <div className="flex items-center justify-center py-20 text-gray-500">
               載入中...
             </div>
+          ) : loadError ? (
+            <ErrorBanner
+              message="無法載入影片，請確認服務是否正常運作"
+              onRetry={() => setReloadKey((k) => k + 1)}
+            />
           ) : videos.length === 0 ? (
             <div className="flex items-center justify-center py-20 text-gray-500">
               {query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}

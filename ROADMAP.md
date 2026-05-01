@@ -16,10 +16,11 @@
 
 ### 前端
 
-- [ ] **API 錯誤回饋** — 多處 `.catch(() => {})` 靜默失敗，使用者看到空白而非錯誤訊息，需加入 toast 或 error banner
-- [ ] **Modal 操作回饋** — 影片編輯 modal 儲存失敗時無任何提示，使用者不知道操作結果
-- [ ] **收藏/歷史錯誤狀態** — 載入失敗時顯示「沒有收藏」而非錯誤訊息，缺少重試機制
+- [x] **API 錯誤回饋** — Phase 14 已完成：ToastProvider + ErrorBanner 系統，22+ 處靜默 catch 全數收尾
+- [x] **Modal 操作回饋** — Phase 14 已完成：編輯/刪除/匯入操作失敗統一以 toast 回饋
+- [x] **收藏/歷史錯誤狀態** — Phase 14 已完成：載入失敗顯示 ErrorBanner + 重試按鈕
 - [ ] **載入骨架屏** — 影片網格載入時只顯示文字「載入中...」，缺少 skeleton placeholder，造成版面跳動
+- [ ] **修 React 19 hooks lint baseline** — `eslint-plugin-react-hooks ^7.0.1` 啟用嚴格規則後 HEAD 累積 10 errors + 2 warnings（`set-state-in-effect` 多處、`useWebSocket.ts` TDZ access、`AuthContext.tsx` fast-refresh export 拆檔），需獨立 refactor PR 收尾
 - [ ] **Header 搜尋列 RWD** — 搜尋框在手機寬度下擠壓變形，需改為可收合的搜尋抽屜
 - [ ] **TagSidebar 手機適配** — 固定寬度 `w-56` 在小平板造成水平溢出，需可收合或隱藏
 - [ ] **影片資訊區塊 RWD** — metadata（時長、解析度等）在手機上換行不可控，需改為垂直堆疊

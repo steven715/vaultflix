@@ -4,6 +4,8 @@ import { listRecommendationsByDate, createRecommendation, updateRecommendationSo
 import type { RecommendationItem, VideoWithTags } from '../../types'
 import Header from '../../components/Header'
 import VideoPickerModal from '../../components/admin/VideoPickerModal'
+import ErrorBanner from '../../components/ErrorBanner'
+import { useToast } from '../../contexts/ToastContext'
 import { formatDuration } from '../../utils/format'
 
 function formatDate(date: Date): string {
@@ -14,6 +16,9 @@ export default function RecommendationManagePage() {
   const [selectedDate, setSelectedDate] = useState(() => formatDate(new Date()))
   const [recs, setRecs] = useState<RecommendationItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  const toast = useToast()
 
   // Add modal state
   const [showPicker, setShowPicker] = useState(false)
@@ -34,12 +39,13 @@ export default function RecommendationManagePage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
     listRecommendationsByDate(selectedDate)
       .then((items) => { if (!cancelled) setRecs(items) })
-      .catch(() => { if (!cancelled) setRecs([]) })
+      .catch(() => { if (!cancelled) { setRecs([]); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedDate])
+  }, [selectedDate, reloadKey])
 
   function handlePickVideo(video: VideoWithTags) {
     setPickedVideo(video)
@@ -56,8 +62,9 @@ export default function RecommendationManagePage() {
       // Refresh list
       const items = await listRecommendationsByDate(selectedDate)
       setRecs(items)
-    } catch { /* ignore */ }
-    finally { setCreating(false) }
+    } catch {
+      toast.error('新增推薦失敗，請重試')
+    } finally { setCreating(false) }
   }
 
   async function handleSortOrderChange(id: string, newOrder: number) {
@@ -66,7 +73,9 @@ export default function RecommendationManagePage() {
       await updateRecommendationSortOrder(id, newOrder)
       const items = await listRecommendationsByDate(selectedDate)
       setRecs(items)
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('更新排序失敗，請重試')
+    }
   }
 
   async function handleDelete(id: string) {
@@ -74,7 +83,9 @@ export default function RecommendationManagePage() {
     try {
       await deleteRecommendation(id)
       setRecs((prev) => prev.filter((r) => r.id !== id))
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('移除推薦失敗，請重試')
+    }
   }
 
   return (
@@ -108,6 +119,11 @@ export default function RecommendationManagePage() {
         {/* Recommendations list */}
         {loading ? (
           <div className="text-gray-500 text-center py-20">載入中...</div>
+        ) : loadError ? (
+          <ErrorBanner
+            message="無法載入推薦，請確認服務是否正常運作"
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         ) : recs.length === 0 ? (
           <div className="text-gray-500 text-center py-12">此日期尚無推薦</div>
         ) : (

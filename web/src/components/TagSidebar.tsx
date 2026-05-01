@@ -14,7 +14,9 @@ export default function TagSidebar({ selectedTagIds, onTagsChange }: TagSidebarP
   useEffect(() => {
     listTags()
       .then(setTags)
-      .catch(() => {})
+      .catch((err) => {
+        console.warn('failed to load tags', err)
+      })
       .finally(() => setLoading(false))
   }, [])
 

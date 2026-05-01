@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { listWatchHistory } from '../api/watchHistory'
 import type { WatchHistoryItem } from '../types'
 import Pagination from '../components/Pagination'
+import ErrorBanner from '../components/ErrorBanner'
 import { formatDuration } from '../utils/format'
 
 function formatRelativeTime(dateStr: string): string {
@@ -27,12 +28,15 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
 
     listWatchHistory(page, PAGE_SIZE)
       .then((res) => {
@@ -44,13 +48,14 @@ export default function HistoryPage() {
         if (cancelled) return
         setItems([])
         setTotal(0)
+        setLoadError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
 
     return () => { cancelled = true }
-  }, [page])
+  }, [page, reloadKey])
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -66,6 +71,11 @@ export default function HistoryPage() {
           <div className="flex items-center justify-center py-20 text-gray-500">
             載入中...
           </div>
+        ) : loadError ? (
+          <ErrorBanner
+            message="無法載入觀看記錄，請確認服務是否正常運作"
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <div className="text-gray-500">尚無觀看記錄</div>

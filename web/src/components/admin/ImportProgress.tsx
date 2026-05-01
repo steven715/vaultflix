@@ -37,7 +37,9 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
       setSkipped(job.skipped)
       setFailed(job.failed)
       setImportErrors(job.errors || [])
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('failed to restore import progress', err)
+    })
     return () => { cancelled = true }
   }, [jobId])
 

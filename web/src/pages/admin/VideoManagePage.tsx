@@ -8,6 +8,8 @@ import Header from '../../components/Header'
 import Pagination from '../../components/Pagination'
 import TagInput from '../../components/TagInput'
 import ImportProgress from '../../components/admin/ImportProgress'
+import ErrorBanner from '../../components/ErrorBanner'
+import { useToast } from '../../contexts/ToastContext'
 import { formatDuration, formatFileSize } from '../../utils/format'
 
 export default function VideoManagePage() {
@@ -15,7 +17,10 @@ export default function VideoManagePage() {
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [allTags, setAllTags] = useState<TagWithCount[]>([])
+  const toast = useToast()
 
   // Import state
   type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
@@ -69,20 +74,23 @@ export default function VideoManagePage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
     listVideos({ page, page_size: pageSize, sort_by: 'created_at', sort_order: 'desc', q: query || undefined, tag_ids: tagIdsStr || undefined })
       .then((res) => {
         if (cancelled) return
         setVideos(res.data)
         setTotal(res.total)
       })
-      .catch(() => { if (!cancelled) { setVideos([]); setTotal(0) } })
+      .catch(() => { if (!cancelled) { setVideos([]); setTotal(0); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [page, pageSize, query, tagIdsStr])
+  }, [page, pageSize, query, tagIdsStr, reloadKey])
 
   // Fetch tags
   useEffect(() => {
-    listTags().then(setAllTags).catch(() => {})
+    listTags().then(setAllTags).catch((err) => {
+      console.warn('failed to load tags', err)
+    })
   }, [])
 
   // Fetch media sources when import modal opens
@@ -96,7 +104,10 @@ export default function VideoManagePage() {
           setSelectedSourceID(enabled[0].id)
         }
       })
-      .catch(() => setMediaSources([]))
+      .catch((err) => {
+        console.warn('failed to load media sources', err)
+        setMediaSources([])
+      })
   }, [showImport])
 
   // Check for active import job on mount
@@ -107,7 +118,9 @@ export default function VideoManagePage() {
       setShowImport(true)
       setCurrentJobId(job.id)
       setImportState('importing')
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('failed to detect active import job', err)
+    })
     return () => { cancelled = true }
   }, [])
 
@@ -130,7 +143,11 @@ export default function VideoManagePage() {
             setCurrentJobId(activeJob.id)
             setImportState('importing')
           }
-        }).catch(() => {})
+        }).catch((detectErr) => {
+          console.warn('failed to detect active import job after 409', detectErr)
+        })
+      } else {
+        toast.error('匯入啟動失敗')
       }
     }
   }
@@ -149,8 +166,10 @@ export default function VideoManagePage() {
       const updated = await updateVideo(editingVideo.id, { title: editTitle, description: editDesc })
       setVideos((prev) => prev.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v))
       setEditingVideo(null)
-    } catch { /* keep modal open on error */ }
-    finally { setSaving(false) }
+      toast.success('已儲存')
+    } catch {
+      toast.error('儲存失敗，請重試')
+    } finally { setSaving(false) }
   }
 
   // Delete handler
@@ -162,7 +181,9 @@ export default function VideoManagePage() {
       await deleteVideo(id)
       setVideos((prev) => prev.filter((v) => v.id !== id))
       setTotal((prev) => prev - 1)
-    } catch { /* silently fail, could add error toast */ }
+    } catch {
+      toast.error('刪除失敗，請重試')
+    }
   }
 
 
@@ -190,6 +211,11 @@ export default function VideoManagePage() {
         {/* Video table */}
         {loading ? (
           <div className="text-gray-500 text-center py-20">載入中...</div>
+        ) : loadError ? (
+          <ErrorBanner
+            message="無法載入影片，請確認服務是否正常運作"
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         ) : videos.length === 0 ? (
           <div className="text-gray-500 text-center py-20">
             {query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}
@@ -239,7 +265,9 @@ export default function VideoManagePage() {
                         initialTags={video.tags}
                         allTags={allTags}
                         onTagsChange={() => {
-                          listTags().then(setAllTags).catch(() => {})
+                          listTags().then(setAllTags).catch((err) => {
+                            console.warn('failed to refresh tags', err)
+                          })
                         }}
                       />
                     </td>
