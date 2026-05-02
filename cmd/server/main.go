@@ -63,6 +63,19 @@ func main() {
 		slog.Warn("minio connected, bucket not found", "bucket", cfg.MinIOVideoBucket)
 	}
 
+	for _, bucket := range []string{cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket} {
+		ok, err := minioClient.BucketExists(context.Background(), bucket)
+		if err != nil {
+			slog.Error("failed to check minio bucket", "error", err, "bucket", bucket)
+			os.Exit(1)
+		}
+		if ok {
+			slog.Info("minio bucket exists", "bucket", bucket)
+		} else {
+			slog.Warn("minio bucket not found", "bucket", bucket)
+		}
+	}
+
 	// Create a separate MinIO client for presigned URL generation using the public endpoint.
 	// Uses BucketLookupPath to avoid location lookup calls to the unreachable public endpoint.
 	var presignClient *minio.Client
@@ -104,7 +117,7 @@ func main() {
 	recRepo := repository.NewRecommendationRepository(pool)
 	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
 
-	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket)
+	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)

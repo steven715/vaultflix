@@ -44,6 +44,7 @@ services:
       mc alias set vaultflix http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY};
       mc mb --ignore-existing vaultflix/${MINIO_VIDEO_BUCKET};
       mc mb --ignore-existing vaultflix/${MINIO_THUMBNAIL_BUCKET};
+      mc mb --ignore-existing vaultflix/${MINIO_PREVIEW_BUCKET};
       echo 'Buckets created successfully';
       "
 

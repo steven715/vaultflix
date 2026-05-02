@@ -9,10 +9,13 @@ import (
 type MinIOClient struct {
 	UploadVideoFunc                   func(ctx context.Context, objectKey, filePath string) error
 	UploadThumbnailFunc               func(ctx context.Context, objectKey, filePath string) error
+	UploadPreviewFunc                 func(ctx context.Context, objectKey, filePath string) error
 	GeneratePresignedURLFunc          func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
 	GenerateThumbnailPresignedURLFunc func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GeneratePreviewPresignedURLFunc   func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
 	DeleteVideoFunc                   func(ctx context.Context, objectKey string) error
 	DeleteThumbnailFunc               func(ctx context.Context, objectKey string) error
+	DeletePreviewFunc                 func(ctx context.Context, objectKey string) error
 }
 
 func (m *MinIOClient) UploadVideo(ctx context.Context, objectKey, filePath string) error {
@@ -55,4 +58,25 @@ func (m *MinIOClient) DeleteThumbnail(ctx context.Context, objectKey string) err
 		return fmt.Errorf("mock: DeleteThumbnailFunc not set")
 	}
 	return m.DeleteThumbnailFunc(ctx, objectKey)
+}
+
+func (m *MinIOClient) UploadPreview(ctx context.Context, objectKey, filePath string) error {
+	if m.UploadPreviewFunc == nil {
+		return fmt.Errorf("mock: UploadPreviewFunc not set")
+	}
+	return m.UploadPreviewFunc(ctx, objectKey, filePath)
+}
+
+func (m *MinIOClient) GeneratePreviewPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	if m.GeneratePreviewPresignedURLFunc == nil {
+		return "", fmt.Errorf("mock: GeneratePreviewPresignedURLFunc not set")
+	}
+	return m.GeneratePreviewPresignedURLFunc(ctx, objectKey, expiry)
+}
+
+func (m *MinIOClient) DeletePreview(ctx context.Context, objectKey string) error {
+	if m.DeletePreviewFunc == nil {
+		return fmt.Errorf("mock: DeletePreviewFunc not set")
+	}
+	return m.DeletePreviewFunc(ctx, objectKey)
 }

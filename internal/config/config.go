@@ -22,6 +22,7 @@ type Config struct {
 	MinIOUseSSL          bool
 	MinIOVideoBucket     string
 	MinIOThumbnailBucket string
+	MinIOPreviewBucket   string
 
 	// JWT
 	JWTSecret      string
@@ -58,6 +59,7 @@ func Load() *Config {
 		MinIOUseSSL:          getEnvBool("MINIO_USE_SSL", false),
 		MinIOVideoBucket:     getEnv("MINIO_VIDEO_BUCKET", "vaultflix-videos"),
 		MinIOThumbnailBucket: getEnv("MINIO_THUMBNAIL_BUCKET", "vaultflix-thumbnails"),
+		MinIOPreviewBucket:   getEnv("MINIO_PREVIEW_BUCKET", "vaultflix-previews"),
 
 		JWTSecret:      getEnv("JWT_SECRET", "change-me-in-production"),
 		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
