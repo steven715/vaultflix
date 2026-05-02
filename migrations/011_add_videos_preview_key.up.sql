@@ -1,0 +1,1 @@
+ALTER TABLE videos ADD COLUMN preview_key VARCHAR(1000) DEFAULT '';

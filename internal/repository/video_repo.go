@@ -44,15 +44,15 @@ const queryExistsVideoByFilenameAndSize = `
 `
 
 const queryCreateVideo = `
-    INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key,
+    INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key, preview_key,
                         duration_seconds, resolution, file_size_bytes, mime_type,
                         original_filename, source_id, file_path)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     RETURNING created_at, updated_at
 `
 
 const queryGetVideoByID = `
-    SELECT id, title, description, minio_object_key, thumbnail_key,
+    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
            duration_seconds, resolution, file_size_bytes, mime_type,
            original_filename, created_at, updated_at, source_id, file_path
     FROM videos
@@ -60,7 +60,7 @@ const queryGetVideoByID = `
 `
 
 const queryFindBySourceAndPath = `
-    SELECT id, title, description, minio_object_key, thumbnail_key,
+    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
            duration_seconds, resolution, file_size_bytes, mime_type,
            original_filename, created_at, updated_at, source_id, file_path
     FROM videos
@@ -98,7 +98,7 @@ func (r *videoRepository) ExistsByFilenameAndSize(ctx context.Context, filename 
 
 func (r *videoRepository) Create(ctx context.Context, video *model.Video) error {
 	err := r.pool.QueryRow(ctx, queryCreateVideo,
-		video.ID, video.Title, video.Description, video.MinIOObjectKey, video.ThumbnailKey,
+		video.ID, video.Title, video.Description, video.MinIOObjectKey, video.ThumbnailKey, video.PreviewKey,
 		video.DurationSeconds, video.Resolution, video.FileSizeBytes, video.MimeType,
 		video.OriginalFilename, video.SourceID, video.FilePath,
 	).Scan(&video.CreatedAt, &video.UpdatedAt)
@@ -112,7 +112,7 @@ func (r *videoRepository) Create(ctx context.Context, video *model.Video) error 
 func (r *videoRepository) GetByID(ctx context.Context, id string) (*model.Video, error) {
 	var video model.Video
 	err := r.pool.QueryRow(ctx, queryGetVideoByID, id).Scan(
-		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey,
+		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey, &video.PreviewKey,
 		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
 		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
 	)
@@ -168,7 +168,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	offset := (filter.Page - 1) * filter.PageSize
 	nextArg := len(args) + 1
 
-	dataQuery := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, " +
+	dataQuery := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, v.preview_key, " +
 		"v.duration_seconds, v.resolution, v.file_size_bytes, v.mime_type, " +
 		"v.original_filename, v.created_at, v.updated_at, v.source_id, v.file_path " +
 		"FROM videos v" + whereClause +
@@ -186,7 +186,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	for rows.Next() {
 		var v model.Video
 		if err := rows.Scan(
-			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey,
+			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey, &v.PreviewKey,
 			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
 			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt, &v.SourceID, &v.FilePath,
 		); err != nil {
@@ -205,7 +205,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 func (r *videoRepository) FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error) {
 	var video model.Video
 	err := r.pool.QueryRow(ctx, queryFindBySourceAndPath, sourceID, filePath).Scan(
-		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey,
+		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey, &video.PreviewKey,
 		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
 		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
 	)

@@ -50,7 +50,7 @@ const queryDeleteRecommendation = `
 `
 
 const queryGetRandomUnwatched = `
-    SELECT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key,
+    SELECT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, v.preview_key,
            v.duration_seconds, v.resolution, v.file_size_bytes, v.mime_type,
            v.original_filename, v.created_at, v.updated_at
     FROM videos v
@@ -141,7 +141,7 @@ func (r *recommendationRepository) GetRandomUnwatched(ctx context.Context, userI
 	for rows.Next() {
 		var v model.Video
 		if err := rows.Scan(
-			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey,
+			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey, &v.PreviewKey,
 			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
 			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt,
 		); err != nil {
