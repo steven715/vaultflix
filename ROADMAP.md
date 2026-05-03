@@ -7,8 +7,8 @@
 - [x] **匯入改為非同步處理** — Phase 12 已完成：背景 worker + WebSocket 進度推送
 - [ ] **匯入 handler 加入 context timeout** — 目前直接使用 `c.Request.Context()`，沒有明確 timeout 保護
 - [x] **匯入目錄路徑驗證** — Phase 8 已完成：AllowedMountPrefix + filepath.Clean 防護
-- [ ] **Presigned URL 快取** — `video_service.List()` 每次為每部影片呼叫 MinIO 產生 thumbnail URL，20 部就是 20 次 API call，應加入短期快取
-- [ ] **推薦服務批次產生 URL** — `generateThumbnailURL()` 在迴圈中逐一呼叫 MinIO，應改為批次處理或快取
+- [x] **Presigned URL 快取** — Slice 1.6 (hover preview) 已完成：`URLCache` interface + 記憶體實作，thumbnail/preview presign 共用，TTL = expiry − 5min
+- [ ] **推薦服務批次產生 URL** — Recommendation 仍逐一呼叫；雖然 1.6 加了 cache 緩解 N+1 成本，但 batch query 還沒做
 - [ ] **優化 GetRandomUnwatched 查詢** — 目前用 `LEFT JOIN + OR` 條件，大量觀看記錄時效能差，應改用 `NOT EXISTS` 子查詢
 - [ ] **MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 失敗只 log 不中斷，長期會累積孤兒檔案，需記錄失敗項供後續清理
 - [ ] **新增 `video_tags.tag_id` 索引** — 按標籤篩選影片時缺少索引，影響 GROUP BY 效能
