@@ -51,12 +51,12 @@ func (s *recommendationService) GetToday(ctx context.Context, userID string, dat
 	if len(recs) > 0 {
 		items := make([]model.RecommendationItem, len(recs))
 		for i, rec := range recs {
-			thumbnailURL := s.generateThumbnailURL(ctx, rec.ThumbnailKey)
 			items[i] = model.RecommendationItem{
 				ID:              rec.ID,
 				VideoID:         rec.VideoID,
 				Title:           rec.Title,
-				ThumbnailURL:    thumbnailURL,
+				ThumbnailURL:    s.generateThumbnailURL(ctx, rec.ThumbnailKey),
+				PreviewURL:      s.generatePreviewURL(ctx, rec.PreviewKey),
 				DurationSeconds: rec.DurationSeconds,
 				Resolution:      rec.Resolution,
 				FileSizeBytes:   rec.FileSizeBytes,
@@ -75,12 +75,12 @@ func (s *recommendationService) GetToday(ctx context.Context, userID string, dat
 
 	items := make([]model.RecommendationItem, len(videos))
 	for i, v := range videos {
-		thumbnailURL := s.generateThumbnailURL(ctx, v.ThumbnailKey)
 		items[i] = model.RecommendationItem{
 			ID:              v.ID,
 			VideoID:         v.ID,
 			Title:           v.Title,
-			ThumbnailURL:    thumbnailURL,
+			ThumbnailURL:    s.generateThumbnailURL(ctx, v.ThumbnailKey),
+			PreviewURL:      s.generatePreviewURL(ctx, v.PreviewKey),
 			DurationSeconds: v.DurationSeconds,
 			Resolution:      v.Resolution,
 			FileSizeBytes:   v.FileSizeBytes,
@@ -100,12 +100,12 @@ func (s *recommendationService) ListByDate(ctx context.Context, date time.Time) 
 
 	items := make([]model.RecommendationItem, len(recs))
 	for i, rec := range recs {
-		thumbnailURL := s.generateThumbnailURL(ctx, rec.ThumbnailKey)
 		items[i] = model.RecommendationItem{
 			ID:              rec.ID,
 			VideoID:         rec.VideoID,
 			Title:           rec.Title,
-			ThumbnailURL:    thumbnailURL,
+			ThumbnailURL:    s.generateThumbnailURL(ctx, rec.ThumbnailKey),
+			PreviewURL:      s.generatePreviewURL(ctx, rec.PreviewKey),
 			DurationSeconds: rec.DurationSeconds,
 			Resolution:      rec.Resolution,
 			FileSizeBytes:   rec.FileSizeBytes,
@@ -157,6 +157,21 @@ func (s *recommendationService) generateThumbnailURL(ctx context.Context, thumbn
 	if err != nil {
 		slog.Warn("failed to generate thumbnail url for recommendation",
 			"thumbnail_key", thumbnailKey,
+			"error", err,
+		)
+		return ""
+	}
+	return url
+}
+
+func (s *recommendationService) generatePreviewURL(ctx context.Context, previewKey string) string {
+	if previewKey == "" {
+		return ""
+	}
+	url, err := s.minioSvc.GeneratePreviewPresignedURL(ctx, previewKey, 0)
+	if err != nil {
+		slog.Warn("failed to generate preview url for recommendation",
+			"preview_key", previewKey,
 			"error", err,
 		)
 		return ""

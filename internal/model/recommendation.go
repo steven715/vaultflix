@@ -20,17 +20,19 @@ type RecommendationWithVideo struct {
 	SortOrder       int       `json:"sort_order"`
 	Title           string    `json:"title"`
 	ThumbnailKey    string    `json:"-"`
+	PreviewKey      string    `json:"-"`
 	DurationSeconds int       `json:"duration_seconds"`
 	Resolution      string    `json:"resolution"`
 	FileSizeBytes   int64     `json:"file_size_bytes"`
 }
 
-// RecommendationItem is the service-layer response with presigned thumbnail URL.
+// RecommendationItem is the service-layer response with presigned thumbnail and preview URLs.
 type RecommendationItem struct {
 	ID              string `json:"id"`
 	VideoID         string `json:"video_id"`
 	Title           string `json:"title"`
 	ThumbnailURL    string `json:"thumbnail_url,omitempty"`
+	PreviewURL      string `json:"preview_url,omitempty"`
 	DurationSeconds int    `json:"duration_seconds"`
 	Resolution      string `json:"resolution"`
 	FileSizeBytes   int64  `json:"file_size_bytes"`

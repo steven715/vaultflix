@@ -156,6 +156,7 @@ export interface RecommendationItem {
   video_id: string
   title: string
   thumbnail_url?: string
+  preview_url?: string
   duration_seconds: number
   resolution: string
   file_size_bytes: number

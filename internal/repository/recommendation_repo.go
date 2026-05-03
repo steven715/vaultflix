@@ -28,7 +28,8 @@ type RecommendationRepository interface {
 
 const queryListRecommendationsByDate = `
     SELECT dr.id, dr.video_id, dr.recommend_date, dr.sort_order,
-           v.title, v.thumbnail_key, v.duration_seconds, v.resolution, v.file_size_bytes
+           v.title, v.thumbnail_key, v.preview_key,
+           v.duration_seconds, v.resolution, v.file_size_bytes
     FROM daily_recommendations dr
     JOIN videos v ON v.id = dr.video_id
     WHERE dr.recommend_date = $1
@@ -80,7 +81,8 @@ func (r *recommendationRepository) ListByDate(ctx context.Context, date time.Tim
 		var rec model.RecommendationWithVideo
 		if err := rows.Scan(
 			&rec.ID, &rec.VideoID, &rec.RecommendDate, &rec.SortOrder,
-			&rec.Title, &rec.ThumbnailKey, &rec.DurationSeconds, &rec.Resolution, &rec.FileSizeBytes,
+			&rec.Title, &rec.ThumbnailKey, &rec.PreviewKey,
+			&rec.DurationSeconds, &rec.Resolution, &rec.FileSizeBytes,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan recommendation: %w", err)
 		}

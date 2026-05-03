@@ -17,6 +17,7 @@ func TestGetToday_ManualRecommendations(t *testing.T) {
 			VideoID:         "vid-1",
 			Title:           "Manual Pick 1",
 			ThumbnailKey:    "thumbnails/vid-1.jpg",
+			PreviewKey:      "previews/vid-1.mp4",
 			DurationSeconds: 3600,
 			SortOrder:       1,
 		},
@@ -40,6 +41,9 @@ func TestGetToday_ManualRecommendations(t *testing.T) {
 		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
 			return "https://minio/thumb-" + objectKey, nil
 		},
+		GeneratePreviewPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+			return "https://minio/preview-" + objectKey, nil
+		},
 	}
 
 	svc := NewRecommendationService(recRepo, videoRepo, minioSvc)
@@ -60,11 +64,17 @@ func TestGetToday_ManualRecommendations(t *testing.T) {
 	if items[0].ThumbnailURL != "https://minio/thumb-thumbnails/vid-1.jpg" {
 		t.Errorf("expected thumbnail url, got %s", items[0].ThumbnailURL)
 	}
+	if items[0].PreviewURL != "https://minio/preview-previews/vid-1.mp4" {
+		t.Errorf("expected preview url for vid-1, got %q", items[0].PreviewURL)
+	}
+	if items[1].PreviewURL != "" {
+		t.Errorf("expected empty preview url when preview_key missing, got %q", items[1].PreviewURL)
+	}
 }
 
 func TestGetToday_FallbackToRandom(t *testing.T) {
 	videos := []model.Video{
-		{ID: "vid-10", Title: "Random 1", ThumbnailKey: "thumbnails/vid-10.jpg", DurationSeconds: 600},
+		{ID: "vid-10", Title: "Random 1", ThumbnailKey: "thumbnails/vid-10.jpg", PreviewKey: "previews/vid-10.mp4", DurationSeconds: 600},
 		{ID: "vid-11", Title: "Random 2", ThumbnailKey: "thumbnails/vid-11.jpg", DurationSeconds: 900},
 	}
 
@@ -82,6 +92,9 @@ func TestGetToday_FallbackToRandom(t *testing.T) {
 	minioSvc := &mock.MinIOClient{
 		GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
 			return "https://minio/thumb-" + objectKey, nil
+		},
+		GeneratePreviewPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+			return "https://minio/preview-" + objectKey, nil
 		},
 	}
 
@@ -102,6 +115,12 @@ func TestGetToday_FallbackToRandom(t *testing.T) {
 	}
 	if items[0].VideoID != "vid-10" {
 		t.Errorf("expected video_id vid-10, got %s", items[0].VideoID)
+	}
+	if items[0].PreviewURL != "https://minio/preview-previews/vid-10.mp4" {
+		t.Errorf("expected preview url for vid-10, got %q", items[0].PreviewURL)
+	}
+	if items[1].PreviewURL != "" {
+		t.Errorf("expected empty preview url when preview_key missing, got %q", items[1].PreviewURL)
 	}
 }
 
