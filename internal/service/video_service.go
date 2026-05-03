@@ -72,10 +72,24 @@ func (s *VideoService) List(ctx context.Context, filter model.VideoFilter) ([]mo
 			}
 		}
 
+		var previewURL string
+		if v.PreviewKey != "" {
+			url, err := s.minioSvc.GeneratePreviewPresignedURL(ctx, v.PreviewKey, 0)
+			if err != nil {
+				slog.Warn("failed to generate preview url for list",
+					"video_id", v.ID,
+					"error", err,
+				)
+			} else {
+				previewURL = url
+			}
+		}
+
 		result[i] = model.VideoWithTags{
 			Video:        v,
 			Tags:         tags,
 			ThumbnailURL: thumbnailURL,
+			PreviewURL:   previewURL,
 		}
 	}
 
@@ -106,11 +120,23 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 		}
 	}
 
+	var previewURL string
+	if video.PreviewKey != "" {
+		previewURL, err = s.minioSvc.GeneratePreviewPresignedURL(ctx, video.PreviewKey, 0)
+		if err != nil {
+			slog.Warn("failed to generate preview url",
+				"video_id", id,
+				"error", err,
+			)
+		}
+	}
+
 	detail := &model.VideoDetail{
 		VideoWithTags: model.VideoWithTags{
 			Video:        *video,
 			Tags:         tags,
 			ThumbnailURL: thumbnailURL,
+			PreviewURL:   previewURL,
 		},
 		StreamURL: streamURL,
 	}

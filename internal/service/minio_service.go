@@ -10,7 +10,14 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-const defaultPresignedExpiry = 2 * time.Hour
+const (
+	defaultPresignedExpiry = 2 * time.Hour
+	// presignCacheLeeway is subtracted from the presigned URL's lifetime when
+	// caching, so a cached URL is never returned in the last few minutes
+	// before its real expiry — that protects callers (browsers) from racing a
+	// 403 right after consuming the URL.
+	presignCacheLeeway = 5 * time.Minute
+)
 
 // MinIOClient defines the contract for object storage operations.
 // GeneratePresignedURL, GenerateThumbnailPresignedURL and GeneratePreviewPresignedURL
@@ -34,12 +41,14 @@ type minIOService struct {
 	videoBucket     string
 	thumbnailBucket string
 	previewBucket   string
+	urlCache        URLCache
 }
 
 // NewMinIOService creates a MinIO service. If presignClient is non-nil, it is used
 // for generating presigned URLs (e.g. when the public endpoint differs from the
-// internal endpoint). Otherwise, client is used for everything.
-func NewMinIOService(client, presignClient *minio.Client, videoBucket, thumbnailBucket, previewBucket string) MinIOClient {
+// internal endpoint). Otherwise, client is used for everything. urlCache must
+// be non-nil; pass NewInMemoryURLCache() for the default.
+func NewMinIOService(client, presignClient *minio.Client, videoBucket, thumbnailBucket, previewBucket string, urlCache URLCache) MinIOClient {
 	if presignClient == nil {
 		presignClient = client
 	}
@@ -49,6 +58,7 @@ func NewMinIOService(client, presignClient *minio.Client, videoBucket, thumbnail
 		videoBucket:     videoBucket,
 		thumbnailBucket: thumbnailBucket,
 		previewBucket:   previewBucket,
+		urlCache:        urlCache,
 	}
 }
 
@@ -108,16 +118,7 @@ func (s *minIOService) GeneratePresignedURL(ctx context.Context, objectKey strin
 }
 
 func (s *minIOService) GenerateThumbnailPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
-	if expiry == 0 {
-		expiry = defaultPresignedExpiry
-	}
-
-	presignedURL, err := s.presignClient.PresignedGetObject(ctx, s.thumbnailBucket, objectKey, expiry, url.Values{})
-	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned url for thumbnail %s: %w", objectKey, err)
-	}
-
-	return toRelativeMinIOURL(presignedURL), nil
+	return s.presignCached(ctx, s.thumbnailBucket, "thumb", "thumbnail", objectKey, expiry)
 }
 
 func (s *minIOService) UploadPreview(ctx context.Context, objectKey, filePath string) error {
@@ -143,16 +144,34 @@ func (s *minIOService) UploadPreview(ctx context.Context, objectKey, filePath st
 }
 
 func (s *minIOService) GeneratePreviewPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	return s.presignCached(ctx, s.previewBucket, "preview", "preview", objectKey, expiry)
+}
+
+// presignCached produces a presigned GET URL and memoises it in urlCache. The
+// cache key is "<cachePrefix>:<objectKey>"; cache TTL is the presigned expiry
+// minus presignCacheLeeway so a cached URL never returns within the leeway
+// window before its real expiry. errLabel appears in the wrapped error for
+// observability.
+func (s *minIOService) presignCached(ctx context.Context, bucket, cachePrefix, errLabel, objectKey string, expiry time.Duration) (string, error) {
 	if expiry == 0 {
 		expiry = defaultPresignedExpiry
 	}
 
-	presignedURL, err := s.presignClient.PresignedGetObject(ctx, s.previewBucket, objectKey, expiry, url.Values{})
-	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned url for preview %s: %w", objectKey, err)
+	cacheKey := cachePrefix + ":" + objectKey
+	if cached, ok := s.urlCache.Get(cacheKey); ok {
+		return cached, nil
 	}
 
-	return toRelativeMinIOURL(presignedURL), nil
+	presignedURL, err := s.presignClient.PresignedGetObject(ctx, bucket, objectKey, expiry, url.Values{})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned url for %s %s: %w", errLabel, objectKey, err)
+	}
+	relative := toRelativeMinIOURL(presignedURL)
+
+	if ttl := expiry - presignCacheLeeway; ttl > 0 {
+		s.urlCache.Set(cacheKey, relative, ttl)
+	}
+	return relative, nil
 }
 
 // toRelativeMinIOURL converts an absolute MinIO presigned URL to a relative
