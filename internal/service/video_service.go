@@ -195,5 +195,15 @@ func (s *VideoService) Delete(ctx context.Context, id string) error {
 		}
 	}
 
+	if video.PreviewKey != "" {
+		if err := s.minioSvc.DeletePreview(ctx, video.PreviewKey); err != nil {
+			slog.Error("failed to delete preview from minio, orphan object may remain",
+				"video_id", id,
+				"preview_key", video.PreviewKey,
+				"error", err,
+			)
+		}
+	}
+
 	return nil
 }

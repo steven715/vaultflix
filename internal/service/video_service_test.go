@@ -284,6 +284,70 @@ func TestVideoService_Update_NotFound(t *testing.T) {
 	}
 }
 
+func TestVideoService_Delete_RemovesPreview(t *testing.T) {
+	video := &model.Video{
+		ID:             "vid-1",
+		MinIOObjectKey: "videos/vid-1/test.mp4",
+		ThumbnailKey:   "thumbnails/vid-1.jpg",
+		PreviewKey:     "previews/vid-1.mp4",
+	}
+
+	deletePreviewCalled := false
+	var capturedPreviewKey string
+
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return video, nil
+		},
+		DeleteFunc: func(ctx context.Context, id string) error { return nil },
+	}
+	tagRepo := &mock.TagRepository{}
+	minioSvc := &mock.MinIOClient{
+		DeleteVideoFunc:     func(ctx context.Context, objectKey string) error { return nil },
+		DeleteThumbnailFunc: func(ctx context.Context, objectKey string) error { return nil },
+		DeletePreviewFunc: func(ctx context.Context, objectKey string) error {
+			deletePreviewCalled = true
+			capturedPreviewKey = objectKey
+			return nil
+		},
+	}
+
+	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	if err := svc.Delete(context.Background(), "vid-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !deletePreviewCalled {
+		t.Error("expected DeletePreview to be called")
+	}
+	if capturedPreviewKey != "previews/vid-1.mp4" {
+		t.Errorf("expected preview key previews/vid-1.mp4, got %s", capturedPreviewKey)
+	}
+}
+
+func TestVideoService_Delete_PreviewFailure_DoesNotPropagate(t *testing.T) {
+	video := &model.Video{
+		ID:           "vid-1",
+		ThumbnailKey: "thumbnails/vid-1.jpg",
+		PreviewKey:   "previews/vid-1.mp4",
+	}
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) { return video, nil },
+		DeleteFunc:  func(ctx context.Context, id string) error { return nil },
+	}
+	tagRepo := &mock.TagRepository{}
+	minioSvc := &mock.MinIOClient{
+		DeleteThumbnailFunc: func(ctx context.Context, objectKey string) error { return nil },
+		DeletePreviewFunc: func(ctx context.Context, objectKey string) error {
+			return errors.New("minio connection refused")
+		},
+	}
+
+	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	if err := svc.Delete(context.Background(), "vid-1"); err != nil {
+		t.Fatalf("expected nil error (preview failure is best-effort), got %v", err)
+	}
+}
+
 func TestVideoService_Delete_NotFound(t *testing.T) {
 	videoRepo := &mock.VideoRepository{
 		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
