@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useMatchMedia } from '../hooks/useMatchMedia'
 import type { VideoWithTags } from '../types'
 import { formatDuration, formatFileSize } from '../utils/format'
 
@@ -6,14 +8,59 @@ interface VideoCardProps {
   video: VideoWithTags
 }
 
+const HOVER_DELAY_MS = 300
+
 export default function VideoCard({ video }: VideoCardProps) {
+  const supportsHover = useMatchMedia('(hover: hover)')
+  const [showPreview, setShowPreview] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const canPreview = supportsHover && Boolean(video.preview_url)
+
+  function onMouseEnter() {
+    if (!canPreview) return
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setShowPreview(true), HOVER_DELAY_MS)
+  }
+
+  function onMouseLeave() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    setShowPreview(false)
+  }
+
+  function onPreviewError() {
+    setShowPreview(false)
+  }
+
   return (
     <Link
       to={`/videos/${video.id}`}
       className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-indigo-500 transition-all"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <div className="aspect-video bg-gray-800 relative">
-        {video.thumbnail_url ? (
+        {showPreview && video.preview_url ? (
+          <video
+            src={video.preview_url}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            onError={onPreviewError}
+            className="w-full h-full object-cover"
+          />
+        ) : video.thumbnail_url ? (
           <img
             src={video.thumbnail_url}
             alt={video.title}

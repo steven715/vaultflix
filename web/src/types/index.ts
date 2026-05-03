@@ -4,6 +4,7 @@ export interface Video {
   description: string
   minio_object_key: string
   thumbnail_key: string
+  preview_key: string
   duration_seconds: number
   resolution: string
   file_size_bytes: number
@@ -26,6 +27,7 @@ export interface TagWithCount extends Tag {
 export interface VideoWithTags extends Video {
   tags: Tag[]
   thumbnail_url?: string
+  preview_url?: string
 }
 
 export interface VideoDetail extends VideoWithTags {
