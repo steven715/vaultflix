@@ -208,6 +208,8 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		return fileResult{Status: "error", Error: fmt.Sprintf("failed to upload thumbnail for %s: %v", filename, err)}
 	}
 
+	previewObjectKey := s.tryGeneratePreview(ctx, videoID, filePath, filename, metadata.durationSeconds)
+
 	title := strings.TrimSuffix(filename, filepath.Ext(filename))
 
 	video := &model.Video{
@@ -216,6 +218,7 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		Description:      "",
 		MinIOObjectKey:   "",
 		ThumbnailKey:     thumbnailObjectKey,
+		PreviewKey:       previewObjectKey,
 		DurationSeconds:  metadata.durationSeconds,
 		Resolution:       metadata.resolution,
 		FileSizeBytes:    fileSize,
@@ -395,6 +398,35 @@ func (s *ImportService) generateThumbnail(ctx context.Context, filePath string, 
 	}
 
 	return tmpPath, nil
+}
+
+// tryGeneratePreview attempts to produce and upload a preview clip for the
+// given source. Failures are logged and result in an empty key (caller stores
+// PreviewKey="" so the video is still imported). A missing preview is treated
+// as a degraded but acceptable state per the spec — having a thumbnail is more
+// important than having a preview.
+func (s *ImportService) tryGeneratePreview(ctx context.Context, videoID, filePath, filename string, durationSeconds int) string {
+	previewPath, err := generatePreviewClip(ctx, filePath, durationSeconds)
+	if err != nil {
+		slog.Warn("preview generation failed",
+			"video_id", videoID,
+			"file", filename,
+			"error", err,
+		)
+		return ""
+	}
+	defer os.Remove(previewPath)
+
+	previewObjectKey := fmt.Sprintf("previews/%s.mp4", videoID)
+	if err := s.minioSvc.UploadPreview(ctx, previewObjectKey, previewPath); err != nil {
+		slog.Warn("preview upload failed",
+			"video_id", videoID,
+			"file", filename,
+			"error", err,
+		)
+		return ""
+	}
+	return previewObjectKey
 }
 
 func extensionToMIME(ext string) string {
