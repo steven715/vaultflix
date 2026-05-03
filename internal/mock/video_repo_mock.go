@@ -15,6 +15,8 @@ type VideoRepository struct {
 	UpdateFunc                  func(ctx context.Context, id string, input model.UpdateVideoInput) error
 	DeleteFunc                  func(ctx context.Context, id string) error
 	FindBySourceAndPathFunc     func(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
+	ListMissingPreviewsFunc     func(ctx context.Context) ([]model.Video, error)
+	UpdatePreviewKeyFunc        func(ctx context.Context, id string, previewKey string) error
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -64,4 +66,18 @@ func (m *VideoRepository) FindBySourceAndPath(ctx context.Context, sourceID stri
 		return nil, fmt.Errorf("mock: FindBySourceAndPathFunc not set")
 	}
 	return m.FindBySourceAndPathFunc(ctx, sourceID, filePath)
+}
+
+func (m *VideoRepository) ListMissingPreviews(ctx context.Context) ([]model.Video, error) {
+	if m.ListMissingPreviewsFunc == nil {
+		return nil, fmt.Errorf("mock: ListMissingPreviewsFunc not set")
+	}
+	return m.ListMissingPreviewsFunc(ctx)
+}
+
+func (m *VideoRepository) UpdatePreviewKey(ctx context.Context, id string, previewKey string) error {
+	if m.UpdatePreviewKeyFunc == nil {
+		return fmt.Errorf("mock: UpdatePreviewKeyFunc not set")
+	}
+	return m.UpdatePreviewKeyFunc(ctx, id, previewKey)
 }

@@ -17,6 +17,7 @@ import (
 // GetByID returns model.ErrNotFound when the video does not exist.
 // Update returns model.ErrNotFound when the video does not exist.
 // Delete returns model.ErrNotFound when the video does not exist.
+// UpdatePreviewKey returns model.ErrNotFound when the video does not exist.
 type VideoRepository interface {
 	ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error)
 	Create(ctx context.Context, video *model.Video) error
@@ -27,6 +28,11 @@ type VideoRepository interface {
 	// FindBySourceAndPath looks up a video by source_id + file_path.
 	// Returns model.ErrNotFound when no matching video exists.
 	FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
+	// ListMissingPreviews returns all videos whose preview_key is empty,
+	// ordered by created_at ASC. Used by the preview-backfill job.
+	ListMissingPreviews(ctx context.Context) ([]model.Video, error)
+	// UpdatePreviewKey persists the given preview object key for the video.
+	UpdatePreviewKey(ctx context.Context, id string, previewKey string) error
 }
 
 var allowedSortColumns = map[string]string{
@@ -75,6 +81,21 @@ const queryUpdateVideo = `
 
 const queryDeleteVideo = `
     DELETE FROM videos WHERE id = $1
+`
+
+const queryListMissingPreviews = `
+    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
+           duration_seconds, resolution, file_size_bytes, mime_type,
+           original_filename, created_at, updated_at, source_id, file_path
+    FROM videos
+    WHERE preview_key IS NULL OR preview_key = ''
+    ORDER BY created_at ASC
+`
+
+const queryUpdateVideoPreviewKey = `
+    UPDATE videos
+    SET preview_key = $2, updated_at = NOW()
+    WHERE id = $1
 `
 
 type videoRepository struct {
@@ -200,6 +221,44 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	}
 
 	return videos, total, nil
+}
+
+func (r *videoRepository) ListMissingPreviews(ctx context.Context) ([]model.Video, error) {
+	rows, err := r.pool.Query(ctx, queryListMissingPreviews)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list videos missing previews: %w", err)
+	}
+	defer rows.Close()
+
+	var videos []model.Video
+	for rows.Next() {
+		var v model.Video
+		if err := rows.Scan(
+			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey, &v.PreviewKey,
+			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
+			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt, &v.SourceID, &v.FilePath,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan video missing preview: %w", err)
+		}
+		videos = append(videos, v)
+	}
+
+	if videos == nil {
+		videos = []model.Video{}
+	}
+
+	return videos, nil
+}
+
+func (r *videoRepository) UpdatePreviewKey(ctx context.Context, id string, previewKey string) error {
+	result, err := r.pool.Exec(ctx, queryUpdateVideoPreviewKey, id, previewKey)
+	if err != nil {
+		return fmt.Errorf("failed to update preview key for video %s: %w", id, err)
+	}
+	if result.RowsAffected() == 0 {
+		return model.ErrNotFound
+	}
+	return nil
 }
 
 func (r *videoRepository) FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error) {
