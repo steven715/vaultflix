@@ -121,6 +121,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
+	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
 	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
@@ -139,6 +140,7 @@ func main() {
 	recHandler := handler.NewRecommendationHandler(recService)
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
+	backfillHandler := handler.NewBackfillHandler(backfillService)
 
 	wsHandler := handler.NewWSHandler(hub)
 
@@ -207,6 +209,11 @@ func main() {
 		api.POST("/media-sources", mediaSourceHandler.Create)
 		api.PUT("/media-sources/:id", mediaSourceHandler.Update)
 		api.DELETE("/media-sources/:id", mediaSourceHandler.Delete)
+
+		// Backfill endpoints (admin only, enforced by Casbin)
+		api.POST("/admin/videos/backfill-previews", backfillHandler.Start)
+		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
+		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)
