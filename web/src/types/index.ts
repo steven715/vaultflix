@@ -112,6 +112,35 @@ export interface ImportProgress {
   error?: string
 }
 
+export interface BackfillError {
+  video_id: string
+  original_filename: string
+  error: string
+}
+
+export interface BackfillJob {
+  id: string
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  current_video_id?: string
+  errors: BackfillError[]
+  started_at: string
+  finished_at?: string
+}
+
+export interface BackfillProgress {
+  job_id: string
+  video_id: string
+  original_filename: string
+  current: number
+  total: number
+  status: 'processing' | 'success' | 'error'
+  error?: string
+}
+
 export interface MediaSource {
   id: string
   label: string

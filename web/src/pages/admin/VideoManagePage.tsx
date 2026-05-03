@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
-import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob } from '../../api/admin'
+import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob, startBackfill, getActiveBackfill } from '../../api/admin'
 import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
 import Header from '../../components/Header'
 import Pagination from '../../components/Pagination'
 import TagInput from '../../components/TagInput'
 import ImportProgress from '../../components/admin/ImportProgress'
+import BackfillProgress from '../../components/admin/BackfillProgress'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { formatDuration, formatFileSize } from '../../utils/format'
@@ -38,6 +39,10 @@ export default function VideoManagePage() {
 
   // Delete confirm state
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
+
+  // Backfill state
+  const [backfillJobId, setBackfillJobId] = useState<string | null>(null)
+  const [backfillStarting, setBackfillStarting] = useState(false)
 
 
   const page = Number(searchParams.get('page')) || 1
@@ -124,6 +129,42 @@ export default function VideoManagePage() {
     return () => { cancelled = true }
   }, [])
 
+  // Check for active backfill job on mount (only restore if still running).
+  useEffect(() => {
+    let cancelled = false
+    getActiveBackfill().then((job) => {
+      if (cancelled || !job || job.status !== 'running') return
+      setBackfillJobId(job.id)
+    }).catch((err) => {
+      console.warn('failed to detect active backfill job', err)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleStartBackfill() {
+    if (backfillStarting) return
+    setBackfillStarting(true)
+    try {
+      const { job_id } = await startBackfill()
+      setBackfillJobId(job_id)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number } }
+      if (axiosErr?.response?.status === 409) {
+        const active = await getActiveBackfill().catch(() => null)
+        if (active && active.status === 'running') {
+          setBackfillJobId(active.id)
+          toast.error('已有任務進行中')
+        } else {
+          toast.error('已有任務進行中')
+        }
+      } else {
+        toast.error('啟動 backfill 失敗')
+      }
+    } finally {
+      setBackfillStarting(false)
+    }
+  }
+
   function resetImportState() {
     setImportState('idle')
     setCurrentJobId(null)
@@ -200,13 +241,43 @@ export default function VideoManagePage() {
               推薦管理
             </Link>
           </div>
-          <button
-            onClick={() => { setShowImport(true); resetImportState() }}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded transition-colors"
-          >
-            匯入影片
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleStartBackfill}
+              disabled={backfillStarting || backfillJobId !== null}
+              className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {backfillStarting ? '啟動中...' : '補齊預覽'}
+            </button>
+            <button
+              onClick={() => { setShowImport(true); resetImportState() }}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded transition-colors"
+            >
+              匯入影片
+            </button>
+          </div>
         </div>
+
+        {/* Backfill progress panel */}
+        {backfillJobId && (
+          <div className="mb-6">
+            <BackfillProgress
+              jobId={backfillJobId}
+              onComplete={() => {
+                // Keep the panel visible so the admin can see the final summary;
+                // they can dismiss by reloading or starting a new job.
+              }}
+            />
+            <div className="text-right mt-1">
+              <button
+                onClick={() => setBackfillJobId(null)}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >
+                關閉
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Video table */}
         {loading ? (

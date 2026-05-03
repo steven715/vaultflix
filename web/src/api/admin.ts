@@ -1,5 +1,6 @@
 import client from './client'
 import type {
+  BackfillJob,
   ImportJob,
   MediaSource,
   Video,
@@ -22,6 +23,20 @@ export async function getActiveImportJob(): Promise<ImportJob | null> {
 export async function getImportJob(id: string): Promise<ImportJob> {
   const res = await client.get<ImportJob>(`/import-jobs/${id}`)
   return res.data
+}
+
+export async function startBackfill(): Promise<{ job_id: string }> {
+  const res = await client.post<{ job_id: string }>('/admin/videos/backfill-previews')
+  return res.data
+}
+
+export async function getActiveBackfill(): Promise<BackfillJob | null> {
+  const res = await client.get<BackfillJob | null>('/admin/backfill-jobs/active')
+  return res.data
+}
+
+export async function cancelBackfill(jobID: string): Promise<void> {
+  await client.post(`/admin/backfill-jobs/${jobID}/cancel`)
 }
 
 export async function listMediaSources(): Promise<MediaSource[]> {
