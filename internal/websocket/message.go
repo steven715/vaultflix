@@ -15,6 +15,12 @@ const (
 	TypeImportComplete = "import_complete"
 	// Server → client: import job fatal error.
 	TypeImportError = "import_error"
+	// Server → client: per-video progress during preview backfill.
+	TypeBackfillProgress = "backfill_progress"
+	// Server → client: backfill job completed (status reflects completed/failed/cancelled).
+	TypeBackfillComplete = "backfill_complete"
+	// Server → client: backfill job fatal error.
+	TypeBackfillError = "backfill_error"
 	// Server → client: generic notification.
 	TypeNotification = "notification"
 	// Client → server: heartbeat keepalive.
