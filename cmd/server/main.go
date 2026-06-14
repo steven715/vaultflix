@@ -26,7 +26,11 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Connect to PostgreSQL
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseDSN())
@@ -160,6 +164,7 @@ func main() {
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuth(cfg.JWTSecret))
+	api.Use(middleware.RequireActiveUser(userRepo))
 	api.Use(middleware.CasbinRBAC(enforcer))
 	{
 		api.GET("/me", authHandler.Me)
