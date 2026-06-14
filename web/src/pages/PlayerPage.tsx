@@ -124,6 +124,10 @@ export default function PlayerPage() {
   // Resume playback from watch_progress + restore volume
   function handleLoadedMetadata() {
     if (!video || !videoRef.current) return
+    // A successful (re)load means recovery — reset the error-retry budget so a
+    // later, unrelated transient error still gets its one retry instead of
+    // failing outright.
+    retryCountRef.current = 0
     const savedVolume = localStorage.getItem('vaultflix-volume')
     if (savedVolume !== null) {
       videoRef.current.volume = parseFloat(savedVolume)
