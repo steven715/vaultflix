@@ -61,3 +61,80 @@ func TestLogin_ActiveAccount(t *testing.T) {
 		t.Error("expected non-empty token")
 	}
 }
+
+func TestLogin_WrongPassword(t *testing.T) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return &model.User{
+				ID:           "u1",
+				Username:     username,
+				PasswordHash: string(hash),
+				Role:         "viewer",
+			}, nil
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24)
+	_, err := svc.Login(context.Background(), "user", "wrong-password")
+
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestLogin_UnknownUser(t *testing.T) {
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return nil, model.ErrNotFound
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24)
+	_, err := svc.Login(context.Background(), "ghost", "password")
+
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials for unknown user, got %v", err)
+	}
+}
+
+func TestRegister_Success(t *testing.T) {
+	var created *model.User
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return nil, model.ErrNotFound
+		},
+		CreateFunc: func(ctx context.Context, user *model.User) error {
+			created = user
+			return nil
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24)
+	user, err := svc.Register(context.Background(), "newuser", "password", "viewer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if user == nil || user.Username != "newuser" || user.Role != "viewer" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+	if created == nil || created.PasswordHash == "" || created.PasswordHash == "password" {
+		t.Errorf("expected password to be hashed before create, got %+v", created)
+	}
+}
+
+func TestRegister_AlreadyExists(t *testing.T) {
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return &model.User{ID: "u1", Username: username}, nil
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24)
+	_, err := svc.Register(context.Background(), "taken", "password", "viewer")
+
+	if !errors.Is(err, ErrUsernameAlreadyExists) {
+		t.Fatalf("expected ErrUsernameAlreadyExists, got %v", err)
+	}
+}
