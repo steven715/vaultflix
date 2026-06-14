@@ -82,6 +82,24 @@ func TestPostWatchHistory_MissingVideoID(t *testing.T) {
 	}
 }
 
+func TestPostWatchHistory_VideoNotFound(t *testing.T) {
+	r, _, videoRepo := setupHistoryRouter()
+
+	videoRepo.GetByIDFunc = func(ctx context.Context, id string) (*model.Video, error) {
+		return nil, model.ErrNotFound
+	}
+
+	body := `{"video_id":"ghost","progress_seconds":120}`
+	req := httptest.NewRequest(http.MethodPost, "/api/watch-history", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-existent video, got %d", w.Code)
+	}
+}
+
 func TestGetWatchHistory_Pagination(t *testing.T) {
 	r, historyRepo, _ := setupHistoryRouter()
 

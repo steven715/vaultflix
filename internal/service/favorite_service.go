@@ -12,6 +12,7 @@ import (
 
 // FavoriteService defines the contract for favorite business logic.
 // Add is idempotent: adding an already-favorited video silently succeeds.
+// Add returns model.ErrNotFound when the referenced video does not exist.
 // Remove returns model.ErrNotFound when the favorite does not exist.
 // IsFavorited returns (false, nil) when not favorited — not an error.
 // List returns items with presigned thumbnail URLs.

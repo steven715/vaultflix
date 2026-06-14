@@ -57,6 +57,24 @@ func TestPostFavorite_Success(t *testing.T) {
 	}
 }
 
+func TestPostFavorite_VideoNotFound(t *testing.T) {
+	r, favoriteRepo := setupFavoriteRouter()
+
+	favoriteRepo.AddFunc = func(ctx context.Context, userID, videoID string) error {
+		return model.ErrNotFound
+	}
+
+	body := `{"video_id":"ghost"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/favorites", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-existent video, got %d", w.Code)
+	}
+}
+
 func TestDeleteFavorite_NotFound(t *testing.T) {
 	r, favoriteRepo := setupFavoriteRouter()
 
