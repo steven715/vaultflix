@@ -72,19 +72,53 @@ func (s *BackfillService) StartAsync(userID string) (*model.BackfillJob, error) 
 
 	s.activeJob = job
 	s.cancelCh = cancelCh
+	snapshot := cloneJobLocked(job)
 	s.mu.Unlock()
 
 	go s.run(job, cancelCh, userID)
 
-	return job, nil
+	// Return a snapshot, not the live pointer: the worker goroutine mutates job
+	// under s.mu, so the caller must never read its fields directly.
+	return snapshot, nil
 }
 
-// GetActiveJob returns the most recently started job (running or finished),
-// or nil when no backfill has ever started in this process.
+// GetActiveJob returns a snapshot of the most recently started job (running or
+// finished), or nil when no backfill has ever started in this process. The
+// snapshot is safe to read/serialize concurrently with the running worker.
 func (s *BackfillService) GetActiveJob() *model.BackfillJob {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.activeJob
+	return cloneJobLocked(s.activeJob)
+}
+
+// updateJob applies fn to job while holding s.mu, serialising every mutation of
+// the job's fields against snapshots taken by GetActiveJob / the worker.
+func (s *BackfillService) updateJob(job *model.BackfillJob, fn func(*model.BackfillJob)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn(job)
+}
+
+// snapshotOf returns a deep copy of job taken under s.mu.
+func (s *BackfillService) snapshotOf(job *model.BackfillJob) *model.BackfillJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return cloneJobLocked(job)
+}
+
+// cloneJobLocked returns a deep copy of j (including its Errors slice and
+// FinishedAt pointer). Caller must hold s.mu. Returns nil for a nil job.
+func cloneJobLocked(j *model.BackfillJob) *model.BackfillJob {
+	if j == nil {
+		return nil
+	}
+	cp := *j
+	cp.Errors = append([]model.BackfillError(nil), j.Errors...)
+	if j.FinishedAt != nil {
+		f := *j.FinishedAt
+		cp.FinishedAt = &f
+	}
+	return &cp
 }
 
 // Cancel requests the running job with the given ID to stop after the
@@ -109,70 +143,85 @@ func (s *BackfillService) Cancel(jobID string) error {
 }
 
 func (s *BackfillService) run(job *model.BackfillJob, cancelCh chan struct{}, userID string) {
+	// jobID and Total are read in notification payloads below; jobID is immutable
+	// and total is captured once so we never read mutable job fields without the lock.
+	jobID := job.ID
+
 	defer func() {
 		finished := time.Now()
-		job.FinishedAt = &finished
-		job.CurrentVideoID = ""
-		if job.Status == "running" {
-			job.Status = "completed"
-		}
+		s.updateJob(job, func(j *model.BackfillJob) {
+			j.FinishedAt = &finished
+			j.CurrentVideoID = ""
+			if j.Status == "running" {
+				j.Status = "completed"
+			}
+		})
+		snap := s.snapshotOf(job)
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type:    websocket.TypeBackfillComplete,
-			Payload: job,
+			Payload: snap,
 		})
 		slog.Info("backfill job finished",
-			"job_id", job.ID,
-			"status", job.Status,
-			"total", job.Total,
-			"succeeded", job.Succeeded,
-			"failed", job.Failed,
+			"job_id", snap.ID,
+			"status", snap.Status,
+			"total", snap.Total,
+			"succeeded", snap.Succeeded,
+			"failed", snap.Failed,
 		)
 	}()
 
 	videos, err := s.videoRepo.ListMissingPreviews(context.Background())
 	if err != nil {
-		job.Status = "failed"
+		s.updateJob(job, func(j *model.BackfillJob) { j.Status = "failed" })
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type:    websocket.TypeBackfillError,
-			Payload: map[string]string{"job_id": job.ID, "error": err.Error()},
+			Payload: map[string]string{"job_id": jobID, "error": err.Error()},
 		})
 		return
 	}
-	job.Total = len(videos)
+	total := len(videos)
+	s.updateJob(job, func(j *model.BackfillJob) { j.Total = total })
 
 	for i, v := range videos {
 		select {
 		case <-cancelCh:
-			job.Status = "cancelled"
+			s.updateJob(job, func(j *model.BackfillJob) { j.Status = "cancelled" })
 			return
 		default:
 		}
 
-		job.CurrentVideoID = v.ID
+		s.updateJob(job, func(j *model.BackfillJob) { j.CurrentVideoID = v.ID })
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type: websocket.TypeBackfillProgress,
 			Payload: model.BackfillProgress{
-				JobID:            job.ID,
+				JobID:            jobID,
 				VideoID:          v.ID,
 				OriginalFilename: v.OriginalFilename,
 				Current:          i + 1,
-				Total:            job.Total,
+				Total:            total,
 				Status:           "processing",
 			},
 		})
 
 		processErr := s.processOneVideo(&v)
-		job.Processed = i + 1
+
+		s.updateJob(job, func(j *model.BackfillJob) {
+			j.Processed = i + 1
+			if processErr != nil {
+				j.Failed++
+				j.Errors = append(j.Errors, model.BackfillError{
+					VideoID:          v.ID,
+					OriginalFilename: v.OriginalFilename,
+					Error:            processErr.Error(),
+				})
+			} else {
+				j.Succeeded++
+			}
+		})
 
 		if processErr != nil {
-			job.Failed++
-			job.Errors = append(job.Errors, model.BackfillError{
-				VideoID:          v.ID,
-				OriginalFilename: v.OriginalFilename,
-				Error:            processErr.Error(),
-			})
 			slog.Warn("backfill preview failed",
-				"job_id", job.ID,
+				"job_id", jobID,
 				"video_id", v.ID,
 				"file", v.OriginalFilename,
 				"error", processErr,
@@ -180,25 +229,24 @@ func (s *BackfillService) run(job *model.BackfillJob, cancelCh chan struct{}, us
 			s.notifier.SendToUser(userID, &websocket.Message{
 				Type: websocket.TypeBackfillProgress,
 				Payload: model.BackfillProgress{
-					JobID:            job.ID,
+					JobID:            jobID,
 					VideoID:          v.ID,
 					OriginalFilename: v.OriginalFilename,
 					Current:          i + 1,
-					Total:            job.Total,
+					Total:            total,
 					Status:           "error",
 					Error:            processErr.Error(),
 				},
 			})
 		} else {
-			job.Succeeded++
 			s.notifier.SendToUser(userID, &websocket.Message{
 				Type: websocket.TypeBackfillProgress,
 				Payload: model.BackfillProgress{
-					JobID:            job.ID,
+					JobID:            jobID,
 					VideoID:          v.ID,
 					OriginalFilename: v.OriginalFilename,
 					Current:          i + 1,
-					Total:            job.Total,
+					Total:            total,
 					Status:           "success",
 				},
 			})
