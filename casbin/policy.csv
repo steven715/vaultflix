@@ -15,4 +15,5 @@ p, viewer, /api/favorites/:videoId, DELETE
 p, viewer, /api/me, GET
 p, viewer, /api/recommendations/today, GET
 p, viewer, /api/videos/:id/stream, GET
+p, viewer, /api/videos/:id/stream-token, GET
 p, viewer, /api/ws, GET

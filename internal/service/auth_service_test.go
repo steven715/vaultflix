@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/steven/vaultflix/internal/mock"
@@ -28,7 +29,7 @@ func TestLogin_DisabledAccount(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	_, err := svc.Login(context.Background(), "disabled-user", "password")
 
 	if !errors.Is(err, model.ErrAccountDisabled) {
@@ -51,7 +52,7 @@ func TestLogin_ActiveAccount(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	token, err := svc.Login(context.Background(), "active-user", "password")
 
 	if err != nil {
@@ -76,7 +77,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	_, err := svc.Login(context.Background(), "user", "wrong-password")
 
 	if !errors.Is(err, ErrInvalidCredentials) {
@@ -91,7 +92,7 @@ func TestLogin_UnknownUser(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	_, err := svc.Login(context.Background(), "ghost", "password")
 
 	if !errors.Is(err, ErrInvalidCredentials) {
@@ -111,7 +112,7 @@ func TestRegister_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	user, err := svc.Register(context.Background(), "newuser", "password", "viewer")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -124,6 +125,35 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
+func TestGenerateStreamToken(t *testing.T) {
+	svc := NewAuthService(&mock.UserRepository{}, "test-secret", 24, 30)
+
+	tokenString, expiresIn, err := svc.GenerateStreamToken("u1", "alice", "viewer", "vid-9")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if expiresIn != 30*60 {
+		t.Errorf("expected expires_in %d, got %d", 30*60, expiresIn)
+	}
+
+	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		return []byte("test-secret"), nil
+	})
+	if err != nil || !token.Valid {
+		t.Fatalf("stream token failed to parse/validate: %v", err)
+	}
+	claims := token.Claims.(jwt.MapClaims)
+	if claims["scope"] != model.StreamTokenScope {
+		t.Errorf("expected scope %q, got %v", model.StreamTokenScope, claims["scope"])
+	}
+	if claims["video_id"] != "vid-9" {
+		t.Errorf("expected video_id vid-9, got %v", claims["video_id"])
+	}
+	if claims["user_id"] != "u1" || claims["role"] != "viewer" {
+		t.Errorf("unexpected identity claims: %v", claims)
+	}
+}
+
 func TestRegister_AlreadyExists(t *testing.T) {
 	repo := &mock.UserRepository{
 		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
@@ -131,7 +161,7 @@ func TestRegister_AlreadyExists(t *testing.T) {
 		},
 	}
 
-	svc := NewAuthService(repo, "test-secret", 24)
+	svc := NewAuthService(repo, "test-secret", 24, 60)
 	_, err := svc.Register(context.Background(), "taken", "password", "viewer")
 
 	if !errors.Is(err, ErrUsernameAlreadyExists) {

@@ -122,7 +122,7 @@ func main() {
 	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket, service.NewInMemoryURLCache())
-	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
 	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
@@ -179,6 +179,7 @@ func main() {
 		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
 		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
 		api.GET("/videos/:id/stream", videoHandler.Stream)
+		api.GET("/videos/:id/stream-token", authHandler.StreamToken)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
 
@@ -222,7 +223,6 @@ func main() {
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)
-
 
 	}
 

@@ -28,6 +28,11 @@ type Config struct {
 	// JWT
 	JWTSecret      string
 	JWTExpiryHours int
+	// StreamTokenExpiryMinutes bounds the lifetime of the scope-limited token
+	// minted for <video> streaming (passed in the URL where headers can't be
+	// set). Keep it short; a viewing session that outlives it triggers a
+	// transparent token refresh on the client.
+	StreamTokenExpiryMinutes int
 
 	// Server
 	ServerPort string
@@ -66,8 +71,9 @@ func Load() (*Config, error) {
 		MinIOThumbnailBucket: getEnv("MINIO_THUMBNAIL_BUCKET", "vaultflix-thumbnails"),
 		MinIOPreviewBucket:   getEnv("MINIO_PREVIEW_BUCKET", "vaultflix-previews"),
 
-		JWTSecret:      os.Getenv("JWT_SECRET"),
-		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
+		JWTSecret:                os.Getenv("JWT_SECRET"),
+		JWTExpiryHours:           getEnvInt("JWT_EXPIRY_HOURS", 24),
+		StreamTokenExpiryMinutes: getEnvInt("STREAM_TOKEN_EXPIRY_MINUTES", 60),
 
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 

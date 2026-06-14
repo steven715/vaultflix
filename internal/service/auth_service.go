@@ -19,16 +19,18 @@ var (
 )
 
 type AuthService struct {
-	userRepo    repository.UserRepository
-	jwtSecret   []byte
-	jwtExpHours int
+	userRepo      repository.UserRepository
+	jwtSecret     []byte
+	jwtExpHours   int
+	streamExpMins int
 }
 
-func NewAuthService(userRepo repository.UserRepository, jwtSecret string, jwtExpHours int) *AuthService {
+func NewAuthService(userRepo repository.UserRepository, jwtSecret string, jwtExpHours, streamExpMins int) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		jwtSecret:   []byte(jwtSecret),
-		jwtExpHours: jwtExpHours,
+		userRepo:      userRepo,
+		jwtSecret:     []byte(jwtSecret),
+		jwtExpHours:   jwtExpHours,
+		streamExpMins: streamExpMins,
 	}
 }
 
@@ -92,4 +94,30 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	}
 
 	return tokenString, nil
+}
+
+// GenerateStreamToken mints a short-lived, scope-limited token for streaming a
+// single video. Unlike the login token it carries scope=stream and the bound
+// video_id, and expires after StreamTokenExpiryMinutes. It exists so the full
+// login JWT never has to travel in a <video> URL (where it would leak into
+// access logs / browser history). Returns the token and its lifetime seconds.
+func (s *AuthService) GenerateStreamToken(userID, username, role, videoID string) (string, int, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"user_id":  userID,
+		"username": username,
+		"role":     role,
+		"scope":    model.StreamTokenScope,
+		"video_id": videoID,
+		"exp":      now.Add(time.Duration(s.streamExpMins) * time.Minute).Unix(),
+		"iat":      now.Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(s.jwtSecret)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to sign stream token: %w", err)
+	}
+
+	return tokenString, s.streamExpMins * 60, nil
 }

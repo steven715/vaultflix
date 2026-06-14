@@ -1,25 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getVideo } from '../api/videos'
+import { getVideo, getStreamToken } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
 import { formatDuration, formatDate } from '../utils/format'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 
 const PROGRESS_THROTTLE_MS = 10_000
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
-  const { token } = useAuth()
   const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
+  const [streamToken, setStreamToken] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
+  // Playback position to restore after a stream-token refresh reload.
+  const pendingSeekRef = useRef<number | null>(null)
 
   // Progress reporting refs (no state to avoid re-renders)
   const lastReportTimeRef = useRef(0)
@@ -33,13 +34,15 @@ export default function PlayerPage() {
     const fetchVideo = async () => {
       try {
         const data = await getVideo(id)
-        if (!cancelled) {
-          setVideo(data)
-          setFavorited(data.is_favorited)
-          setError('')
-          retryCountRef.current = 0
-          videoIDRef.current = data.id
-        }
+        if (cancelled) return
+        setVideo(data)
+        setFavorited(data.is_favorited)
+        setError('')
+        retryCountRef.current = 0
+        videoIDRef.current = data.id
+
+        const { token } = await getStreamToken(id)
+        if (!cancelled) setStreamToken(token)
       } catch {
         if (!cancelled) {
           setError('無法載入影片')
@@ -58,6 +61,15 @@ export default function PlayerPage() {
       sendProgressBeacon()
     }
   }, [id])
+
+  // Reload the media element whenever the stream token changes (initial load
+  // and post-expiry refresh). Doing it in an effect guarantees the new src is
+  // committed to the DOM before load(), so we never reload a stale URL.
+  useEffect(() => {
+    if (streamToken && videoRef.current) {
+      videoRef.current.load()
+    }
+  }, [streamToken])
 
   // Send progress via sendBeacon for unmount/page leave
   function sendProgressBeacon() {
@@ -132,7 +144,11 @@ export default function PlayerPage() {
     if (savedVolume !== null) {
       videoRef.current.volume = parseFloat(savedVolume)
     }
-    if (video.watch_progress > 0) {
+    if (pendingSeekRef.current != null) {
+      // Restoring position after a token-refresh reload — not a fresh open.
+      videoRef.current.currentTime = pendingSeekRef.current
+      pendingSeekRef.current = null
+    } else if (video.watch_progress > 0) {
       videoRef.current.currentTime = video.watch_progress
       toast.info(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
     }
@@ -143,7 +159,8 @@ export default function PlayerPage() {
     localStorage.setItem('vaultflix-volume', String(videoRef.current.volume))
   }
 
-  // Handle presigned URL expiry: re-fetch on video error (max 1 retry)
+  // Handle stream-token expiry: refresh the scoped token on video error
+  // (max 1 retry per error episode; the budget resets on a successful load).
   function handleVideoError() {
     if (!video || retryCountRef.current >= 1) {
       if (retryCountRef.current >= 1) {
@@ -152,15 +169,12 @@ export default function PlayerPage() {
       return
     }
     retryCountRef.current += 1
-    getVideo(video.id)
-      .then((data) => {
-        setVideo(data)
-        if (videoRef.current) {
-          videoRef.current.load()
-        }
-      })
+    // Preserve the current position; the streamToken effect reloads the src.
+    pendingSeekRef.current = videoRef.current?.currentTime ?? null
+    getStreamToken(video.id)
+      .then(({ token }) => setStreamToken(token))
       .catch(() => {
-        setError('影片 URL 已過期，重新取得失敗')
+        setError('影片串流憑證更新失敗')
       })
   }
 
@@ -222,7 +236,7 @@ export default function PlayerPage() {
             ref={videoRef}
             controls
             preload="metadata"
-            src={token ? `${video.stream_url}?token=${token}` : undefined}
+            src={streamToken ? `${video.stream_url}?token=${streamToken}` : undefined}
             className="w-full"
             onError={handleVideoError}
             onTimeUpdate={handleTimeUpdate}
