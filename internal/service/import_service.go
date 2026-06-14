@@ -40,6 +40,9 @@ type ImportService struct {
 	notifier   websocket.Notifier
 	activeJobs sync.Map
 	importMu   sync.Mutex
+	// jobMu serialises every read/write of a stored ImportJob's fields against
+	// the background runImport goroutine, so GetJob/GetActiveJob never race it.
+	jobMu sync.Mutex
 }
 
 func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient, notifier websocket.Notifier) *ImportService {
@@ -66,47 +69,94 @@ func (s *ImportService) StartAsync(ctx context.Context, source *model.MediaSourc
 		StartedAt:   time.Now(),
 	}
 	s.activeJobs.Store(job.ID, job)
+	snapshot := s.snapshotJob(job)
 
 	go func() {
 		defer s.importMu.Unlock()
 		s.runImport(context.Background(), job, source, userID)
 	}()
 
-	return job, nil
+	// Return a snapshot, not the live pointer: runImport mutates job under jobMu.
+	return snapshot, nil
+}
+
+// updateJob applies fn to job while holding jobMu.
+func (s *ImportService) updateJob(job *model.ImportJob, fn func(*model.ImportJob)) {
+	s.jobMu.Lock()
+	defer s.jobMu.Unlock()
+	fn(job)
+}
+
+// snapshotJob returns a deep copy of job taken under jobMu.
+func (s *ImportService) snapshotJob(job *model.ImportJob) *model.ImportJob {
+	s.jobMu.Lock()
+	defer s.jobMu.Unlock()
+	return cloneImportJobLocked(job)
+}
+
+// cloneImportJobLocked deep-copies j (Errors slice + FinishedAt pointer).
+// Caller must hold jobMu. Returns nil for a nil job.
+func cloneImportJobLocked(j *model.ImportJob) *model.ImportJob {
+	if j == nil {
+		return nil
+	}
+	cp := *j
+	cp.Errors = append([]model.ImportError(nil), j.Errors...)
+	if j.FinishedAt != nil {
+		f := *j.FinishedAt
+		cp.FinishedAt = &f
+	}
+	return &cp
 }
 
 func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, source *model.MediaSource, userID string) {
+	jobID := job.ID
+
 	defer func() {
 		now := time.Now()
-		job.FinishedAt = &now
-		if job.Status != "failed" {
-			if job.Failed > 0 && job.Imported == 0 {
-				job.Status = "failed"
-			} else {
-				job.Status = "completed"
+		s.updateJob(job, func(j *model.ImportJob) {
+			j.FinishedAt = &now
+			if j.Status != "failed" {
+				if j.Failed > 0 && j.Imported == 0 {
+					j.Status = "failed"
+				} else {
+					j.Status = "completed"
+				}
 			}
-		}
+		})
+		snap := s.snapshotJob(job)
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type:    websocket.TypeImportComplete,
-			Payload: job,
+			Payload: snap,
 		})
+		slog.Info("import completed",
+			"source_id", source.ID,
+			"source_label", source.Label,
+			"total_scanned", snap.Total,
+			"imported", snap.Imported,
+			"skipped", snap.Skipped,
+			"failed", snap.Failed,
+		)
 	}()
 
 	files, err := s.scanVideoFiles(source.MountPath)
 	if err != nil {
-		job.Status = "failed"
-		job.Errors = append(job.Errors, model.ImportError{
-			FileName: source.MountPath,
-			Error:    err.Error(),
+		s.updateJob(job, func(j *model.ImportJob) {
+			j.Status = "failed"
+			j.Errors = append(j.Errors, model.ImportError{
+				FileName: source.MountPath,
+				Error:    err.Error(),
+			})
 		})
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type:    websocket.TypeImportError,
-			Payload: map[string]string{"job_id": job.ID, "error": err.Error()},
+			Payload: map[string]string{"job_id": jobID, "error": err.Error()},
 		})
 		return
 	}
 
-	job.Total = len(files)
+	total := len(files)
+	s.updateJob(job, func(j *model.ImportJob) { j.Total = total })
 
 	for i, filePath := range files {
 		fileName := filepath.Base(filePath)
@@ -114,51 +164,44 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type: websocket.TypeImportProgress,
 			Payload: model.ImportProgress{
-				JobID:    job.ID,
+				JobID:    jobID,
 				FileName: fileName,
 				Current:  i + 1,
-				Total:    job.Total,
+				Total:    total,
 				Status:   "processing",
 			},
 		})
 
 		result := s.processOneFile(ctx, source, filePath)
 
-		job.Processed = i + 1
-		switch result.Status {
-		case "success":
-			job.Imported++
-		case "skipped":
-			job.Skipped++
-		case "error":
-			job.Failed++
-			job.Errors = append(job.Errors, model.ImportError{
-				FileName: fileName,
-				Error:    result.Error,
-			})
-		}
+		s.updateJob(job, func(j *model.ImportJob) {
+			j.Processed = i + 1
+			switch result.Status {
+			case "success":
+				j.Imported++
+			case "skipped":
+				j.Skipped++
+			case "error":
+				j.Failed++
+				j.Errors = append(j.Errors, model.ImportError{
+					FileName: fileName,
+					Error:    result.Error,
+				})
+			}
+		})
 
 		s.notifier.SendToUser(userID, &websocket.Message{
 			Type: websocket.TypeImportProgress,
 			Payload: model.ImportProgress{
-				JobID:    job.ID,
+				JobID:    jobID,
 				FileName: fileName,
 				Current:  i + 1,
-				Total:    job.Total,
+				Total:    total,
 				Status:   result.Status,
 				Error:    result.Error,
 			},
 		})
 	}
-
-	slog.Info("import completed",
-		"source_id", source.ID,
-		"source_label", source.Label,
-		"total_scanned", job.Total,
-		"imported", job.Imported,
-		"skipped", job.Skipped,
-		"failed", job.Failed,
-	)
 }
 
 func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) fileResult {
@@ -245,22 +288,30 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 	return fileResult{Status: "success"}
 }
 
-// GetJob returns the job with the given ID. Returns model.ErrNotFound if not found.
+// GetJob returns a snapshot of the job with the given ID. Returns
+// model.ErrNotFound if not found.
 func (s *ImportService) GetJob(jobID string) (*model.ImportJob, error) {
 	val, ok := s.activeJobs.Load(jobID)
 	if !ok {
 		return nil, model.ErrNotFound
 	}
-	return val.(*model.ImportJob), nil
+	return s.snapshotJob(val.(*model.ImportJob)), nil
 }
 
-// GetActiveJob returns the currently running job, if any. Returns nil when idle.
+// GetActiveJob returns a snapshot of the currently running job, if any.
+// Returns nil when idle.
 func (s *ImportService) GetActiveJob() *model.ImportJob {
 	var active *model.ImportJob
 	s.activeJobs.Range(func(key, value interface{}) bool {
 		job := value.(*model.ImportJob)
+		s.jobMu.Lock()
+		var snap *model.ImportJob
 		if job.Status == "running" {
-			active = job
+			snap = cloneImportJobLocked(job)
+		}
+		s.jobMu.Unlock()
+		if snap != nil {
+			active = snap
 			return false
 		}
 		return true
