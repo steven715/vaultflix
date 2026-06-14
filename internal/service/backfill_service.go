@@ -268,6 +268,9 @@ func (s *BackfillService) processOneVideo(v *model.Video) error {
 	}
 
 	absPath := filepath.Join(source.MountPath, *v.FilePath)
+	if err := validateMountedFilePath(absPath); err != nil {
+		return fmt.Errorf("validate preview source path: %w", err)
+	}
 
 	previewPath, err := s.generatePreview(context.Background(), absPath, v.DurationSeconds)
 	if err != nil {
