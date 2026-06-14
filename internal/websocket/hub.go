@@ -117,8 +117,11 @@ func (h *Hub) deliverToUser(userID string, data []byte) {
 }
 
 // deliverToClients attempts to write data to each client's send channel.
-// Clients with full buffers are removed.
+// Clients with full buffers are removed AFTER iteration completes — removeClient
+// mutates the per-user slice in h.clients, so mutating it mid-range would shift
+// the backing array and cause the loop to skip or revisit clients.
 func (h *Hub) deliverToClients(userID string, clients []*Client, data []byte) {
+	var dead []*Client
 	for _, c := range clients {
 		select {
 		case c.send <- data:
@@ -126,8 +129,11 @@ func (h *Hub) deliverToClients(userID string, clients []*Client, data []byte) {
 			slog.Warn("websocket send buffer full, dropping client",
 				"user_id", userID,
 			)
-			h.removeClient(c)
+			dead = append(dead, c)
 		}
+	}
+	for _, c := range dead {
+		h.removeClient(c)
 	}
 }
 
