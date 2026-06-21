@@ -4,7 +4,7 @@ import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
 import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob, startBackfill, getActiveBackfill } from '../../api/admin'
 import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
-import Header from '../../components/Header'
+import AdminHeader from '../../components/AdminHeader'
 import Pagination from '../../components/Pagination'
 import TagInput from '../../components/TagInput'
 import ImportProgress from '../../components/admin/ImportProgress'
@@ -230,7 +230,7 @@ export default function VideoManagePage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
-      <Header searchQuery={searchInput} onSearch={handleSearch} />
+      <AdminHeader searchQuery={searchInput} onSearch={handleSearch} />
 
       <div className="flex-1 p-6">
         {/* Top bar */}

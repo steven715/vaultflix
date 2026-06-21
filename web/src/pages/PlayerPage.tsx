@@ -1,24 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { getVideo, getStreamToken } from '../api/videos'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { getVideo, getStreamToken, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
-import type { VideoDetail } from '../types'
-import { formatDuration, formatDate } from '../utils/format'
+import type { VideoDetail, VideoWithTags } from '../types'
+import { formatDuration, formatFileSize, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
-import { usePlaybackStats } from '../hooks/usePlaybackStats'
-import NetworkHud from '../components/NetworkHud'
+import AppShell, { Container } from '../components/AppShell'
+import UpNextList from '../components/UpNextList'
+import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 
 const PROGRESS_THROTTLE_MS = 10_000
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [streamToken, setStreamToken] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
+  const [upNext, setUpNext] = useState<VideoWithTags[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
   // Playback position to restore after a stream-token refresh reload.
@@ -29,20 +32,12 @@ export default function PlayerPage() {
   const lastReportSecondsRef = useRef(-1)
   const videoIDRef = useRef<string>('')
 
-  // stats-for-nerds HUD: buffer headroom (主訊號) + ↓Mbps + RTT + rebuffers.
-  // streamPath (no token) keys the stats; a token refresh keeps the same path so
-  // rebuffer counters survive it. avgBitrateBps scales the buffered-growth
-  // throughput estimate (this backend's progressive streaming yields no
-  // per-chunk Resource Timing samples to measure directly).
-  const avgBitrateBps =
-    video && video.duration_seconds > 0
-      ? (video.file_size_bytes * 8) / video.duration_seconds
-      : null
-  const playbackStats = usePlaybackStats(videoRef, video?.stream_url ?? null, avgBitrateBps)
-
   useEffect(() => {
     let cancelled = false
     if (!id) return
+
+    // Scroll to top when switching videos (e.g. via the up-next list).
+    window.scrollTo({ top: 0 })
 
     const fetchVideo = async () => {
       try {
@@ -75,6 +70,21 @@ export default function PlayerPage() {
     }
   }, [id])
 
+  // Up-next column: a handful of other videos, excluding the current one.
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    listVideos({ page: 1, page_size: 12, sort_by: 'created_at', sort_order: 'desc' })
+      .then((res) => {
+        if (cancelled) return
+        setUpNext(res.data.filter((v) => v.id !== id).slice(0, 8))
+      })
+      .catch((err) => console.warn('failed to load up-next', err))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
   // Reload the media element whenever the stream token changes (initial load
   // and post-expiry refresh). Doing it in an effect guarantees the new src is
   // committed to the DOM before load(), so we never reload a stale URL.
@@ -83,6 +93,27 @@ export default function PlayerPage() {
       videoRef.current.load()
     }
   }, [streamToken])
+
+  // Keyboard shortcuts: space toggles play/pause, arrows seek ±5s.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = videoRef.current
+      if (!el) return
+      const target = e.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        if (el.paused) el.play()
+        else el.pause()
+      } else if (e.key === 'ArrowRight') {
+        el.currentTime = Math.min(el.duration || Infinity, el.currentTime + 5)
+      } else if (e.key === 'ArrowLeft') {
+        el.currentTime = Math.max(0, el.currentTime - 5)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Send progress via sendBeacon for unmount/page leave
   function sendProgressBeacon() {
@@ -214,105 +245,157 @@ export default function PlayerPage() {
     }
   }
 
+  function handleMarkWatched() {
+    if (!video) return
+    saveProgress(video.id, video.duration_seconds)
+      .then(() => toast.success('已標記為看完'))
+      .catch(() => toast.error('標記失敗'))
+  }
+
+  async function handleShare() {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('連結已複製')
+    } catch {
+      toast.error('複製連結失敗')
+    }
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500">
-        載入中...
-      </div>
+      <div className="flex min-h-screen items-center justify-center bg-bg text-muted">載入中…</div>
     )
   }
 
   if (error || !video) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-4">
-        <div className="text-gray-400">{error || '影片不存在'}</div>
-        <Link to="/" className="text-indigo-400 hover:text-indigo-300 text-sm">
-          返回瀏覽頁
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg">
+        <div className="text-muted">{error || '影片不存在'}</div>
+        <Link to="/" className="text-sm text-accent hover:underline">
+          返回片庫
         </Link>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-950">
-      {/* Back button */}
-      <div className="px-4 py-3">
-        <Link to="/" className="text-sm text-gray-400 hover:text-white transition-colors">
-          ← 返回
-        </Link>
-      </div>
+    <AppShell showTabBar={false}>
+      <Container className="py-6">
+        <button
+          onClick={() => navigate(-1)}
+          className="mb-5 flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-cream"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          返回片庫
+        </button>
 
-      {/* Video player */}
-      <div className="max-w-5xl mx-auto px-4">
-        <div className="bg-black rounded-lg overflow-hidden relative">
-          <video
-            ref={videoRef}
-            controls
-            preload="metadata"
-            src={streamToken ? `${video.stream_url}?token=${streamToken}` : undefined}
-            className="w-full"
-            onError={handleVideoError}
-            onTimeUpdate={handleTimeUpdate}
-            onPause={handlePause}
-            onLoadedMetadata={handleLoadedMetadata}
-            onVolumeChange={handleVolumeChange}
-          />
-          <NetworkHud stats={playbackStats} />
-        </div>
-
-        {/* Video info */}
-        <div className="mt-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="text-xl font-semibold text-white">{video.title}</h1>
-
-            {/* Favorite button */}
-            <button
-              onClick={handleFavoriteToggle}
-              className="shrink-0 p-2 rounded-full hover:bg-gray-800 transition-all active:scale-90"
-              title={favorited ? '取消收藏' : '加入收藏'}
-            >
-              <svg
-                className={`w-6 h-6 transition-colors duration-200 ${
-                  favorited ? 'text-red-500 fill-red-500' : 'text-gray-400 fill-none'
-                }`}
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
-                />
-              </svg>
-            </button>
-          </div>
-
-          {video.description && (
-            <p className="text-sm text-gray-400">{video.description}</p>
-          )}
-
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-            <span>{formatDuration(video.duration_seconds)}</span>
-            <span>{video.resolution}</span>
-            <span>{video.mime_type}</span>
-            <span>{formatDate(video.created_at)}</span>
-          </div>
-
-          {video.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {video.tags.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded"
-                >
-                  {tag.name}
-                </span>
-              ))}
+        <div className="flex flex-col gap-8 lg:flex-row">
+          {/* Player + info */}
+          <div className="min-w-0 flex-1">
+            <div className="relative overflow-hidden rounded-lg bg-black">
+              <video
+                ref={videoRef}
+                controls
+                preload="metadata"
+                src={streamToken ? `${video.stream_url}?token=${streamToken}` : undefined}
+                className="aspect-video w-full"
+                onError={handleVideoError}
+                onTimeUpdate={handleTimeUpdate}
+                onPause={handlePause}
+                onLoadedMetadata={handleLoadedMetadata}
+                onVolumeChange={handleVolumeChange}
+              />
             </div>
-          )}
+
+            <div className="mt-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h1 className="font-display text-2xl font-bold tracking-tight text-cream md:text-[32px]">
+                  {video.title}
+                </h1>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ActionButton
+                    active={favorited}
+                    onClick={handleFavoriteToggle}
+                    icon={favorited ? <HeartFilled className="h-4 w-4" /> : <HeartIcon className="h-4 w-4" />}
+                    label={favorited ? '已收藏' : '收藏'}
+                  />
+                  <ActionButton
+                    onClick={handleMarkWatched}
+                    icon={<CheckIcon className="h-4 w-4" />}
+                    label="標記已看"
+                  />
+                  <ActionButton
+                    onClick={handleShare}
+                    icon={<ShareIcon className="h-4 w-4" />}
+                    label="分享"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted">
+                <span className="text-accent">{video.resolution}</span>
+                <span className="text-faint">·</span>
+                <span>{formatDuration(video.duration_seconds)}</span>
+                <span className="text-faint">·</span>
+                <span>{formatFileSize(video.file_size_bytes)}</span>
+                <span className="text-faint">·</span>
+                <span>{formatDate(video.created_at)}</span>
+              </div>
+
+              {video.description && (
+                <p className="mt-4 max-w-[760px] text-sm leading-relaxed text-muted">
+                  {video.description}
+                </p>
+              )}
+
+              {video.tags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {video.tags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="rounded-pill bg-surface px-3 py-1 text-xs text-muted"
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Up next */}
+          <aside className="w-full shrink-0 lg:w-[380px]">
+            <h2 className="mb-3 font-display text-lg font-bold text-cream">接著看</h2>
+            <UpNextList items={upNext} />
+          </aside>
         </div>
-      </div>
-    </div>
+      </Container>
+    </AppShell>
+  )
+}
+
+function ActionButton({
+  icon,
+  label,
+  onClick,
+  active = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  active?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-pill border px-3.5 py-2 text-sm font-medium transition-colors active:scale-95 ${
+        active
+          ? 'border-fav/40 bg-fav/10 text-fav'
+          : 'border-border bg-surface text-muted hover:text-cream'
+      }`}
+    >
+      {icon}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   )
 }

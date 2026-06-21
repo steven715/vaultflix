@@ -3,14 +3,22 @@ import { Link } from 'react-router-dom'
 import { useMatchMedia } from '../hooks/useMatchMedia'
 import type { VideoWithTags } from '../types'
 import { formatDuration, formatFileSize } from '../utils/format'
+import PosterThumb from './PosterThumb'
+import { PlayIcon, HeartFilled } from './icons'
 
 interface VideoCardProps {
   video: VideoWithTags
+  // When provided, renders a glass "unfavorite" heart button on the poster
+  // (favorites page). The handler must stopPropagation to avoid navigation.
+  onUnfavorite?: (videoID: string) => void
 }
 
 const HOVER_DELAY_MS = 300
 
-export default function VideoCard({ video }: VideoCardProps) {
+// VideoCard is the 16:10 poster card used in the library grid and favorites grid.
+// Hovering (on devices that support it) plays the preview clip; the poster also
+// shows a center play button and a duration badge.
+export default function VideoCard({ video, onUnfavorite }: VideoCardProps) {
   const supportsHover = useMatchMedia('(hover: hover)')
   const [showPreview, setShowPreview] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -37,19 +45,20 @@ export default function VideoCard({ video }: VideoCardProps) {
     setShowPreview(false)
   }
 
-  function onPreviewError() {
-    setShowPreview(false)
-  }
-
   return (
     <Link
       to={`/videos/${video.id}`}
-      className="group bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-indigo-500 transition-all"
+      className="group block transition-transform duration-200 hover:-translate-y-[5px]"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <div className="aspect-video bg-gray-800 relative">
-        {showPreview && video.preview_url ? (
+      <PosterThumb
+        id={video.id}
+        title={video.title}
+        thumbnailUrl={video.thumbnail_url}
+        className="aspect-[16/10] rounded-card"
+      >
+        {showPreview && video.preview_url && (
           <video
             src={video.preview_url}
             autoPlay
@@ -57,34 +66,45 @@ export default function VideoCard({ video }: VideoCardProps) {
             loop
             playsInline
             preload="metadata"
-            onError={onPreviewError}
-            className="w-full h-full object-cover"
+            onError={() => setShowPreview(false)}
+            className="absolute inset-0 h-full w-full object-cover"
           />
-        ) : video.thumbnail_url ? (
-          <img
-            src={video.thumbnail_url}
-            alt={video.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-600">
-            <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
-            </svg>
-          </div>
         )}
-        <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded">
+
+        {/* Center play affordance on hover */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/40 backdrop-blur-sm">
+            <PlayIcon className="ml-0.5 h-5 w-5 text-cream" />
+          </span>
+        </div>
+
+        {/* Duration badge */}
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-[11px] text-cream">
           {formatDuration(video.duration_seconds)}
         </span>
-      </div>
-      <div className="p-3">
-        <h3 className="text-sm text-white font-medium line-clamp-2 group-hover:text-indigo-400 transition-colors">
+
+        {onUnfavorite && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onUnfavorite(video.id)
+            }}
+            title="取消收藏"
+            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/45 text-fav backdrop-blur-sm transition-transform hover:scale-110"
+          >
+            <HeartFilled className="h-4 w-4" />
+          </button>
+        )}
+      </PosterThumb>
+
+      <div className="mt-2.5">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-cream transition-colors group-hover:text-accent">
           {video.title}
         </h3>
-        <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
-          <span>{video.resolution}</span>
-          <span>·</span>
+        <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted">
+          <span className="text-accent">{video.resolution}</span>
+          <span className="text-faint">·</span>
           <span>{formatFileSize(video.file_size_bytes)}</span>
         </div>
         {video.tags.length > 0 && (
@@ -92,13 +112,13 @@ export default function VideoCard({ video }: VideoCardProps) {
             {video.tags.slice(0, 3).map((tag) => (
               <span
                 key={tag.id}
-                className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded"
+                className="rounded-pill bg-surface px-2 py-0.5 text-[11px] text-muted"
               >
                 {tag.name}
               </span>
             ))}
             {video.tags.length > 3 && (
-              <span className="text-xs text-gray-600">+{video.tags.length - 3}</span>
+              <span className="text-[11px] text-faint">+{video.tags.length - 3}</span>
             )}
           </div>
         )}

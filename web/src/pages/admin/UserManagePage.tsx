@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listUsers, createUser, deleteUser, enableUser, resetUserPassword } from '../../api/admin'
 import type { User } from '../../types'
-import Header from '../../components/Header'
+import AdminHeader from '../../components/AdminHeader'
 
 export default function UserManagePage() {
   const [users, setUsers] = useState<User[]>([])
@@ -92,7 +92,7 @@ export default function UserManagePage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f0f0f', color: '#fff' }}>
-      <Header searchQuery="" onSearch={() => {}} />
+      <AdminHeader searchQuery="" onSearch={() => {}} />
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h1 style={{ fontSize: '1.5rem', margin: 0 }}>User Management</h1>
