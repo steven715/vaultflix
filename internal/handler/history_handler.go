@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -46,6 +47,13 @@ func (h *HistoryHandler) SaveProgress(c *gin.Context) {
 
 	err := h.historySvc.SaveProgress(c.Request.Context(), userID, req.VideoID, req.ProgressSeconds)
 	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "video not found",
+			})
+			return
+		}
 		slog.Error("failed to save watch progress",
 			"error", err,
 			"user_id", userID,

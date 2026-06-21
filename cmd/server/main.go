@@ -26,7 +26,11 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Connect to PostgreSQL
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseDSN())
@@ -118,7 +122,7 @@ func main() {
 	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket, service.NewInMemoryURLCache())
-	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours)
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
 	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
@@ -160,6 +164,7 @@ func main() {
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuth(cfg.JWTSecret))
+	api.Use(middleware.RequireActiveUser(userRepo))
 	api.Use(middleware.CasbinRBAC(enforcer))
 	{
 		api.GET("/me", authHandler.Me)
@@ -174,6 +179,7 @@ func main() {
 		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
 		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
 		api.GET("/videos/:id/stream", videoHandler.Stream)
+		api.GET("/videos/:id/stream-token", authHandler.StreamToken)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
 
@@ -217,7 +223,6 @@ func main() {
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)
-
 
 	}
 

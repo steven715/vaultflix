@@ -38,6 +38,13 @@ func (h *FavoriteHandler) Add(c *gin.Context) {
 
 	err := h.favoriteSvc.Add(c.Request.Context(), userID, req.VideoID)
 	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{
+				Error:   "not_found",
+				Message: "video not found",
+			})
+			return
+		}
 		slog.Error("failed to add favorite", "error", err, "user_id", userID, "video_id", req.VideoID)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "internal_error",

@@ -27,7 +27,11 @@ func NewMediaSourceService(repo repository.MediaSourceRepository, mountPrefix st
 // contains no path traversal components, exists on the filesystem, and is a directory.
 func (s *MediaSourceService) ValidateMountPath(path string) error {
 	cleaned := filepath.Clean(path)
-	if !strings.HasPrefix(cleaned, strings.TrimSuffix(s.mountPrefix, string(filepath.Separator))) {
+	// Accept the mount root itself or a path strictly beneath it. Comparing
+	// against base+separator (not a bare prefix) prevents sibling-prefix
+	// collisions such as /mnt/hostile slipping past a /mnt/host guard.
+	base := filepath.Clean(s.mountPrefix)
+	if cleaned != base && !strings.HasPrefix(cleaned, base+string(filepath.Separator)) {
 		return model.ErrPathNotAllowed
 	}
 	if cleaned != path {

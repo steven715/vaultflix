@@ -10,3 +10,15 @@ export async function getVideo(id: string): Promise<VideoDetail> {
   const res = await client.get<VideoDetail>(`/videos/${id}`)
   return res.data
 }
+
+export interface StreamTokenResponse {
+  token: string
+  expires_in: number
+}
+
+// getStreamToken mints a short-lived, video-scoped token for the <video> src,
+// so the long-lived login JWT never travels in the streaming URL.
+export async function getStreamToken(id: string): Promise<StreamTokenResponse> {
+  const res = await client.get<StreamTokenResponse>(`/videos/${id}/stream-token`)
+  return res.data
+}

@@ -2,15 +2,18 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/steven/vaultflix/internal/model"
 )
 
 // FavoriteRepository defines the contract for favorite data access.
-// Add returns model.ErrAlreadyExists when the favorite already exists.
+// Add returns model.ErrAlreadyExists when the favorite already exists, and
+// model.ErrNotFound when the referenced video does not exist.
 // Remove returns model.ErrNotFound when the favorite does not exist.
 // Exists returns (false, nil) when the favorite does not exist — not an error.
 // ListByUser returns results ordered by created_at DESC with pagination.
@@ -60,6 +63,11 @@ func NewFavoriteRepository(pool *pgxpool.Pool) FavoriteRepository {
 func (r *favoriteRepository) Add(ctx context.Context, userID, videoID string) error {
 	result, err := r.pool.Exec(ctx, queryAddFavorite, userID, videoID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			// foreign_key_violation: the referenced video does not exist
+			return model.ErrNotFound
+		}
 		return fmt.Errorf("failed to add favorite for user %s video %s: %w", userID, videoID, err)
 	}
 	if result.RowsAffected() == 0 {

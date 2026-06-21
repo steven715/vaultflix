@@ -102,6 +102,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// StreamToken issues a short-lived, scope-limited token for streaming the video
+// identified by the :id path param. The caller is authenticated via the normal
+// Authorization header (this route runs behind JWTAuth), so the long-lived
+// login token never needs to appear in the streaming URL.
+func (h *AuthHandler) StreamToken(c *gin.Context) {
+	videoID := c.Param("id")
+	userID := c.GetString("user_id")
+	username := c.GetString("username")
+	role := c.GetString("role")
+
+	token, expiresIn, err := h.authService.GenerateStreamToken(userID, username, role, videoID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to issue stream token",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.SuccessResponse{
+		Data: gin.H{"token": token, "expires_in": expiresIn},
+	})
+}
+
 func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, model.SuccessResponse{
 		Data: gin.H{

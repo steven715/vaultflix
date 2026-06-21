@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/steven/vaultflix/internal/mock"
@@ -55,6 +56,27 @@ func TestCreateMediaSource_PathOutsidePrefix(t *testing.T) {
 	err := svc.Create(context.Background(), source)
 	if !errors.Is(err, model.ErrPathNotAllowed) {
 		t.Fatalf("expected ErrPathNotAllowed, got %v", err)
+	}
+}
+
+func TestCreateMediaSource_SiblingPrefixRejected(t *testing.T) {
+	prefix, _ := setupTempMount(t)
+
+	// Build a sibling directory sharing the prefix string but not the boundary:
+	// e.g. ".../mnt/host" guard must reject ".../mnt/hostile". Create it on disk
+	// so the rejection is proven to come from the prefix check, not os.Stat.
+	base := strings.TrimSuffix(prefix, string(filepath.Separator))
+	sibling := base + "ile"
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatalf("failed to create sibling dir: %v", err)
+	}
+
+	svc := NewMediaSourceService(&mock.MediaSourceRepository{}, prefix)
+
+	source := &model.MediaSource{Label: "Sibling", MountPath: sibling}
+	err := svc.Create(context.Background(), source)
+	if !errors.Is(err, model.ErrPathNotAllowed) {
+		t.Fatalf("expected ErrPathNotAllowed for sibling prefix %q, got %v", sibling, err)
 	}
 }
 
