@@ -300,6 +300,26 @@ const fetchData = useCallback(async () => { ... }, [id])
 useEffect(() => { fetchData() }, [fetchData])
 ```
 
+### 同路徑重新導航的 refetch
+
+點擊指向「目前所在路徑」的連結（如已在首頁時再點 logo / 首頁）不會改變 URL 參數，靠 `[query]`、`[searchParams]` 之類的依賴**不會觸發 refetch**，畫面看起來「卡住不更新」。需要「每次導航都重抓」的資料（如首頁輪播推薦、續看清單），依賴 `useLocation().key` —— React Router 每次導航（即使目標與現況相同）都會 push 新 entry 並產生新的 `location.key`。
+
+```tsx
+// ✅ 正確：同路徑再點 logo / 首頁也會 refetch
+const location = useLocation()
+useEffect(() => {
+  if (query) return
+  let cancelled = false
+  getTodayRecommendations().then((items) => !cancelled && setRecommendations(items))
+  return () => { cancelled = true }
+}, [query, location.key])
+
+// ❌ 錯誤：已在首頁時點 logo，query 沒變 → effect 不跑 → 推薦永遠不更新
+}, [query])
+```
+
+判斷標準：這份資料是否預期「回到此頁就刷新」？是 → 加 `location.key`；否（純由 URL 參數決定、deterministic 的如分頁列表）→ 不加，避免每次導航都多打一次 API。
+
 ---
 
 ## Docker 規範
