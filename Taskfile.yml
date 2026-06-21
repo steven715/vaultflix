@@ -59,7 +59,8 @@ tasks:
   test-integration:
     desc: "Integration tests (clean stack + fixture) - shared by local/CI"
     cmds:
-      - "{{.COMPOSE_TEST}} --profile test up --abort-on-container-exit --exit-code-from test-runner test-runner"
+      - "{{.COMPOSE_TEST}} --profile test up -d vaultflix-api"
+      - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
       - defer: "{{.COMPOSE_TEST}} --profile test down"
 
   test-full:
