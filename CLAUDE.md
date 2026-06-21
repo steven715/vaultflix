@@ -515,7 +515,13 @@ import (
 
 所有 build / test / deploy 透過 `Taskfile.yml` 的單一入口執行。agent 本機、開發者本機、CI 呼叫**同一個 target**，不存在「CI 那邊做法不一樣」。
 
-**前置工具（host 需安裝）**：`go-task`（`task` 指令）。安裝：`winget install Task.Task` 或 `scoop install task`。確認 `task` 在 PATH 上（winget 會把 shim 放到 `%LOCALAPPDATA%\Microsoft\WinGet\Links`）。
+**前置工具（host 需安裝）**：
+
+- `go-task`（`task` 指令）：build/test/deploy 單一入口。Windows `winget install Task.Task` 或 `scoop install task`；Linux/WSL `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin`。確認 `task` 在 PATH 上（winget 會把 shim 放到 `%LOCALAPPDATA%\Microsoft\WinGet\Links`）。
+- `task verify` 還需要 **Go 1.24+**（`go vet`/`gofmt`/`go test`）與 **Node.js 20+**（`tsc`/`vitest`）原生安裝；整合測試需要 Docker。
+- `gh`（GitHub CLI）：push 分支與開 PR 用，先 `gh auth login`。Windows `winget install GitHub.cli`；Linux/WSL 見 [cli.github.com](https://cli.github.com)。
+
+> Linux/WSL 安裝到 `~/.local/bin`、`~/.local/go/bin` 的工具記得確認在 PATH 上。
 
 ### 入口指令清單
 

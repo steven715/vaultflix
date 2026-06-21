@@ -56,8 +56,26 @@ React SPA (localhost:3000)
 
 ## Prerequisites
 
+### Running the app (Docker only)
+
 - **Docker** and **Docker Compose V2**
-- No local Go or Node.js installation required -- everything runs in containers
+- No local Go or Node.js installation required -- everything runs in containers.
+
+### Local development / contributing
+
+Build, test, and deploy all go through a single entry point: [`go-task`](https://taskfile.dev)
+(`task`). The same targets run on your machine and in CI -- see [`Taskfile.yml`](Taskfile.yml)
+and [CLAUDE.md](CLAUDE.md). For the native dev workflow you also need:
+
+| Tool | Why it's needed | Install (Windows) | Install (Linux / WSL) |
+|------|-----------------|-------------------|------------------------|
+| `task` (go-task) | Single entry point (`task --list`); `task verify` is the Stop-hook gate | `winget install Task.Task` | `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin` |
+| Go 1.24+ | `task verify` runs `go vet` / `gofmt` / `go test` | `winget install GoLang.Go` | official tarball into `~/.local/go` ([go.dev/dl](https://go.dev/dl)) |
+| Node.js 20+ | `task verify` runs `tsc` + `vitest` (web) | `winget install OpenJS.NodeJS.LTS` | nvm or [nodesource](https://github.com/nodesource/distributions) |
+| `gh` (GitHub CLI) | Push branches and open PRs (`gh auth login` first) | `winget install GitHub.cli` | [cli.github.com](https://cli.github.com) (apt repo or release tarball) |
+
+> On Linux/WSL, make sure the install targets (`~/.local/bin`, `~/.local/go/bin`) are on your
+> `PATH`. Run `task verify` before pushing -- it must be green.
 
 ## Quick Start
 
