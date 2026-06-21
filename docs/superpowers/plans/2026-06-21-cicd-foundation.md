@@ -616,3 +616,16 @@ git commit -m "docs: document CI/CD single entrypoint and done-conditions in CLA
 - **Spec coverage**：spec 第 3–9 節每項都有對應 task（入口→T4、Dockerfile→T1、prod compose→T2、設定三分→T1+既有、CI→T5、hook→T6、CLAUDE.md→T7、整合測試假設→T3）。
 - **Scope 精煉（與 spec 的差異，需執行時知悉）**：spec §6 寫「build Go + web image 推 GHCR」，本計畫只推 **API image**（web 維持本機 build，因靜態檔走 `web_dist` named volume，推 registry 效益低）。CI 仍可選擇性 build web 作為檢查，但預設不做以求精簡。
 - **Type/名稱一致**：image 名 `ghcr.io/steven715/vaultflix-api`、fixture 路徑 `.ci/fixtures/sample.mp4`、掛載點 `/mnt/host/videos` 全計畫一致。
+
+## 執行期決議與 deferred follow-ups
+
+執行此計畫時，發現兩個既有債務會擋住 gate 變綠，已與使用者確認處理方式並 deferred 成獨立場景：
+
+1. **前端 ESLint 債（→ 另開 Refactor）**：`web/` 有 10 個既有 ESLint error（`react-hooks@7` 的 react-compiler 規則，如 `set-state-in-effect`、`refs-during-render`，散在 `FavoritesPage`、`HistoryPage`、`useWebSocket` 等既有功能頁，從未在 `main` 上 lint 過）。決議：把 `npm run lint` 移出 `task verify`（Stop hook gate 不含 lint），CI 改用 non-blocking 的 `lint` job 持續顯示。**待辦**：另開 Refactor 對話逐一修這 10 個 error（CLAUDE.md 有 useEffect 無窮迴圈前科，這些規則值得認真修而非消音）；修完把 `npm run lint` 加回 `test-fast`、CI lint job 改 blocking。
+
+2. **`url_expiry_minutes` 驗證未實作（→ 另開 Feature）**：`GET /api/videos/:id` 的 `GetByID` 完全忽略 `url_expiry_minutes` query param（expiry 寫死），所以 `url_expiry_minutes=9999` 回 200 而非預期的 400。決議：把 `scripts/test_videos.sh` 的斷言對齊現況（期望 200）並加 `TODO(url_expiry_minutes validation)` 註解。**待辦**：另開 Feature 把 `url_expiry_minutes` 邊界驗證從 handler 串到 service→minio，實作後把該斷言改回期望 400。
+
+其他執行期事實：
+- **單一入口工具**：`task` 已透過 `winget install Task.Task` 裝在 host，路徑在使用者 persistent PATH（`%LOCALAPPDATA%\Microsoft\WinGet\Packages\Task.Task_...`）。Stop hook 的 `task verify` 在新 session 可解析。
+- **整合測試呼叫法**：`test-integration` 用 `up -d vaultflix-api` + `run --rm test-runner`（非 `--abort-on-container-exit --exit-code-from`），以取得 test-runner 的真實 exit code、避免 false-green，且不啟動 web/nginx。
+- **Task 4 連帶修的既有 bug**（非 CI/CD 範圍但為讓整合測試能跑而必要）：`vaultflix-api depends_on minio-init`（test 相依鏈原本跳過 bucket 建立）、test-runner `ADMIN_PASS` 對齊 seeded 密碼、測試腳本改 poll 非同步 import、`gofmt -w` 既有未格式化檔、`.gitattributes` 統一 LF、`media_source_handler_test.go` 對 Windows 路徑做 JSON 轉義。
