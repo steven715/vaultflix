@@ -86,8 +86,8 @@ services:
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
       # 影片來源目錄：掛載到 /mnt/host/ 下，符合 AllowedMountPrefix 安全驗證
-      - D:\AdultsV:/mnt/host/D/AdultsV:ro
-      - G:\下載:/mnt/host/G/下載:ro
+      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
+      - /mnt/g/下載:/mnt/host/G/下載:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s

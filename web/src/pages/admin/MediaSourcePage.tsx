@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource, importVideos, getActiveImportJob } from '../../api/admin'
 import type { MediaSource } from '../../types'
-import Header from '../../components/Header'
+import AdminHeader from '../../components/AdminHeader'
 import ImportProgress from '../../components/admin/ImportProgress'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
@@ -109,7 +109,7 @@ export default function MediaSourcePage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
-      <Header searchQuery="" onSearch={() => {}} />
+      <AdminHeader searchQuery="" onSearch={() => {}} />
 
       <div className="flex-1 p-6">
         {/* Top bar */}

@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import LoginPage from './pages/LoginPage'
 import BrowsePage from './pages/BrowsePage'
+import SearchPage from './pages/SearchPage'
 import PlayerPage from './pages/PlayerPage'
 import FavoritesPage from './pages/FavoritesPage'
 import HistoryPage from './pages/HistoryPage'
@@ -40,6 +41,10 @@ const router = createBrowserRouter([
           {
             path: '/',
             element: <BrowsePage />,
+          },
+          {
+            path: '/search',
+            element: <SearchPage />,
           },
           {
             path: '/videos/:id',

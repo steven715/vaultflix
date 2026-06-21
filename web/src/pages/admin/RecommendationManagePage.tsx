@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { listRecommendationsByDate, createRecommendation, updateRecommendationSortOrder, deleteRecommendation } from '../../api/admin'
 import type { RecommendationItem, VideoWithTags } from '../../types'
-import Header from '../../components/Header'
+import AdminHeader from '../../components/AdminHeader'
 import VideoPickerModal from '../../components/admin/VideoPickerModal'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
@@ -90,7 +90,7 @@ export default function RecommendationManagePage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
-      <Header searchQuery="" onSearch={() => {}} />
+      <AdminHeader searchQuery="" onSearch={() => {}} />
 
       <div className="flex-1 p-6">
         {/* Top bar */}

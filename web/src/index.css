@@ -1,1 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Noto+Sans+TC:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
+
+/* === Vaultflix "私人放映室" design system (Tailwind v4 @theme) === */
+@theme {
+  /* Colors */
+  --color-bg: #0D0B0A;
+  --color-surface: #181410;
+  --color-surface-up: #221C17;
+  --color-cream: #F4EDE4;
+  --color-muted: #9A8E83;
+  --color-faint: #6E635B;
+  --color-accent: #FFB23F;
+  --color-accent-ink: #1A1208;
+  --color-border: rgba(244, 237, 228, 0.09);
+  --color-fav: #FF5470;
+  --color-live: #1FB588;
+
+  /* Fonts */
+  --font-display: "Bricolage Grotesque", "Noto Sans TC", system-ui, sans-serif;
+  --font-sans: "Noto Sans TC", system-ui, sans-serif;
+  --font-mono: "Space Mono", "Noto Sans TC", ui-monospace, monospace;
+
+  /* Radius */
+  --radius-btn: 11px;
+  --radius-card: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 20px;
+
+  /* Shadows */
+  --shadow-poster: inset 0 -34px 46px -22px rgba(0, 0, 0, 0.72);
+  --shadow-float: 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+
+  /* Animations */
+  --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.4s ease both;
+  --animate-row-in: row-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-shimmer: shimmer 1.4s infinite linear;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-cream);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Themed scrollbars to match the dark surface */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-up) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-surface-up);
+    border-radius: 9999px;
+  }
+
+  /* Hide scrollbar for horizontal carousels (utility .no-scrollbar) */
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Shimmer skeleton background */
+@utility skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--color-surface) 30%,
+    var(--color-surface-up) 50%,
+    var(--color-surface) 70%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
