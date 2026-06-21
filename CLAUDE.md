@@ -491,6 +491,46 @@ import (
 
 ---
 
+## CI/CD 與單一入口
+
+所有 build / test / deploy 透過 `Taskfile.yml` 的單一入口執行。agent 本機、開發者本機、CI 呼叫**同一個 target**，不存在「CI 那邊做法不一樣」。
+
+**前置工具（host 需安裝）**：`go-task`（`task` 指令）。安裝：`winget install Task.Task` 或 `scoop install task`。確認 `task` 在 PATH 上（winget 會把 shim 放到 `%LOCALAPPDATA%\Microsoft\WinGet\Links`）。
+
+### 入口指令清單
+
+| 指令 | 用途 | 跑在哪 |
+|---|---|---|
+| `task verify` | 快層 gate（= `test-fast`），Stop hook 自動跑 | 原生 |
+| `task test-fast` | `go vet` + `gofmt` 檢查 + `go test ./...` + web `tsc`(typecheck) + `vitest` | 原生 |
+| `task lint` | `go vet` + 前端 `eslint`（**非 gate**，目前有既有 ESLint 債，見下） | 原生 |
+| `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
+| `task test-full` | `test-fast` + `test-integration` | Docker |
+| `task build` / `task build:api` | build SHA-tagged image | Docker |
+| `task push:api` | 推 API image 到 GHCR | Docker |
+| `task deploy` | 本機部署（prod compose，處理 web_dist 陷阱） | Docker |
+
+### 各場景 done-condition
+
+對接「對話場景紀律」表，三種場景的 done 條件一致：
+
+- **Bug Fix / Feature / Refactor done** = `task verify` 綠 + 相關範圍的 `task test-integration`（或 `task test-full`）綠 + PR 的 CI 綠。
+- 純前端改動：至少 `task test-fast`（含 vitest）綠。
+- 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
+- Stop hook 會在收工前強制 `task verify`；別繞過它，紅燈就修到綠。
+
+### lint 現況（重要）
+
+`task verify` 與 Stop hook **不含前端 eslint**。前端有 10 個既有 ESLint error（`react-hooks@7` 的 react-compiler 規則，在既有功能頁），需要獨立的 Refactor 場景處理，不在 CI/CD 地基範圍內。CI 有一個 **non-blocking 的 `lint` job** 持續顯示這些問題但不擋 merge。修完那批債之後，可把 `npm run lint` 加回 `test-fast`，並把 CI 的 lint job 改成 blocking。
+
+### 不可變產物與部署
+
+- Go API build 成 SHA-tagged image，CI 推到 `ghcr.io/steven715/vaultflix-api`。同一個產物 promote，不為不同環境 rebuild。
+- 部署是手動 gate：本機 `task deploy`。`local`/`test`/整合測試一律自動，無需介入。
+- prod / test 用 `docker-compose.prod.yml` / `docker-compose.test.yml` 以 `!override`/`!reset` 覆寫 base，不複製 infra 定義（避免 drift）。需 Docker Compose v2.24+。
+
+---
+
 ## Git Commit 規範
 
 ```

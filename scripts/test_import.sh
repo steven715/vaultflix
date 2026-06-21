@@ -86,25 +86,22 @@ echo ""
 bold "[5] 第一次匯入"
 yellow "  (可能需要一段時間...)"
 
-IMPORT_RESP=$(curl -s -X POST "${API_BASE}/api/videos/import" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{\"source_id\":\"${SOURCE_ID}\"}" \
-    --max-time 3600)
+# 匯入是非同步的：run_import 會輪詢 job 端點直到完成，回傳最終 job JSON
+IMPORT_RESP=$(run_import "$ADMIN_TOKEN" "$SOURCE_ID")
 
 echo "  回應: $(echo "$IMPORT_RESP" | jq -c '.')"
 
-TOTAL_SCANNED=$(echo "$IMPORT_RESP" | jq -r '.data.total_scanned // 0')
+TOTAL_SCANNED=$(echo "$IMPORT_RESP" | jq -r '.data.total // 0')
 IMPORTED=$(echo "$IMPORT_RESP" | jq -r '.data.imported // 0')
 SKIPPED=$(echo "$IMPORT_RESP" | jq -r '.data.skipped // 0')
 FAILED=$(echo "$IMPORT_RESP" | jq -r '.data.failed // 0')
 
-assert_gte "total_scanned >= 1" 1 "$TOTAL_SCANNED"
+assert_gte "total >= 1" 1 "$TOTAL_SCANNED"
 assert_eq "failed == 0" "0" "$FAILED"
 
 # imported + skipped 應該等於 total（首次跑全部 imported，重複跑全部 skipped）
 SUM_IS=$((IMPORTED + SKIPPED))
-assert_eq "imported + skipped == total_scanned" "$TOTAL_SCANNED" "$SUM_IS"
+assert_eq "imported + skipped == total" "$TOTAL_SCANNED" "$SUM_IS"
 
 # ---------------------------------------------------------------------------
 # 6. 冪等性 — 再次匯入應全部 skip
@@ -112,17 +109,13 @@ assert_eq "imported + skipped == total_scanned" "$TOTAL_SCANNED" "$SUM_IS"
 echo ""
 bold "[6] 冪等性測試"
 
-IMPORT2_RESP=$(curl -s -X POST "${API_BASE}/api/videos/import" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{\"source_id\":\"${SOURCE_ID}\"}" \
-    --max-time 3600)
+IMPORT2_RESP=$(run_import "$ADMIN_TOKEN" "$SOURCE_ID")
 
 IMPORTED2=$(echo "$IMPORT2_RESP" | jq -r '.data.imported // -1')
 SKIPPED2=$(echo "$IMPORT2_RESP" | jq -r '.data.skipped // 0')
 
 assert_eq "再次匯入 imported == 0" "0" "$IMPORTED2"
-assert_eq "再次匯入 skipped == total_scanned" "$TOTAL_SCANNED" "$SKIPPED2"
+assert_eq "再次匯入 skipped == total" "$TOTAL_SCANNED" "$SKIPPED2"
 
 # ---------------------------------------------------------------------------
 # 7. 回應格式驗證
@@ -133,7 +126,7 @@ bold "[7] 回應格式"
 HAS_DATA=$(echo "$IMPORT_RESP" | jq 'has("data")')
 assert_eq "有 data 欄位" "true" "$HAS_DATA"
 
-for field in total_scanned imported skipped failed; do
+for field in total imported skipped failed; do
     HAS=$(echo "$IMPORT_RESP" | jq ".data | has(\"$field\")")
     assert_eq "data 包含 $field" "true" "$HAS"
 done

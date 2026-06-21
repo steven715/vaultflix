@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+.worktrees
+.superpowers
+docs
+scripts
+web/node_modules
+web/dist
+.ci
+*.md
+.env
+screenshot-*.png

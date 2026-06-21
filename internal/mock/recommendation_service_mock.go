@@ -9,8 +9,8 @@ import (
 )
 
 type RecommendationService struct {
-	GetTodayFunc   func(ctx context.Context, userID string, date time.Time, fallbackCount int) ([]model.RecommendationItem, error)
-	ListByDateFunc func(ctx context.Context, date time.Time) ([]model.RecommendationItem, error)
+	GetTodayFunc        func(ctx context.Context, userID string, date time.Time, fallbackCount int) ([]model.RecommendationItem, error)
+	ListByDateFunc      func(ctx context.Context, date time.Time) ([]model.RecommendationItem, error)
 	CreateFunc          func(ctx context.Context, videoID string, date time.Time, sortOrder int) (*model.DailyRecommendation, error)
 	UpdateSortOrderFunc func(ctx context.Context, id string, sortOrder int) error
 	DeleteFunc          func(ctx context.Context, id string) error

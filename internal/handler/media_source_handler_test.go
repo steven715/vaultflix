@@ -125,8 +125,11 @@ func TestMediaSourceHandler_Create_Success(t *testing.T) {
 	svc := service.NewMediaSourceService(repo, prefix)
 	r := setupMediaSourceRouter(svc)
 
-	body := `{"label":"Videos","mount_path":"` + validPath + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/media-sources", bytes.NewBufferString(body))
+	body, err := json.Marshal(map[string]string{"label": "Videos", "mount_path": validPath})
+	if err != nil {
+		t.Fatalf("failed to marshal request body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/media-sources", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -162,8 +165,11 @@ func TestMediaSourceHandler_Create_DuplicatePath(t *testing.T) {
 	svc := service.NewMediaSourceService(repo, prefix)
 	r := setupMediaSourceRouter(svc)
 
-	body := `{"label":"Dup","mount_path":"` + validPath + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/media-sources", bytes.NewBufferString(body))
+	body, err := json.Marshal(map[string]string{"label": "Dup", "mount_path": validPath})
+	if err != nil {
+		t.Fatalf("failed to marshal request body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/media-sources", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

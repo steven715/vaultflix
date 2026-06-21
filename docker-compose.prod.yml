@@ -1,0 +1,17 @@
+# Prod override. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# or via `task deploy`. Requires Docker Compose v2.24+ (!reset / !override tags).
+services:
+  vaultflix-api:
+    image: ghcr.io/steven715/vaultflix-api:${VAULTFLIX_TAG:-latest}
+    build:
+      context: .
+      args:
+        GIT_SHA: ${VAULTFLIX_TAG:-dev}
+    # Remove base's dev-only settings; use the image's ENTRYPOINT
+    command: !reset null
+    working_dir: !reset null
+    # Replace base's volumes (drop .:/app and go caches, keep only read-only video mounts)
+    volumes: !override
+      - D:\AdultsV:/mnt/host/D/AdultsV:ro
+      - G:\下載:/mnt/host/G/下載:ro

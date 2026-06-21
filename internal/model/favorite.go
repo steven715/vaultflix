@@ -4,12 +4,12 @@ import "time"
 
 // VideoSummary is a lightweight video representation for list views (favorites, recommendations).
 type VideoSummary struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	ThumbnailKey    string `json:"-"`
-	DurationSeconds int    `json:"duration_seconds"`
-	Resolution      string `json:"resolution"`
-	FileSizeBytes   int64  `json:"file_size_bytes"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	ThumbnailKey    string    `json:"-"`
+	DurationSeconds int       `json:"duration_seconds"`
+	Resolution      string    `json:"resolution"`
+	FileSizeBytes   int64     `json:"file_size_bytes"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 

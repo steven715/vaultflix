@@ -29,8 +29,9 @@ web/dist/
 Thumbs.db
 
 # Claude Code
-.claude/
+.claude/*
 !.claude/commands/
+!.claude/settings.json
 .superpowers/
 .worktrees/
 

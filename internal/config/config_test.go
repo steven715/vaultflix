@@ -54,8 +54,8 @@ func TestLoad_InsecureDefaultRejected(t *testing.T) {
 
 func TestLoad_AllProblemsReportedTogether(t *testing.T) {
 	setSecureSecrets(t)
-	t.Setenv("DB_PASSWORD", "vaultflix")   // insecure default
-	t.Setenv("MINIO_SECRET_KEY", "")       // missing
+	t.Setenv("DB_PASSWORD", "vaultflix")        // insecure default
+	t.Setenv("MINIO_SECRET_KEY", "")            // missing
 	t.Setenv("ADMIN_DEFAULT_PASSWORD", "admin") // insecure default
 
 	_, err := Load()

@@ -112,4 +112,3 @@ func TestWSHandler_InvalidToken(t *testing.T) {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
 	}
 }
-

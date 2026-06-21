@@ -1,0 +1,116 @@
+version: '3'
+
+vars:
+  GIT_SHA:
+    sh: git rev-parse --short HEAD
+  IMAGE_API: ghcr.io/steven715/vaultflix-api
+  COMPOSE_TEST: docker compose -f docker-compose.yml -f docker-compose.test.yml
+  COMPOSE_PROD: docker compose -f docker-compose.yml -f docker-compose.prod.yml
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  verify:
+    desc: "Gate for the Stop hook: = test-fast"
+    cmds:
+      - task: test-fast
+
+  test-fast:
+    desc: "Fast checks (lint/type/unit) - native"
+    cmds:
+      - go vet ./...
+      - cmd: test -z "$(gofmt -l .)"
+        msg: "gofmt found unformatted files, run `task fmt`"
+      - go test ./...
+      - task: web:typecheck
+      - task: web:test
+
+  web:typecheck:
+    desc: "TypeScript build/type-check (web)"
+    dir: web
+    cmds:
+      - npx tsc -b
+
+  web:lint:
+    desc: "ESLint (web)"
+    dir: web
+    cmds:
+      - npm run lint
+
+  web:test:
+    desc: "Vitest unit tests (web)"
+    dir: web
+    cmds:
+      - npm run test
+
+  fmt:
+    desc: "Format Go code"
+    cmds:
+      - gofmt -w .
+
+  lint:
+    desc: "Static checks (go vet + eslint)"
+    cmds:
+      - go vet ./...
+      - task: web:lint
+
+  test-integration:
+    desc: "Integration tests (clean stack + fixture) - shared by local/CI"
+    cmds:
+      - "{{.COMPOSE_TEST}} --profile test up -d vaultflix-api"
+      - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
+      - defer: "{{.COMPOSE_TEST}} --profile test down"
+
+  test-full:
+    desc: "Full test = test-fast + test-integration"
+    cmds:
+      - task: test-fast
+      - task: test-integration
+
+  build:api:
+    desc: "Build Go API image (SHA-tagged)"
+    cmds:
+      - docker build --build-arg GIT_SHA={{.GIT_SHA}} -t {{.IMAGE_API}}:{{.GIT_SHA}} -t {{.IMAGE_API}}:latest .
+
+  build:web:
+    desc: "Build web static artifact image"
+    cmds:
+      - docker build -t vaultflix-web:{{.GIT_SHA}} ./web
+
+  build:
+    desc: "Build API + web image"
+    cmds:
+      - task: build:api
+      - task: build:web
+
+  push:api:
+    desc: "Push API image to GHCR (requires docker login ghcr.io first)"
+    deps: [build:api]
+    cmds:
+      - docker push {{.IMAGE_API}}:{{.GIT_SHA}}
+      - docker push {{.IMAGE_API}}:latest
+
+  deploy:
+    desc: "Deploy to local machine (prod compose). Handles web_dist named-volume trap"
+    cmds:
+      - "{{.COMPOSE_PROD}} build vaultflix-api vaultflix-web vaultflix-nginx"
+      - "{{.COMPOSE_PROD}} down vaultflix-web vaultflix-nginx"
+      - docker volume rm vaultflix_web_dist || true
+      - "{{.COMPOSE_PROD}} up -d"
+
+  up:
+    desc: "Start dev stack"
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: "Stop dev stack"
+    cmds:
+      - docker compose down
+
+  logs:
+    desc: "Tail api logs"
+    cmds:
+      - docker compose logs -f vaultflix-api

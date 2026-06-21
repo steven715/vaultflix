@@ -22,9 +22,14 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
+// version is injected at build time via -ldflags "-X main.version=<sha>".
+// Defaults to "dev" for `go run` / local builds.
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	slog.Info("starting vaultflix", "version", version)
 
 	cfg, err := config.Load()
 	if err != nil {
