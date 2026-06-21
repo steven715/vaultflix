@@ -8,8 +8,8 @@ import (
 )
 
 type WatchHistoryRepository struct {
-	UpsertFunc          func(ctx context.Context, record *model.WatchHistory) error
-	ListByUserFunc      func(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryWithVideo, int64, error)
+	UpsertFunc            func(ctx context.Context, record *model.WatchHistory) error
+	ListByUserFunc        func(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryWithVideo, int64, error)
 	GetByUserAndVideoFunc func(ctx context.Context, userID, videoID string) (*model.WatchHistory, error)
 }
 

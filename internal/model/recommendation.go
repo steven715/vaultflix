@@ -4,11 +4,11 @@ import "time"
 
 // DailyRecommendation represents a manually curated recommendation for a specific date.
 type DailyRecommendation struct {
-	ID             string    `json:"id"`
-	VideoID        string    `json:"video_id"`
-	RecommendDate  time.Time `json:"recommend_date"`
-	SortOrder      int       `json:"sort_order"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	VideoID       string    `json:"video_id"`
+	RecommendDate time.Time `json:"recommend_date"`
+	SortOrder     int       `json:"sort_order"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // RecommendationWithVideo is the repository-layer JOIN result

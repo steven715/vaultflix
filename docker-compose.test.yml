@@ -15,3 +15,9 @@ services:
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
       - ./.ci/fixtures:/mnt/host/videos:ro
+
+  test-runner:
+    # The scripts log in as admin; the password must match the seeded admin
+    # (ADMIN_DEFAULT_PASSWORD), otherwise login returns 401 and every suite fails.
+    environment:
+      ADMIN_PASS: "${ADMIN_DEFAULT_PASSWORD:-1234}"

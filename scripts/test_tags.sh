@@ -130,9 +130,8 @@ assert_eq "無效 category 回 400" "400" "$CODE"
 echo ""
 bold "[8] POST /api/videos/:id/tags — 加標籤"
 
-# 取一筆影片
-VIDEO_ID=$(curl -s "${API_BASE}/api/videos?page_size=1" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq -r '.data[0].id')
+# 取一筆影片（若 videos 套件已刪光唯一的 fixture 影片，ensure_video 會重新匯入）
+VIDEO_ID=$(ensure_video "$ADMIN_TOKEN")
 assert_not_empty "取得影片 ID" "$VIDEO_ID"
 
 RESP=$(curl -s -w "\n%{http_code}" -X POST "${API_BASE}/api/videos/${VIDEO_ID}/tags" \
