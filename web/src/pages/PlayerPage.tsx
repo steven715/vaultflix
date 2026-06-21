@@ -6,6 +6,8 @@ import { addFavorite, removeFavorite } from '../api/favorites'
 import type { VideoDetail } from '../types'
 import { formatDuration, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
+import { usePlaybackStats } from '../hooks/usePlaybackStats'
+import NetworkHud from '../components/NetworkHud'
 
 const PROGRESS_THROTTLE_MS = 10_000
 
@@ -26,6 +28,17 @@ export default function PlayerPage() {
   const lastReportTimeRef = useRef(0)
   const lastReportSecondsRef = useRef(-1)
   const videoIDRef = useRef<string>('')
+
+  // stats-for-nerds HUD: buffer headroom (主訊號) + ↓Mbps + RTT + rebuffers.
+  // streamPath (no token) keys the stats; a token refresh keeps the same path so
+  // rebuffer counters survive it. avgBitrateBps scales the buffered-growth
+  // throughput estimate (this backend's progressive streaming yields no
+  // per-chunk Resource Timing samples to measure directly).
+  const avgBitrateBps =
+    video && video.duration_seconds > 0
+      ? (video.file_size_bytes * 8) / video.duration_seconds
+      : null
+  const playbackStats = usePlaybackStats(videoRef, video?.stream_url ?? null, avgBitrateBps)
 
   useEffect(() => {
     let cancelled = false
@@ -244,6 +257,7 @@ export default function PlayerPage() {
             onLoadedMetadata={handleLoadedMetadata}
             onVolumeChange={handleVolumeChange}
           />
+          <NetworkHud stats={playbackStats} />
         </div>
 
         {/* Video info */}
