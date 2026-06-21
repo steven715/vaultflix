@@ -1,0 +1,17 @@
+# Integration test override. Shared by local and CI for parity.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
+# or via `task test-integration`.
+services:
+  # DB / MinIO become ephemeral (no named volume): every `up` is a clean environment
+  postgres:
+    volumes: !override []
+  minio:
+    volumes: !override []
+
+  vaultflix-api:
+    # Replace base's video mounts: use the repo-internal fixture, host-OS independent
+    volumes: !override
+      - .:/app
+      - go_modules:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+      - ./.ci/fixtures:/mnt/host/videos:ro
