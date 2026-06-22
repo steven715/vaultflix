@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { HomeIcon, SearchIcon, HeartIcon, ClockIcon } from './icons'
+import { useHideOnScrollDown } from '../hooks/useHideOnScrollDown'
 import type { SVGProps, ReactElement } from 'react'
 
 type IconCmp = (p: SVGProps<SVGSVGElement>) => ReactElement
@@ -15,9 +16,12 @@ const TABS: { to: string; label: string; Icon: IconCmp }[] = [
 // and login views by simply not rendering it from those pages' shells.
 export default function MobileTabBar() {
   const location = useLocation()
+  const hidden = useHideOnScrollDown()
   return (
     <nav
-      className="fixed inset-x-4 bottom-3.5 z-30 flex h-16 items-stretch rounded-[24px] border border-border px-2 backdrop-blur-[20px] md:hidden"
+      className={`fixed inset-x-4 bottom-3.5 z-30 flex h-16 items-stretch rounded-[24px] border border-border px-2 backdrop-blur-[20px] transition-transform duration-300 ease-out md:hidden ${
+        hidden ? 'translate-y-[160%]' : 'translate-y-0'
+      }`}
       style={{ backgroundColor: 'rgba(20,16,13,0.8)' }}
     >
       {TABS.map(({ to, label, Icon }) => {
