@@ -113,7 +113,7 @@ If unclear, ask: "This conversation will focus on one scenario — is this a bug
 
 ```
 - Tests:     docker compose exec vaultflix-api go test ./... -v
-- Build:     docker compose build vaultflix-web
+- Build:     docker compose build vaultflix-nginx
 - Deploy:    docker compose up -d --force-recreate <service>
 - Browser:   Chrome DevTools MCP
              ├ Navigate to affected pages
@@ -171,5 +171,5 @@ Do NOT silently accept the context switch. The quality of code review depends on
 
 - All dev operations through Docker containers (no local Go/Node)
 - Tests: `docker compose exec vaultflix-api go test ./...`
-- Frontend build: `docker compose build vaultflix-web`
+- Frontend build: `docker compose build vaultflix-nginx`
 - API restart: `docker compose up -d --force-recreate vaultflix-api`

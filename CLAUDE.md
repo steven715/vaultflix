@@ -331,20 +331,21 @@ useEffect(() => {
 - Health check 必須配置在每個服務上
 - 對外暴露 port 的服務（如 MinIO），`.env` 中必須同時定義 internal endpoint（Docker hostname）和 public endpoint（host-accessible），命名慣例：`<SERVICE>_ENDPOINT` / `<SERVICE>_PUBLIC_ENDPOINT`
 
-### 前端發版流程（named volume 陷阱）
+### 前端發版流程（不可變 nginx image）
 
-前端 dist 透過 named volume `web_dist` 在 `vaultflix-web`（builder）與 `vaultflix-nginx`（server）之間共享。Docker named volume **只會在 volume 不存在時**從 image 初始化內容，既有 volume 不會被新 image 的內容覆寫。因此單純 `docker compose build vaultflix-web` + 重啟 nginx 無效，nginx 仍會服務舊 bundle。
+前端 SPA 直接 build 進 `vaultflix-nginx` image：`nginx/Dockerfile` 是多階段 build，第一階段用 `node:20-alpine` 編譯 `web/`，第二階段把產物 `COPY` 進 nginx 的 `/usr/share/nginx/html`。**沒有 `web_dist` 共享 volume、沒有獨立的 `vaultflix-web` 容器** —— 前端是不可變產物，與 Go API image 對稱。
 
-正確流程：
+因為 build context 是 repo root（nginx Dockerfile 要讀 `web/` 與 `nginx/nginx.conf`），compose 的 nginx 服務用 `context: .` + `dockerfile: nginx/Dockerfile`，root 的 `.dockerignore` 已排除 `web/node_modules`、`web/dist`。
+
+正確流程（image 換了 `up -d` 會自動 recreate，無需手動刪 volume）：
 
 ```bash
-docker compose build vaultflix-web
-docker compose down vaultflix-web vaultflix-nginx
-docker volume rm vaultflix_web_dist
+docker compose build vaultflix-nginx
 docker compose up -d vaultflix-nginx
+# 或一次到位：task deploy
 ```
 
-除錯時若發現「改了前端程式碼、重啟容器，瀏覽器行為沒變」，第一反應檢查 `web_dist` volume 是否有被刪掉重建。
+改完前端若瀏覽器行為沒變，第一反應是 image 沒重 build（或 PWA/瀏覽器在吃舊快取，hard reload）—— 不再有 named volume 陷阱。
 
 ### 磁碟層級掛載策略
 
@@ -534,7 +535,7 @@ import (
 | `task test-full` | `test-fast` + `test-integration` | Docker |
 | `task build` / `task build:api` | build SHA-tagged image | Docker |
 | `task push:api` | 推 API image 到 GHCR | Docker |
-| `task deploy` | 本機部署（prod compose，處理 web_dist 陷阱） | Docker |
+| `task deploy` | 本機部署（prod compose，build 不可變 nginx image） | Docker |
 
 ### 各場景 done-condition
 
