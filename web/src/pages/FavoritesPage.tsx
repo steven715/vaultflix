@@ -27,25 +27,24 @@ export default function FavoritesPage() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-
-    listFavorites(page, PAGE_SIZE)
-      .then((res) => {
+    const load = async () => {
+      setLoading(true)
+      setLoadError(false)
+      try {
+        const res = await listFavorites(page, PAGE_SIZE)
         if (cancelled) return
         setFavorites(res.data)
         setTotal(res.total)
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return
         setFavorites([])
         setTotal(0)
         setLoadError(true)
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
-
+      }
+    }
+    load()
     return () => {
       cancelled = true
     }

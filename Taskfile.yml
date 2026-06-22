@@ -25,6 +25,7 @@ tasks:
         msg: "gofmt found unformatted files, run `task fmt`"
       - go test ./...
       - task: web:typecheck
+      - task: web:lint
       - task: web:test
 
   web:typecheck:

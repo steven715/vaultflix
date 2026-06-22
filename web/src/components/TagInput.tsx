@@ -39,10 +39,14 @@ export default function TagInput({ videoId, initialTags, allTags, onTagsChange }
   const exactMatch = filtered.some((t) => t.name.toLowerCase() === input.toLowerCase().trim())
   const showCreate = input.trim().length > 0 && !exactMatch
 
-  // Reset highlight when filtered list changes
-  useEffect(() => {
+  // Reset highlight when the input (and thus the filtered list) changes.
+  // Adjusting state during render avoids an extra effect pass — see
+  // https://react.dev/learn/you-might-not-need-an-effect
+  const [prevInput, setPrevInput] = useState(input)
+  if (input !== prevInput) {
+    setPrevInput(input)
     setHighlightIdx(0)
-  }, [input])
+  }
 
   function flashError() {
     setError(true)

@@ -25,6 +25,9 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const intentionalCloseRef = useRef(false)
+  // Holds the latest `connect` so `scheduleReconnect` can call it without
+  // depending on it — breaking the connect ⇄ scheduleReconnect cycle.
+  const connectRef = useRef<() => void>(() => {})
 
   const cleanup = useCallback(() => {
     if (heartbeatTimerRef.current) {
@@ -35,6 +38,20 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
       clearTimeout(reconnectTimerRef.current)
       reconnectTimerRef.current = undefined
     }
+  }, [])
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      return
+    }
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttemptRef.current),
+      MAX_RECONNECT_DELAY
+    )
+    reconnectAttemptRef.current += 1
+    reconnectTimerRef.current = setTimeout(() => {
+      connectRef.current()
+    }, delay)
   }, [])
 
   const connect = useCallback(() => {
@@ -78,20 +95,11 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     }
 
     wsRef.current = ws
-  }, [token, cleanup])
+  }, [token, cleanup, scheduleReconnect])
 
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      return
-    }
-    const delay = Math.min(
-      BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttemptRef.current),
-      MAX_RECONNECT_DELAY
-    )
-    reconnectAttemptRef.current += 1
-    reconnectTimerRef.current = setTimeout(() => {
-      connect()
-    }, delay)
+  // Keep connectRef pointing at the latest connect for scheduleReconnect.
+  useEffect(() => {
+    connectRef.current = connect
   }, [connect])
 
   const sendMessage = useCallback((msg: WSMessage) => {
@@ -100,17 +108,22 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     }
   }, [])
 
+  // Close any existing connection intentionally (e.g. on logout). The socket's
+  // own onclose handler flips isConnected to false; if no socket exists it is
+  // already false — so we don't (and per react-hooks must not) setState here.
+  const disconnect = useCallback(() => {
+    intentionalCloseRef.current = true
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    cleanup()
+  }, [cleanup])
+
   // Connect when token becomes available; disconnect on logout
   useEffect(() => {
     if (!token) {
-      // No token — close any existing connection intentionally
-      intentionalCloseRef.current = true
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-      cleanup()
-      setIsConnected(false)
+      disconnect()
       return
     }
 
@@ -127,7 +140,7 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
       }
       cleanup()
     }
-  }, [token, connect, cleanup])
+  }, [token, connect, cleanup, disconnect])
 
   return { lastMessage, isConnected, sendMessage }
 }

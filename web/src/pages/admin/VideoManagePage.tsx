@@ -105,8 +105,10 @@ export default function VideoManagePage() {
       .then((sources) => {
         const enabled = sources.filter((s) => s.enabled)
         setMediaSources(enabled)
-        if (enabled.length > 0 && !selectedSourceID) {
-          setSelectedSourceID(enabled[0].id)
+        // Default to the first enabled source only if nothing is selected yet.
+        // Functional update reads the latest value without depending on it.
+        if (enabled.length > 0) {
+          setSelectedSourceID((prev) => prev || enabled[0].id)
         }
       })
       .catch((err) => {
