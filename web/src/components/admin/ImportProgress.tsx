@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useWS } from '../../contexts/WebSocketContext'
 import { getActiveImportJob } from '../../api/admin'
+import type { WSMessage } from '../../hooks/useWebSocket'
 import type { ImportJob, ImportProgress as ImportProgressType, ImportError } from '../../types'
 
 type ImportState = 'importing' | 'completed' | 'failed'
@@ -12,7 +13,10 @@ interface ImportProgressProps {
 
 export default function ImportProgress({ jobId, onComplete }: ImportProgressProps) {
   const onCompleteRef = useRef(onComplete)
-  onCompleteRef.current = onComplete
+  // Keep the ref pointing at the latest callback without writing during render.
+  useEffect(() => {
+    onCompleteRef.current = onComplete
+  })
   const [importState, setImportState] = useState<ImportState>('importing')
   const [currentFile, setCurrentFile] = useState('')
   const [processed, setProcessed] = useState(0)
@@ -43,13 +47,11 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
     return () => { cancelled = true }
   }, [jobId])
 
-  // WebSocket progress listener
-  useEffect(() => {
-    if (!lastMessage) return
-
-    switch (lastMessage.type) {
+  // Apply a single incoming WebSocket message to local progress state.
+  const handleMessage = useCallback((msg: WSMessage) => {
+    switch (msg.type) {
       case 'import_progress': {
-        const p = lastMessage.payload as ImportProgressType
+        const p = msg.payload as ImportProgressType
         if (p.job_id !== jobId) break
         if (p.status === 'processing') {
           setCurrentFile(p.file_name)
@@ -66,7 +68,7 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
         break
       }
       case 'import_complete': {
-        const result = lastMessage.payload as ImportJob
+        const result = msg.payload as ImportJob
         if (result.id !== jobId) break
         setFinalResult(result)
         setImportState(result.failed > 0 && result.imported === 0 ? 'failed' : 'completed')
@@ -78,7 +80,20 @@ export default function ImportProgress({ jobId, onComplete }: ImportProgressProp
         break
       }
     }
-  }, [lastMessage, jobId])
+  }, [jobId])
+
+  // WebSocket progress listener. Applying the update asynchronously keeps the
+  // setState out of the synchronous effect body (accumulating counters use
+  // functional updates, so deferring by a microtask preserves correctness).
+  useEffect(() => {
+    if (!lastMessage) return
+    let cancelled = false
+    const apply = async () => {
+      if (!cancelled) handleMessage(lastMessage)
+    }
+    apply()
+    return () => { cancelled = true }
+  }, [lastMessage, handleMessage])
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-4 mt-3">

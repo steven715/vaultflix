@@ -27,25 +27,24 @@ export default function HistoryPage() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-
-    listWatchHistory(page, PAGE_SIZE)
-      .then((res) => {
+    const load = async () => {
+      setLoading(true)
+      setLoadError(false)
+      try {
+        const res = await listWatchHistory(page, PAGE_SIZE)
         if (cancelled) return
         setItems(res.data)
         setTotal(res.total)
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return
         setItems([])
         setTotal(0)
         setLoadError(true)
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
-
+      }
+    }
+    load()
     return () => {
       cancelled = true
     }

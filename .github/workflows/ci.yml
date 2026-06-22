@@ -26,21 +26,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install web deps
         run: npm --prefix web ci
-      - name: Run fast checks (vet, gofmt, go test, tsc, vitest)
+      - name: Run fast checks (vet, gofmt, go test, tsc, eslint, vitest)
         run: task verify
-
-  lint:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '20'
-      - name: Install web deps
-        run: npm --prefix web ci
-      - name: Frontend lint (non-blocking - pre-existing debt tracked for Refactor)
-        run: npm --prefix web run lint
 
   integration:
     runs-on: ubuntu-latest

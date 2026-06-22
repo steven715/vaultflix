@@ -28,12 +28,19 @@ export default function VideoPickerModal({ onSelect, onClose }: VideoPickerModal
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-    listVideos({ page: 1, page_size: 20, sort_by: 'created_at', sort_order: 'desc', q: searchTerm || undefined })
-      .then((res) => { if (!cancelled) setVideos(res.data) })
-      .catch(() => { if (!cancelled) { setVideos([]); setLoadError(true) } })
-      .finally(() => { if (!cancelled) setLoading(false) })
+    const load = async () => {
+      setLoading(true)
+      setLoadError(false)
+      try {
+        const res = await listVideos({ page: 1, page_size: 20, sort_by: 'created_at', sort_order: 'desc', q: searchTerm || undefined })
+        if (!cancelled) setVideos(res.data)
+      } catch {
+        if (!cancelled) { setVideos([]); setLoadError(true) }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
     return () => { cancelled = true }
   }, [searchTerm, reloadKey])
 

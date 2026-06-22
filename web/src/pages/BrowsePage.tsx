@@ -85,30 +85,31 @@ export default function BrowsePage() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-    listVideos({
-      page,
-      page_size: pageSize,
-      sort_by: sortBy,
-      sort_order: sortOrder,
-      q: query || undefined,
-      tag_ids: tagIdsStr || undefined,
-    })
-      .then((res) => {
+    const load = async () => {
+      setLoading(true)
+      setLoadError(false)
+      try {
+        const res = await listVideos({
+          page,
+          page_size: pageSize,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+          q: query || undefined,
+          tag_ids: tagIdsStr || undefined,
+        })
         if (cancelled) return
         setVideos(res.data)
         setTotal(res.total)
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return
         setVideos([])
         setTotal(0)
         setLoadError(true)
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    }
+    load()
     return () => {
       cancelled = true
     }

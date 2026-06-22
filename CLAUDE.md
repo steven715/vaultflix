@@ -529,8 +529,8 @@ import (
 | 指令 | 用途 | 跑在哪 |
 |---|---|---|
 | `task verify` | 快層 gate（= `test-fast`），Stop hook 自動跑 | 原生 |
-| `task test-fast` | `go vet` + `gofmt` 檢查 + `go test ./...` + web `tsc`(typecheck) + `vitest` | 原生 |
-| `task lint` | `go vet` + 前端 `eslint`（**非 gate**，目前有既有 ESLint 債，見下） | 原生 |
+| `task test-fast` | `go vet` + `gofmt` 檢查 + `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest` | 原生 |
+| `task lint` | `go vet` + 前端 `eslint`（手動 lint-only 便捷指令；eslint 也已含在 `test-fast` gate 內） | 原生 |
 | `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
 | `task test-full` | `test-fast` + `test-integration` | Docker |
 | `task build` / `task build:api` | build SHA-tagged image | Docker |
@@ -548,7 +548,9 @@ import (
 
 ### lint 現況（重要）
 
-`task verify` 與 Stop hook **不含前端 eslint**。前端有 10 個既有 ESLint error（`react-hooks@7` 的 react-compiler 規則，在既有功能頁），需要獨立的 Refactor 場景處理，不在 CI/CD 地基範圍內。CI 有一個 **non-blocking 的 `lint` job** 持續顯示這些問題但不擋 merge。修完那批債之後，可把 `npm run lint` 加回 `test-fast`，並把 CI 的 lint job 改成 blocking。
+前端既有 ESLint 債（`react-hooks@7` 的 react-compiler 規則，11 個 error）已清完。`npm run lint` 現已納入 `task test-fast`，因此 `task verify` 與 Stop hook 都會跑前端 eslint（zero errors / zero warnings），CI 也透過 `verify` job blocking。原本 CI 那個 non-blocking 的獨立 `lint` job 已移除（與 `verify` 重複）。
+
+往後前端 lint 紅燈一律當 gate 處理，比照 typecheck / vitest，紅就修到綠，不再累積債。
 
 ### 不可變產物與部署
 
