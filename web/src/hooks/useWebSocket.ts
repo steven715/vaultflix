@@ -24,7 +24,6 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
   const reconnectAttemptRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const intentionalCloseRef = useRef(false)
   // Holds the latest `connect` so `scheduleReconnect` can call it without
   // depending on it — breaking the connect ⇄ scheduleReconnect cycle.
   const connectRef = useRef<() => void>(() => {})
@@ -73,10 +72,23 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     }
 
     ws.onclose = () => {
+      // onclose fires asynchronously, so by the time it runs this socket may no
+      // longer be the live one. Branch on socket identity:
+      //   - wsRef.current === ws    → this live socket dropped → reset + reconnect
+      //   - wsRef.current === null  → intentional teardown, no successor
+      //                               (logout / unmount) → reset, do not reconnect
+      //   - wsRef.current === other → replaced by a newer generation
+      //                               (token change) → the successor owns all
+      //                               shared state, so do nothing at all
+      // The third case is the bug a cross-generation boolean could not express:
+      // a stale socket must not reset isConnected, clear the new socket's
+      // heartbeat via cleanup(), or schedule a spurious reconnect.
+      if (wsRef.current !== null && wsRef.current !== ws) return
+
       setIsConnected(false)
       cleanup()
 
-      if (!intentionalCloseRef.current) {
+      if (wsRef.current === ws) {
         scheduleReconnect()
       }
     }
@@ -108,11 +120,13 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     }
   }, [])
 
-  // Close any existing connection intentionally (e.g. on logout). The socket's
-  // own onclose handler flips isConnected to false; if no socket exists it is
-  // already false — so we don't (and per react-hooks must not) setState here.
+  // Close any existing connection intentionally (e.g. on logout). We null
+  // wsRef.current first; the socket's async onclose then sees the "intentional
+  // teardown, no successor" case (wsRef.current === null) and resets
+  // isConnected without reconnecting. We must not setState here directly —
+  // disconnect() is called synchronously from the effect, which react-hooks
+  // forbids (set-state-in-effect).
   const disconnect = useCallback(() => {
-    intentionalCloseRef.current = true
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -128,12 +142,10 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     }
 
     // Token available — connect
-    intentionalCloseRef.current = false
     reconnectAttemptRef.current = 0
     connect()
 
     return () => {
-      intentionalCloseRef.current = true
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
