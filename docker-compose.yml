@@ -95,27 +95,20 @@ services:
       retries: 30
       start_period: 30s
 
-  vaultflix-web:
-    build:
-      context: ./web
-    volumes:
-      - web_dist:/dist
-
   vaultflix-nginx:
     build:
-      context: ./nginx
+      context: .
+      dockerfile: nginx/Dockerfile
     restart: unless-stopped
     depends_on:
       vaultflix-api:
         condition: service_healthy
-      vaultflix-web:
-        condition: service_completed_successfully
     ports:
       - "3000:80"
-    volumes:
-      - web_dist:/usr/share/nginx/html:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
+      # Pin IPv4: nginx.conf only `listen 80` (IPv4); `localhost` resolves to
+      # ::1 first in the container and would fail with connection refused.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -135,4 +128,3 @@ volumes:
   minio_data:
   go_modules:
   go_build_cache:
-  web_dist:

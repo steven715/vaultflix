@@ -93,7 +93,7 @@ Per Task:
 
 ```
     ├─ Go 測試：docker compose exec vaultflix-api go test ./...
-    ├─ 前端 build：docker compose build vaultflix-web
+    ├─ 前端 build：docker compose build vaultflix-nginx
     ├─ 部署：docker compose up -d --force-recreate
     └─ 瀏覽器驗證（Chrome DevTools MCP）
         ├─ 功能正常

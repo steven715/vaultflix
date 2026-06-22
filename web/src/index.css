@@ -62,10 +62,15 @@
 @layer base {
   html {
     color-scheme: dark;
+    /* Stop the browser/PWA from hijacking swipes: no pull-to-refresh, no
+       horizontal swipe-back navigation, no overscroll bounce/glow. The app
+       owns vertical scroll; gestures stay inside the UI. */
+    overscroll-behavior: none;
   }
 
   body {
     margin: 0;
+    overscroll-behavior: none;
     background-color: var(--color-bg);
     color: var(--color-cream);
     font-family: var(--font-sans);

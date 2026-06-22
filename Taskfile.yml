@@ -74,16 +74,16 @@ tasks:
     cmds:
       - docker build --build-arg GIT_SHA={{.GIT_SHA}} -t {{.IMAGE_API}}:{{.GIT_SHA}} -t {{.IMAGE_API}}:latest .
 
-  build:web:
-    desc: "Build web static artifact image"
+  build:nginx:
+    desc: "Build nginx image (bundles the web SPA as an immutable artifact)"
     cmds:
-      - docker build -t vaultflix-web:{{.GIT_SHA}} ./web
+      - docker build -t vaultflix-nginx:{{.GIT_SHA}} -f nginx/Dockerfile .
 
   build:
-    desc: "Build API + web image"
+    desc: "Build API + nginx image"
     cmds:
       - task: build:api
-      - task: build:web
+      - task: build:nginx
 
   push:api:
     desc: "Push API image to GHCR (requires docker login ghcr.io first)"
@@ -93,11 +93,9 @@ tasks:
       - docker push {{.IMAGE_API}}:latest
 
   deploy:
-    desc: "Deploy to local machine (prod compose). Handles web_dist named-volume trap"
+    desc: "Deploy to local machine (prod compose). nginx image bundles the web SPA"
     cmds:
-      - "{{.COMPOSE_PROD}} build vaultflix-api vaultflix-web vaultflix-nginx"
-      - "{{.COMPOSE_PROD}} down vaultflix-web vaultflix-nginx"
-      - docker volume rm vaultflix_web_dist || true
+      - "{{.COMPOSE_PROD}} build vaultflix-api vaultflix-nginx"
       - "{{.COMPOSE_PROD}} up -d"
 
   up:
