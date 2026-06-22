@@ -13,5 +13,5 @@ services:
     working_dir: !reset null
     # Replace base's volumes (drop .:/app and go caches, keep only read-only video mounts)
     volumes: !override
-      - D:\AdultsV:/mnt/host/D/AdultsV:ro
-      - G:\下載:/mnt/host/G/下載:ro
+      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
+      - /mnt/g/下載:/mnt/host/G/下載:ro
