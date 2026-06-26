@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-rou
 import { AuthProvider } from './contexts/AuthProvider'
 import { WebSocketProvider } from './contexts/WebSocketProvider'
 import { ToastProvider } from './contexts/ToastProvider'
+import PWAUpdater from './components/PWAUpdater'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import LoginPage from './pages/LoginPage'
@@ -20,6 +21,7 @@ function RootLayout() {
     <AuthProvider>
       <WebSocketProvider>
         <ToastProvider>
+          <PWAUpdater />
           <Outlet />
         </ToastProvider>
       </WebSocketProvider>
