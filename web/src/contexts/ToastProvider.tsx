@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ToastContainer from '../components/Toast'
 import { ToastContext } from './ToastContext'
-import type { Toast, ToastKind, ToastAPI } from './ToastContext'
+import type { Toast, ToastKind, ToastAPI, ToastOptions } from './ToastContext'
 
 const TOAST_TTL_MS = 3000
 const MAX_STACK = 3
@@ -28,9 +28,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timeoutsRef.current.set(id, timeoutId)
   }, [dismiss])
 
-  const push = useCallback((kind: ToastKind, message: string) => {
+  const push = useCallback((kind: ToastKind, message: string, opts?: ToastOptions) => {
     let scheduledId: string | null = null
     let evictedId: string | null = null
+    const persist = opts?.persist ?? false
 
     setToasts((prev) => {
       const existing = prev.find((t) => t.kind === kind && t.message === message)
@@ -40,7 +41,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       const id = String(++nextIdRef.current)
       scheduledId = id
-      const next = [...prev, { id, kind, message }]
+      const next = [...prev, { id, kind, message, action: opts?.action, persist }]
       if (next.length > MAX_STACK) {
         const evicted = next.shift()!
         evictedId = evicted.id
@@ -48,7 +49,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       return next
     })
 
-    if (scheduledId) scheduleDismiss(scheduledId)
+    // persist 的 toast 不排程自動消失，靠使用者關閉或點行動按鈕
+    if (scheduledId && !persist) scheduleDismiss(scheduledId)
     if (evictedId) {
       const t = timeoutsRef.current.get(evictedId)
       if (t) {
@@ -67,9 +69,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const api = useMemo<ToastAPI>(() => ({
-    success: (message) => push('success', message),
-    error: (message) => push('error', message),
-    info: (message) => push('info', message),
+    success: (message, opts) => push('success', message, opts),
+    error: (message, opts) => push('error', message, opts),
+    info: (message, opts) => push('info', message, opts),
   }), [push])
 
   return (

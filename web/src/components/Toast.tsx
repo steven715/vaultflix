@@ -23,13 +23,26 @@ export default function ToastContainer({ toasts, onDismiss }: Props) {
           className={`pointer-events-auto min-w-[240px] max-w-sm border rounded-lg px-3 py-2 text-sm shadow-lg flex items-center justify-between gap-3 ${KIND_STYLES[t.kind]}`}
         >
           <span className="break-words">{t.message}</span>
-          <button
-            onClick={() => onDismiss(t.id)}
-            className="text-current opacity-60 hover:opacity-100 shrink-0"
-            aria-label="關閉提示"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action!.onClick()
+                  onDismiss(t.id)
+                }}
+                className="font-semibold underline underline-offset-2 hover:opacity-80"
+              >
+                {t.action.label}
+              </button>
+            )}
+            <button
+              onClick={() => onDismiss(t.id)}
+              className="text-current opacity-60 hover:opacity-100"
+              aria-label="關閉提示"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ))}
     </div>
