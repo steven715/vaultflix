@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,13 +27,18 @@ type VideoHandler struct {
 	importService      *service.ImportService
 	videoService       *service.VideoService
 	mediaSourceService *service.MediaSourceService
+	// xaccelPrefix, when non-empty, makes Stream() offload byte serving to an
+	// upstream accel-capable proxy (nginx) via X-Accel-Redirect instead of
+	// streaming the file through this process. Empty → direct http.ServeFile.
+	xaccelPrefix string
 }
 
-func NewVideoHandler(importService *service.ImportService, videoService *service.VideoService, mediaSourceService *service.MediaSourceService) *VideoHandler {
+func NewVideoHandler(importService *service.ImportService, videoService *service.VideoService, mediaSourceService *service.MediaSourceService, xaccelPrefix string) *VideoHandler {
 	return &VideoHandler{
 		importService:      importService,
 		videoService:       videoService,
 		mediaSourceService: mediaSourceService,
+		xaccelPrefix:       xaccelPrefix,
 	}
 }
 
@@ -311,6 +317,24 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 		return
 	}
 
+	// Offload mode: hand the byte path to nginx via X-Accel-Redirect so video
+	// bytes never traverse this process. Go has already done auth + path safety;
+	// nginx owns existence, Content-Type (by extension), and native Range. We
+	// deliberately skip os.Stat here — checking existence is part of serving the
+	// file, which is nginx's job now.
+	if h.xaccelPrefix != "" {
+		rel := strings.TrimPrefix(cleanPath, service.AllowedMountPrefix)
+		if rel == cleanPath {
+			// Defensive: path is not under the shared mount prefix, so nginx's
+			// `alias /mnt/host/` could not resolve it. Fall back to direct serve.
+			slog.Warn("xaccel path not under mount prefix, falling back to direct serve", "path", cleanPath)
+		} else {
+			c.Header("X-Accel-Redirect", h.xaccelPrefix+encodePathSegments(rel))
+			c.Status(http.StatusOK) // empty body, nginx takes over
+			return
+		}
+	}
+
 	if _, err := os.Stat(cleanPath); err != nil {
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
@@ -329,6 +353,19 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 
 	c.Header("Content-Type", video.MimeType)
 	http.ServeFile(c.Writer, c.Request, cleanPath)
+}
+
+// encodePathSegments URL-encodes each path segment while preserving the slash
+// separators, so filenames containing spaces or non-ASCII (e.g. Chinese)
+// characters produce a valid X-Accel-Redirect value. nginx unescapes the value
+// before resolving the file; url.PathEscape encodes spaces as %20 (not +),
+// matching nginx's expectation.
+func encodePathSegments(p string) string {
+	parts := strings.Split(p, "/")
+	for i, s := range parts {
+		parts[i] = url.PathEscape(s)
+	}
+	return strings.Join(parts, "/")
 }
 
 func (h *VideoHandler) GetImportJob(c *gin.Context) {

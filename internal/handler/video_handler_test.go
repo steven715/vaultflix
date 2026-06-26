@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func init() {
 
 func setupVideoRouter(videoService *service.VideoService) (*gin.Engine, *VideoHandler) {
 	r := gin.New()
-	h := NewVideoHandler(nil, videoService, nil)
+	h := NewVideoHandler(nil, videoService, nil, "")
 	r.GET("/api/videos", h.List)
 	r.GET("/api/videos/:id", h.GetByID)
 	r.DELETE("/api/videos/:id", h.Delete)
@@ -245,7 +246,7 @@ func TestListVideos_InvalidTagIDs(t *testing.T) {
 
 func TestImportHandler_MissingSourceID(t *testing.T) {
 	r := gin.New()
-	h := NewVideoHandler(nil, nil, nil)
+	h := NewVideoHandler(nil, nil, nil, "")
 	r.POST("/api/videos/import", h.Import)
 
 	body := strings.NewReader(`{}`)
@@ -276,7 +277,7 @@ func TestImportHandler_SourceNotFound(t *testing.T) {
 	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
 
 	r := gin.New()
-	h := NewVideoHandler(nil, nil, mediaSourceSvc)
+	h := NewVideoHandler(nil, nil, mediaSourceSvc, "")
 	r.POST("/api/videos/import", h.Import)
 
 	body := strings.NewReader(`{"source_id": "nonexistent-id"}`)
@@ -312,7 +313,7 @@ func TestImportHandler_SourceDisabled(t *testing.T) {
 	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
 
 	r := gin.New()
-	h := NewVideoHandler(nil, nil, mediaSourceSvc)
+	h := NewVideoHandler(nil, nil, mediaSourceSvc, "")
 	r.POST("/api/videos/import", h.Import)
 
 	body := strings.NewReader(`{"source_id": "src-1"}`)
@@ -334,9 +335,9 @@ func TestImportHandler_SourceDisabled(t *testing.T) {
 	}
 }
 
-func setupStreamRouter(videoSvc *service.VideoService, mediaSourceSvc *service.MediaSourceService) (*gin.Engine, *VideoHandler) {
+func setupStreamRouter(videoSvc *service.VideoService, mediaSourceSvc *service.MediaSourceService, xaccelPrefix string) (*gin.Engine, *VideoHandler) {
 	r := gin.New()
-	h := NewVideoHandler(nil, videoSvc, mediaSourceSvc)
+	h := NewVideoHandler(nil, videoSvc, mediaSourceSvc, xaccelPrefix)
 	r.GET("/api/videos/:id/stream", h.Stream)
 	return r, h
 }
@@ -517,7 +518,7 @@ func TestStreamVideo(t *testing.T) {
 				mediaSourceSvc = service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
 			}
 
-			r, _ := setupStreamRouter(videoSvc, mediaSourceSvc)
+			r, _ := setupStreamRouter(videoSvc, mediaSourceSvc, "")
 
 			url := "/api/videos/" + tt.videoID + "/stream"
 			req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -545,6 +546,82 @@ func TestStreamVideo(t *testing.T) {
 	}
 }
 
+// TestStream_XAccelRedirect verifies that when an X-Accel prefix is configured
+// (prod-behind-nginx topology), Stream() offloads byte serving: it returns an
+// empty 200 with an X-Accel-Redirect header instead of the file body. The path
+// must be URL-encoded per segment so filenames with spaces and non-ASCII
+// (Chinese) characters resolve correctly on the nginx side.
+func TestStream_XAccelRedirect(t *testing.T) {
+	const xaccelPrefix = "/internal-video/"
+	sourceID := "src-1"
+	// Mount under the shared /mnt/host/ prefix; filename has a space + Chinese.
+	mountPath := "/mnt/host/G/下載"
+	filePath := "中文 檔名.mp4"
+	relPath := "G/下載/中文 檔名.mp4"
+
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return &model.Video{
+				ID:       "vid-1",
+				MimeType: "video/mp4",
+				SourceID: &sourceID,
+				FilePath: &filePath,
+			}, nil
+		},
+	}
+	tagRepo := &mock.TagRepository{
+		GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
+			return []model.Tag{}, nil
+		},
+	}
+	videoSvc := service.NewVideoService(videoRepo, tagRepo, &mock.MinIOClient{})
+
+	mediaSourceRepo := &mock.MediaSourceRepository{
+		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
+			return &model.MediaSource{ID: sourceID, MountPath: mountPath, Enabled: true}, nil
+		},
+	}
+	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
+
+	r, _ := setupStreamRouter(videoSvc, mediaSourceSvc, xaccelPrefix)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos/vid-1/stream", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body (nginx serves bytes), got %q", w.Body.String())
+	}
+
+	got := w.Header().Get("X-Accel-Redirect")
+	if got == "" {
+		t.Fatal("expected X-Accel-Redirect header, got none")
+	}
+	if !strings.HasPrefix(got, xaccelPrefix) {
+		t.Errorf("header %q must start with prefix %q", got, xaccelPrefix)
+	}
+	// Space must be percent-encoded (%20), never raw or as '+'.
+	if strings.ContainsAny(got, " +") {
+		t.Errorf("header %q must not contain a raw space or '+'", got)
+	}
+	if !strings.Contains(got, "%20") {
+		t.Errorf("header %q must encode the space as %%20", got)
+	}
+	// Round-trip: decoding the value (slashes preserved) recovers the original
+	// relative path under the prefix. Proves encoding correctness without
+	// hand-asserting brittle UTF-8 byte sequences.
+	decoded, err := url.PathUnescape(strings.TrimPrefix(got, xaccelPrefix))
+	if err != nil {
+		t.Fatalf("header value is not valid percent-encoding: %v", err)
+	}
+	if decoded != relPath {
+		t.Errorf("decoded path = %q, want %q", decoded, relPath)
+	}
+}
+
 func TestImportHandler_Async_Conflict(t *testing.T) {
 	notifier := &mock.Notifier{}
 	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
@@ -558,7 +635,7 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/")
 
 	r := gin.New()
-	h := NewVideoHandler(importSvc, nil, mediaSourceSvc)
+	h := NewVideoHandler(importSvc, nil, mediaSourceSvc, "")
 	r.POST("/api/videos/import", func(c *gin.Context) {
 		c.Set("user_id", "test-user")
 		h.Import(c)
@@ -582,7 +659,7 @@ func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
 	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
 
 	r := gin.New()
-	h := NewVideoHandler(importSvc, nil, nil)
+	h := NewVideoHandler(importSvc, nil, nil, "")
 	r.GET("/api/import-jobs/active", h.GetActiveImportJob)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/import-jobs/active", nil)
@@ -609,7 +686,7 @@ func TestGetImportJobHandler_NotFound(t *testing.T) {
 	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
 
 	r := gin.New()
-	h := NewVideoHandler(importSvc, nil, nil)
+	h := NewVideoHandler(importSvc, nil, nil, "")
 	r.GET("/api/import-jobs/:id", h.GetImportJob)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/import-jobs/nonexistent", nil)

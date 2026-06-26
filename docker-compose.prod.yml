@@ -11,7 +11,15 @@ services:
     # Remove base's dev-only settings; use the image's ENTRYPOINT
     command: !reset null
     working_dir: !reset null
+    # Prod is always behind nginx → offload byte serving via X-Accel-Redirect.
+    # Set here (not in the shared .env) so `npm run dev` — which proxies straight
+    # to the API without nginx — keeps the empty default and streams directly.
+    environment:
+      VIDEO_XACCEL_PREFIX: /internal-video/
     # Replace base's volumes (drop .:/app and go caches, keep only read-only video mounts)
     volumes: !override
       - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
       - /mnt/g/下載:/mnt/host/G/下載:ro
+  # vaultflix-nginx needs no volumes override here: compose merges the base
+  # file's nginx video mounts into this layer, so the X-Accel offload target
+  # is already present in prod.
