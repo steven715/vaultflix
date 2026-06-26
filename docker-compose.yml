@@ -105,6 +105,12 @@ services:
         condition: service_healthy
     ports:
       - "3000:80"
+    volumes:
+      # X-Accel offload: nginx reads video bytes off disk directly, so it needs
+      # the SAME read-only mounts as vaultflix-api. Must stay in sync with the
+      # api volumes above; adding a drive means editing both places.
+      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
+      - /mnt/g/下載:/mnt/host/G/下載:ro
     healthcheck:
       # Pin IPv4: nginx.conf only `listen 80` (IPv4); `localhost` resolves to
       # ::1 first in the container and would fail with connection refused.

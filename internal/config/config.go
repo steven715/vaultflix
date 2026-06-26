@@ -37,6 +37,14 @@ type Config struct {
 	// Server
 	ServerPort string
 
+	// VideoXAccelPrefix is a deployment-topology flag, not a business parameter:
+	// it answers "is there an accel-capable proxy (nginx) in front of me?".
+	// Empty (default) → Stream() serves bytes itself via http.ServeFile (dev,
+	// unit tests, any path that does not go through nginx). Set to the internal
+	// nginx location (e.g. "/internal-video/") in prod → Stream() returns an
+	// X-Accel-Redirect header and lets nginx read the file off disk directly.
+	VideoXAccelPrefix string
+
 	// Admin defaults
 	AdminDefaultUsername string
 	AdminDefaultPassword string
@@ -75,7 +83,8 @@ func Load() (*Config, error) {
 		JWTExpiryHours:           getEnvInt("JWT_EXPIRY_HOURS", 24),
 		StreamTokenExpiryMinutes: getEnvInt("STREAM_TOKEN_EXPIRY_MINUTES", 60),
 
-		ServerPort: getEnv("SERVER_PORT", "8080"),
+		ServerPort:        getEnv("SERVER_PORT", "8080"),
+		VideoXAccelPrefix: getEnv("VIDEO_XACCEL_PREFIX", ""),
 
 		AdminDefaultUsername: getEnv("ADMIN_DEFAULT_USERNAME", "admin"),
 		AdminDefaultPassword: os.Getenv("ADMIN_DEFAULT_PASSWORD"),
