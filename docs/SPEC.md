@@ -15,12 +15,19 @@
 
 ### Admin 功能
 
+#### 媒體來源管理 ✅
+
+- 新增/編輯/啟用停用「媒體來源」（label + 掛載磁碟目錄 mount_path）
+- mount_path 須位於 `/mnt/host/` 前綴下，經路徑安全驗證防穿越
+- 影片以唯讀方式掛載磁碟讀取，原始檔保留在本機磁碟、不複製進物件儲存
+
 #### 影片管理 ✅
 
-- 從掛載目錄批次匯入影片（ffprobe 提取 metadata、ffmpeg 產生縮圖）
+- 從媒體來源（掛載磁碟目錄）**非同步**批次匯入影片，進度經 WebSocket 即時回報（ffprobe 提取 metadata、ffmpeg 產生縮圖）
+- 匯入具冪等性：重複匯入同一來源不會重複建立記錄
 - 影片列表：分頁、搜尋、排序（建立時間/標題/長度/檔案大小）
 - 編輯影片 metadata（標題、描述）
-- 刪除影片（同步清除 MinIO 物件與資料庫記錄）
+- 刪除影片（清除資料庫記錄與 MinIO 縮圖/預覽物件；磁碟原始檔唯讀掛載、不刪除）
 
 #### 標籤管理 ✅
 
@@ -54,9 +61,10 @@
 
 #### 影片播放 ✅
 
-- 串流播放（MinIO presigned URL）
+- 串流播放：影片保留在本機磁碟。prod 經 nginx 以 `X-Accel-Redirect` 直接從磁碟讀檔送出（原生 HTTP Range，支援拖曳），API 只驗 token 與路徑安全、不經手影片 bytes；dev（無 nginx，vite 直連 API）退回 API `http.ServeFile` 直送。legacy 階段存於 MinIO 的影片仍走 presigned URL
 - 自動記錄觀看進度
 - 從上次進度繼續播放
+- **已知限制**：瀏覽器僅能原生解碼 mp4(H.264)；avi/wmv/mkv 雖能正確串流（byte 層 200/206 正常），但 `<video>` 無法在瀏覽器播放，需另行轉碼或下載觀看
 
 #### 收藏 ✅
 
@@ -96,8 +104,8 @@
 ### 效能
 
 - 影片匯入：支援大量檔案批次處理（實測 18GB/4m40s）
-- Presigned URL：應考慮快取機制，避免每次列表請求都重新產生
-- 影片串流：透過 MinIO presigned URL 直接串流，API server 不經手影片資料
+- 影片串流：影片 bytes 由 nginx 經 `X-Accel-Redirect` 直接從磁碟讀檔送出，API server 不經手影片資料、不隨檔案大小佔住連線（dev 無 nginx 時退回 API `http.ServeFile`）
+- 縮圖/預覽：透過 MinIO presigned URL 提供，列表請求應考慮快取機制，避免每次重新產生
 
 ### 安全
 
@@ -137,7 +145,7 @@
 
 - **全文搜尋** — 引入 Meilisearch，支援影片標題與描述的模糊搜尋
 - **LLM 整合** — 語意搜尋、自動標籤、聊天式影片推薦
-- **行動端** — Mobile client 或 responsive web
-- **非同步匯入** — SSE/WebSocket 進度回報，匯入不阻塞 HTTP 請求
+- **影片轉碼** — avi/wmv/mkv 轉/remux 成瀏覽器可播的 mp4(H.264)，或即時轉碼（HLS）；解決上述「已知限制」
+- **行動端** — Mobile client 或 responsive web（基礎 PWA：可安裝 manifest + service worker 已落地，後續強化離線/快取）
 - **API Gateway** — Traefik 反向代理，支援 HTTPS 與 rate limiting
 - **孤立檔案清理** — 排程掃描 MinIO 中無對應 DB 記錄的物件並清除

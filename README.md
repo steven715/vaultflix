@@ -8,14 +8,14 @@ A self-hosted video management and streaming platform. Organize local video file
 React SPA (localhost:3000)
     |
     |-- API requests --> Nginx reverse proxy --> Go API Server (:8080) --> PostgreSQL
-    |                                               |
-    |                                               +--> MinIO (thumbnails only)
-    |                                               +--> Local disk (video streaming via API)
+    |                         |                     |
+    |                         |                     +--> MinIO (thumbnails / previews only)
+    |                         +--> Local disk (video bytes, via X-Accel-Redirect)
     |
     +-- WebSocket --> Go API Server (real-time import progress)
 ```
 
-**Key design decision**: Video files stay on local disk. The Go API server streams video bytes directly via `http.ServeFile`, which natively handles HTTP Range Requests for seeking. MinIO is used only for thumbnails. Import progress is pushed in real-time via WebSocket.
+**Key design decision**: Video files stay on local disk. In production the Go API only validates auth + path safety and hands the byte path to nginx via `X-Accel-Redirect`, so nginx reads the file straight off disk with native HTTP Range (seeking) and video bytes never traverse the Go process. In dev (no nginx — vite proxies directly to the API) it falls back to `http.ServeFile`. MinIO holds only thumbnails/previews. Import progress is pushed in real-time via WebSocket.
 
 ### Tech Stack
 
@@ -24,7 +24,7 @@ React SPA (localhost:3000)
 | Frontend | React 18 + TypeScript | SPA with Vite, served via Nginx |
 | Backend | Go 1.24 + Gin | REST API, JWT auth, pre-signed URL generation |
 | Database | PostgreSQL 16 | Video metadata, users, tags, watch history |
-| Object Storage | MinIO | Video files and thumbnails, S3-compatible |
+| Object Storage | MinIO | Thumbnails & previews only (videos stay on local disk), S3-compatible |
 | Auth | JWT + bcrypt | Stateless authentication |
 | Authorization | Casbin | RBAC with admin/viewer roles |
 | Infrastructure | Docker Compose V2 | All services containerized |
@@ -37,7 +37,7 @@ React SPA (localhost:3000)
 - **Authorization**: Casbin RBAC with admin and viewer roles
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
-- **Video Streaming**: API-based streaming via `http.ServeFile` with HTTP Range Request support (seeking)
+- **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); production offloads byte serving to nginx via `X-Accel-Redirect`, dev falls back to the API's `http.ServeFile`
 - **Tag System**: Categorized tags (genre, actor, studio, custom) with video-tag associations
 - **Media Source Management**: Admin UI for managing media sources (CRUD) with real-time import progress
 - **Watch History**: Track and resume video playback progress
@@ -90,7 +90,7 @@ Edit `.env` and set your passwords and secrets. The defaults work for local deve
 
 ### 2. Configure disk mounts
 
-Edit `docker-compose.yml` and mount your video disk(s) as read-only volumes in the `vaultflix-api` service:
+Edit `docker-compose.yml` and mount your video disk(s) as read-only volumes. Mount the **same** paths into **both** `vaultflix-api` (import + auth) and `vaultflix-nginx` (X-Accel byte serving) — if nginx is missing a mount it cannot serve those files:
 
 ```yaml
   vaultflix-api:
@@ -98,9 +98,14 @@ Edit `docker-compose.yml` and mount your video disk(s) as read-only volumes in t
       # ...
       - D:/:/mnt/host/D:ro    # Mount D: drive
       - E:/:/mnt/host/E:ro    # Mount E: drive (optional)
+
+  vaultflix-nginx:
+    volumes:
+      - D:/:/mnt/host/D:ro    # must mirror vaultflix-api
+      - E:/:/mnt/host/E:ro
 ```
 
-Each mounted disk will be accessible under `/mnt/host/<drive>/` inside the container.
+Each mounted disk will be accessible under `/mnt/host/<drive>/` inside the container. To enable the nginx offload, set `VIDEO_XACCEL_PREFIX=/internal-video/` (production / behind nginx); leave it empty for `npm run dev`, which proxies straight to the API without nginx.
 
 ### 3. Start all services
 
@@ -311,7 +316,8 @@ For full request/response details, see the handler source code in [`internal/han
 - **Full-text search**: Meilisearch integration for fast, typo-tolerant search
 - **Semantic search**: LLM-powered natural language video discovery
 - **Auto-tagging**: Automated metadata extraction and categorization
-- **Mobile client**: Dedicated mobile app or responsive PWA
+- **Transcoding**: Convert/remux avi/wmv/mkv to browser-playable mp4 (H.264) — only mp4 plays natively in the browser today
+- **Mobile client**: Dedicated mobile app or responsive web (basic PWA — installable manifest + service worker — already shipped)
 
 ## License
 
