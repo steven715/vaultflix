@@ -313,11 +313,7 @@ For full request/response details, see the handler source code in [`internal/han
 
 ## Roadmap
 
-- **Full-text search**: Meilisearch integration for fast, typo-tolerant search
-- **Semantic search**: LLM-powered natural language video discovery
-- **Auto-tagging**: Automated metadata extraction and categorization
-- **Transcoding**: Convert/remux avi/wmv/mkv to browser-playable mp4 (H.264) — only mp4 plays natively in the browser today
-- **Mobile client**: Dedicated mobile app or responsive web (basic PWA — installable manifest + service worker — already shipped)
+See **[ROADMAP.md](ROADMAP.md)** — the single source of truth for planned features, the tech-debt backlog, and architecture-evolution triggers. (`docs/SPEC.md` covers what's already built; ROADMAP.md covers what's next.)
 
 ## License
 

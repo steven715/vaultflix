@@ -69,6 +69,10 @@ Implementation Plan（superpowers:writing-plans）
     └─ Commit plan
 ```
 
+> **Spec / Plan 是「過程性」工件，不是活文件。** 功能 merge 進 main 後，程式碼 + 測試 + git history 才是真相；spec/plan 留在樹上只會 rot、誤導人與 agent。收工流程包含：把當中**耐久的架構決策**（為何選 A 不選 B、被否決的替代方案、長期 trade-off）提煉成一條 [ADR](adr/)（append-only、永不改寫），然後**移除該 spec/plan**（git history 仍可 `git show` 取回）。
+>
+> 三類文件的分工：**現況** → `docs/SPEC.md`（活，持續同步）；**未來** → `ROADMAP.md`（活）；**為何** → `docs/adr/`（不可變快照）；**規範** → `CLAUDE.md`（活）。
+
 ### 3. 實作開發（Subagent-Driven Development）
 
 ```

@@ -141,11 +141,4 @@
 
 ## 遠期願景
 
-以下為長期考慮方向，不展開細節，優先級與時程未定：
-
-- **全文搜尋** — 引入 Meilisearch，支援影片標題與描述的模糊搜尋
-- **LLM 整合** — 語意搜尋、自動標籤、聊天式影片推薦
-- **影片轉碼** — avi/wmv/mkv 轉/remux 成瀏覽器可播的 mp4(H.264)，或即時轉碼（HLS）；解決上述「已知限制」
-- **行動端** — Mobile client 或 responsive web（基礎 PWA：可安裝 manifest + service worker 已落地，後續強化離線/快取）
-- **API Gateway** — Traefik 反向代理，支援 HTTPS 與 rate limiting
-- **孤立檔案清理** — 排程掃描 MinIO 中無對應 DB 記錄的物件並清除
+完整 roadmap —— 未來功能、技術債 backlog、架構演進觸發條件 —— 見專案根目錄的 **[ROADMAP.md](../ROADMAP.md)**（唯一真相）。本 SPEC 只描述**已實作的現況**（✅）；「接下來做什麼」一律以 ROADMAP.md 為準，避免兩處重複而 drift。
