@@ -19,7 +19,7 @@ describe('AdminLayout', () => {
       </MemoryRouter>,
     )
     expect(screen.getByText('庫內容')).toBeInTheDocument()
-    expect(screen.getAllByText('影片').length).toBeGreaterThanOrEqual(1) // sidebar 標籤
+    expect(screen.getAllByText('影片')).toHaveLength(2) // sidebar 標籤 + topbar 頁面標題
     expect(screen.getByText('管理後台 /')).toBeInTheDocument() // topbar 麵包屑
   })
 })
