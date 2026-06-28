@@ -16,6 +16,7 @@ import VideoManagePage from './pages/admin/VideoManagePage'
 import RecommendationManagePage from './pages/admin/RecommendationManagePage'
 import UserManagePage from './pages/admin/UserManagePage'
 import MediaSourcePage from './pages/admin/MediaSourcePage'
+import TagManagePage from './pages/admin/TagManagePage'
 
 function RootLayout() {
   return (
@@ -74,6 +75,7 @@ const router = createBrowserRouter([
                 children: [
                   { path: '/admin', element: <Navigate to="/admin/library" replace /> },
                   { path: '/admin/library', element: <VideoManagePage /> },
+                  { path: '/admin/tags', element: <TagManagePage /> },
                   { path: '/admin/recommendations', element: <RecommendationManagePage /> },
                   { path: '/admin/users', element: <UserManagePage /> },
                   { path: '/admin/media-sources', element: <MediaSourcePage /> },
