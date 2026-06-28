@@ -1,11 +1,13 @@
 import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
 
-// Minimal, build-config-independent: the pure helpers under test take plain
-// data, so a node environment (no jsdom) is enough and we avoid loading the
-// react / tailwind plugins from vite.config.ts.
+// jsdom + RTL：元件渲染/互動測試。純函式測試在同一環境照跑。
 export default defineConfig({
+  plugins: [react()],
   test: {
-    environment: 'node',
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
   },
 })
