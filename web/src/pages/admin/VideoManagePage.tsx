@@ -175,8 +175,12 @@ export default function VideoManagePage() {
   function handleCopyPath(filename: string, id: string) {
     navigator.clipboard.writeText(filename)
     setCopyFeedback((prev) => ({ ...prev, [id]: true }))
-    setTimeout(() => setCopyFeedback((prev) => ({ ...prev, [id]: false })), 1300)
+    clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopyFeedback((prev) => ({ ...prev, [id]: false })), 1300)
   }
+
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
   const sortRef = useRef({ sortBy, sortOrder })
   sortRef.current = { sortBy, sortOrder }
