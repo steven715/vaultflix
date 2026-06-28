@@ -119,6 +119,45 @@ func TestGetProgress_NeverWatched(t *testing.T) {
 	}
 }
 
+func TestClearHistory_Success(t *testing.T) {
+	var capturedUserID string
+	historyRepo := &mock.WatchHistoryRepository{
+		DeleteAllByUserFunc: func(ctx context.Context, userID string) (int64, error) {
+			capturedUserID = userID
+			return 5, nil
+		},
+	}
+	svc := NewWatchHistoryService(historyRepo, &mock.VideoRepository{}, &mock.MinIOClient{})
+
+	deleted, err := svc.ClearHistory(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedUserID != "user-1" {
+		t.Errorf("expected user_id user-1, got %s", capturedUserID)
+	}
+	if deleted != 5 {
+		t.Errorf("expected 5 rows deleted, got %d", deleted)
+	}
+}
+
+func TestClearHistory_Empty(t *testing.T) {
+	historyRepo := &mock.WatchHistoryRepository{
+		DeleteAllByUserFunc: func(ctx context.Context, userID string) (int64, error) {
+			return 0, nil
+		},
+	}
+	svc := NewWatchHistoryService(historyRepo, &mock.VideoRepository{}, &mock.MinIOClient{})
+
+	deleted, err := svc.ClearHistory(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("expected nil error for empty history, got %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 rows deleted, got %d", deleted)
+	}
+}
+
 func TestList_WithThumbnails(t *testing.T) {
 	historyRepo := &mock.WatchHistoryRepository{
 		ListByUserFunc: func(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryWithVideo, int64, error) {

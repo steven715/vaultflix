@@ -15,10 +15,12 @@ import (
 // Upsert uses INSERT ON CONFLICT(user_id, video_id) DO UPDATE to create or update a record.
 // GetByUserAndVideo returns model.ErrNotFound when no record exists.
 // ListByUser returns results ordered by watched_at DESC with pagination.
+// DeleteAllByUser removes every watch history row for the user; deleting zero rows is not an error.
 type WatchHistoryRepository interface {
 	Upsert(ctx context.Context, record *model.WatchHistory) error
 	ListByUser(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryWithVideo, int64, error)
 	GetByUserAndVideo(ctx context.Context, userID, videoID string) (*model.WatchHistory, error)
+	DeleteAllByUser(ctx context.Context, userID string) (int64, error)
 }
 
 const queryUpsertWatchHistory = `
@@ -49,6 +51,10 @@ const queryGetWatchHistoryByUserAndVideo = `
     SELECT id, user_id, video_id, progress_seconds, completed, watched_at, updated_at
     FROM watch_history
     WHERE user_id = $1 AND video_id = $2
+`
+
+const queryDeleteWatchHistoryByUser = `
+    DELETE FROM watch_history WHERE user_id = $1
 `
 
 type watchHistoryRepository struct {
@@ -100,6 +106,14 @@ func (r *watchHistoryRepository) ListByUser(ctx context.Context, userID string, 
 	}
 
 	return items, total, nil
+}
+
+func (r *watchHistoryRepository) DeleteAllByUser(ctx context.Context, userID string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, queryDeleteWatchHistoryByUser, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete watch history for user %s: %w", userID, err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *watchHistoryRepository) GetByUserAndVideo(ctx context.Context, userID, videoID string) (*model.WatchHistory, error) {

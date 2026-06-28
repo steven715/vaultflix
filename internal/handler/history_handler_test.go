@@ -35,6 +35,7 @@ func setupHistoryRouter() (*gin.Engine, *mock.WatchHistoryRepository, *mock.Vide
 	})
 	r.POST("/api/watch-history", h.SaveProgress)
 	r.GET("/api/watch-history", h.List)
+	r.DELETE("/api/watch-history", h.ClearHistory)
 
 	return r, historyRepo, videoRepo
 }
@@ -97,6 +98,46 @@ func TestPostWatchHistory_VideoNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for non-existent video, got %d", w.Code)
+	}
+}
+
+func TestDeleteWatchHistory_Success(t *testing.T) {
+	r, historyRepo, _ := setupHistoryRouter()
+
+	var capturedUserID string
+	historyRepo.DeleteAllByUserFunc = func(ctx context.Context, userID string) (int64, error) {
+		capturedUserID = userID
+		return 3, nil
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/watch-history", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body for 204, got %q", w.Body.String())
+	}
+	if capturedUserID != "test-user" {
+		t.Errorf("expected user_id test-user, got %s", capturedUserID)
+	}
+}
+
+func TestDeleteWatchHistory_RepoError(t *testing.T) {
+	r, historyRepo, _ := setupHistoryRouter()
+
+	historyRepo.DeleteAllByUserFunc = func(ctx context.Context, userID string) (int64, error) {
+		return 0, context.DeadlineExceeded
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/watch-history", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
 	}
 }
 

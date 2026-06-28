@@ -71,6 +71,21 @@ func (h *HistoryHandler) SaveProgress(c *gin.Context) {
 	})
 }
 
+func (h *HistoryHandler) ClearHistory(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	if _, err := h.historySvc.ClearHistory(c.Request.Context(), userID); err != nil {
+		slog.Error("failed to clear watch history", "error", err, "user_id", userID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to clear watch history",
+		})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func (h *HistoryHandler) List(c *gin.Context) {
 	userID := c.GetString("user_id")
 

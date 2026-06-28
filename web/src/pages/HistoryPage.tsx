@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { listWatchHistory } from '../api/watchHistory'
+import { listWatchHistory, clearWatchHistory } from '../api/watchHistory'
+import { useToast } from '../contexts/ToastContext'
 import type { WatchHistoryItem } from '../types'
 import AppShell, { Container } from '../components/AppShell'
 import PosterThumb from '../components/PosterThumb'
@@ -16,12 +17,15 @@ const GROUP_ORDER: HistoryGroup[] = ['今天', '本週', '更早']
 
 export default function HistoryPage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [items, setItems] = useState<WatchHistoryItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -55,6 +59,24 @@ export default function HistoryPage() {
     setItems((prev) => prev.filter((i) => i.id !== id))
   }
 
+  // Clear the entire watch history server-side, then reset the view to page 1.
+  async function handleClear() {
+    setClearing(true)
+    try {
+      await clearWatchHistory()
+      setConfirmClear(false)
+      setItems([])
+      setTotal(0)
+      setPage(1)
+      setReloadKey((k) => k + 1)
+      toast.success('已清除全部觀看記錄')
+    } catch {
+      toast.error('清除觀看記錄失敗，請重試')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   const groups = GROUP_ORDER.map((g) => ({
     group: g,
     rows: items.filter((i) => historyGroup(i.watched_at) === g),
@@ -63,7 +85,17 @@ export default function HistoryPage() {
   return (
     <AppShell>
       <Container width="narrow" className="py-8">
-        <h1 className="mb-6 font-display text-3xl font-extrabold tracking-tight text-cream">觀看記錄</h1>
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-cream">觀看記錄</h1>
+          {!loading && !loadError && items.length > 0 && (
+            <button
+              onClick={() => setConfirmClear(true)}
+              className="shrink-0 rounded-pill border border-border bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:border-red-500/60 hover:text-red-400"
+            >
+              清除全部
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <div className="space-y-3">
@@ -161,6 +193,39 @@ export default function HistoryPage() {
 
             <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </>
+        )}
+
+        {confirmClear && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            onClick={() => !clearing && setConfirmClear(false)}
+          >
+            <div
+              className="w-full max-w-sm rounded-card border border-border bg-surface p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="mb-2 text-lg font-semibold text-cream">清除全部觀看記錄</h2>
+              <p className="mb-5 text-sm text-muted">
+                確定要清除所有觀看記錄嗎？續看清單會一併清空，此操作無法復原。
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmClear(false)}
+                  disabled={clearing}
+                  className="rounded-pill px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:text-cream disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleClear}
+                  disabled={clearing}
+                  className="rounded-pill bg-red-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+                >
+                  {clearing ? '清除中…' : '清除全部'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </Container>
     </AppShell>
