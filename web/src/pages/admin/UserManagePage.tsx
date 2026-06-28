@@ -1,25 +1,15 @@
 import { useState, useEffect } from 'react'
 import { listUsers, createUser, deleteUser, enableUser, resetUserPassword } from '../../api/admin'
+import { useToast } from '../../contexts/ToastContext'
 import type { User } from '../../types'
-import AdminHeader from '../../components/AdminHeader'
 
 export default function UserManagePage() {
+  const toast = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Create user form
   const [showCreate, setShowCreate] = useState(false)
-  const [newUsername, setNewUsername] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [newRole, setNewRole] = useState('viewer')
-  const [creating, setCreating] = useState(false)
-
-  // Reset password modal
   const [resetTarget, setResetTarget] = useState<User | null>(null)
-  const [resetPass, setResetPass] = useState('')
-  const [resetting, setResetting] = useState(false)
-
-  // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
 
   useEffect(() => {
@@ -38,22 +28,11 @@ export default function UserManagePage() {
     return () => { cancelled = true }
   }, [])
 
-  const handleCreate = async () => {
-    if (!newUsername || !newPassword) return
-    setCreating(true)
-    try {
-      await createUser(newUsername, newPassword, newRole)
-      const data = await listUsers()
-      setUsers(data)
-      setShowCreate(false)
-      setNewUsername('')
-      setNewPassword('')
-      setNewRole('viewer')
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'failed to create user')
-    } finally {
-      setCreating(false)
-    }
+  const handleCreate = async (username: string, password: string, role: string) => {
+    await createUser(username, password, role)
+    const data = await listUsers()
+    setUsers(data)
+    setShowCreate(false)
   }
 
   const handleDelete = async (id: string) => {
@@ -62,7 +41,7 @@ export default function UserManagePage() {
       setUsers(users.map(u => u.id === id ? { ...u, disabled_at: new Date().toISOString() } : u))
       setDeleteTarget(null)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'failed to disable user')
+      toast.error(err instanceof Error ? err.message : 'failed to disable user')
     }
   }
 
@@ -71,214 +50,206 @@ export default function UserManagePage() {
       await enableUser(id)
       setUsers(users.map(u => u.id === id ? { ...u, disabled_at: null } : u))
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'failed to enable user')
+      toast.error(err instanceof Error ? err.message : 'failed to enable user')
     }
   }
 
-  const handleResetPassword = async () => {
-    if (!resetTarget || !resetPass) return
-    setResetting(true)
-    try {
-      await resetUserPassword(resetTarget.id, resetPass)
-      setResetTarget(null)
-      setResetPass('')
-      alert('password updated')
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'failed to reset password')
-    } finally {
-      setResetting(false)
-    }
+  const handleResetPassword = async (userId: string, newPass: string) => {
+    await resetUserPassword(userId, newPass)
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f0f0f', color: '#fff' }}>
-      <AdminHeader searchQuery="" onSearch={() => {}} />
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h1 style={{ fontSize: '1.5rem', margin: 0 }}>User Management</h1>
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{ padding: '0.5rem 1rem', backgroundColor: '#e50914', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-          >
-            Create User
-          </button>
+    <div className="p-7 max-w-[980px] mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="font-display font-bold text-xl tracking-tight text-cream">使用者與權限</h1>
+          <p className="text-sm text-muted mt-0.5">
+            <span className="font-mono">{users.length}</span> 位 · Casbin RBAC
+          </p>
         </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="bg-accent text-accent-ink text-sm font-medium px-4 py-2 rounded-btn hover:brightness-110"
+        >
+          建立使用者
+        </button>
+      </div>
 
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #333', textAlign: 'left' }}>
-                <th style={{ padding: '0.75rem' }}>Username</th>
-                <th style={{ padding: '0.75rem' }}>Role</th>
-                <th style={{ padding: '0.75rem' }}>Status</th>
-                <th style={{ padding: '0.75rem' }}>Created</th>
-                <th style={{ padding: '0.75rem' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.id} style={{ borderBottom: '1px solid #222' }}>
-                  <td style={{ padding: '0.75rem' }}>{user.username}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <span style={{
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: 4,
-                      fontSize: '0.85rem',
-                      backgroundColor: user.role === 'admin' ? '#b45309' : '#1e40af',
-                    }}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    {user.disabled_at ? (
-                      <span style={{ color: '#ef4444' }}>Disabled</span>
-                    ) : (
-                      <span style={{ color: '#22c55e' }}>Active</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{new Date(user.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <button
-                      onClick={() => setResetTarget(user)}
-                      style={{ marginRight: '0.5rem', padding: '0.3rem 0.6rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+      {loading ? (
+        <div className="text-faint text-center py-20">載入中...</div>
+      ) : (
+        <table className="w-full text-sm text-left">
+          <thead>
+            <tr className="bg-surface-2 text-muted">
+              <th className="px-4 py-3 font-medium">使用者</th>
+              <th className="px-4 py-3 font-medium">角色</th>
+              <th className="px-4 py-3 font-medium">狀態</th>
+              <th className="px-4 py-3 font-medium">建立</th>
+              <th className="px-4 py-3 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(user => (
+              <tr key={user.id} className="border-b border-border hover:bg-surface-2">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-accent-ink shrink-0"
+                      style={{ background: 'linear-gradient(150deg, #FFB23F, #FF8A3D)' }}
                     >
-                      Reset Password
-                    </button>
+                      {user.username[0].toUpperCase()}
+                    </div>
+                    <span className="text-cream">{user.username}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-pill px-2.5 py-1 text-xs ${user.role === 'admin' ? 'bg-accent/15 text-accent' : 'bg-surface-2 text-muted'}`}>
+                    {user.role}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {user.disabled_at
+                    ? <span className="text-faint">停用</span>
+                    : <span className="text-live flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-live inline-block" />啟用</span>
+                  }
+                </td>
+                <td className="px-4 py-3 font-mono text-muted">{new Date(user.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setResetTarget(user)} className="text-xs text-muted hover:text-cream px-2 py-1 rounded-btn">重設密碼</button>
                     {user.role !== 'admin' && !user.disabled_at && (
-                      <button
-                        onClick={() => setDeleteTarget(user)}
-                        style={{ padding: '0.3rem 0.6rem', backgroundColor: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                      >
-                        Disable
-                      </button>
+                      <button onClick={() => setDeleteTarget(user)} className="text-xs text-fav hover:brightness-110 px-2 py-1 rounded-btn">停用</button>
                     )}
                     {user.role !== 'admin' && user.disabled_at && (
-                      <button
-                        onClick={() => handleEnable(user.id)}
-                        style={{ padding: '0.3rem 0.6rem', backgroundColor: '#15803d', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                      >
-                        Enable
-                      </button>
+                      <button onClick={() => handleEnable(user.id)} className="text-xs text-live hover:brightness-110 px-2 py-1 rounded-btn">啟用</button>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-        {/* Create User Modal */}
-        {showCreate && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-            <div style={{ backgroundColor: '#1a1a1a', padding: '2rem', borderRadius: 8, width: 400 }}>
-              <h2 style={{ marginTop: 0 }}>Create User</h2>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Username</label>
-                <input
-                  value={newUsername}
-                  onChange={e => setNewUsername(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Role</label>
-                <select
-                  value={newRole}
-                  onChange={e => setNewRole(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: 4 }}
-                >
-                  <option value="viewer">Viewer</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button
-                  onClick={() => setShowCreate(false)}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={creating || !newUsername || !newPassword}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#e50914', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', opacity: creating ? 0.5 : 1 }}
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+      {showCreate && (
+        <CreateUserModal
+          onClose={() => setShowCreate(false)}
+          onCreate={handleCreate}
+          onError={(msg) => toast.error(msg)}
+        />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          user={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onReset={handleResetPassword}
+          onSuccess={() => toast.success('已更新密碼')}
+          onError={(msg) => toast.error(msg)}
+        />
+      )}
+      {deleteTarget && (
+        <DisableUserModal
+          user={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => handleDelete(deleteTarget.id)}
+        />
+      )}
+    </div>
+  )
+}
 
-        {/* Reset Password Modal */}
-        {resetTarget && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-            <div style={{ backgroundColor: '#1a1a1a', padding: '2rem', borderRadius: 8, width: 400 }}>
-              <h2 style={{ marginTop: 0 }}>Reset Password</h2>
-              <p style={{ color: '#aaa' }}>User: {resetTarget.username}</p>
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem' }}>New Password</label>
-                <input
-                  type="password"
-                  value={resetPass}
-                  onChange={e => setResetPass(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button
-                  onClick={() => { setResetTarget(null); setResetPass('') }}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleResetPassword}
-                  disabled={resetting || !resetPass}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#e50914', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', opacity: resetting ? 0.5 : 1 }}
-                >
-                  {resetting ? 'Updating...' : 'Update Password'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+/* ---------- Modals ---------- */
 
-        {/* Delete Confirm Modal */}
-        {deleteTarget && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-            <div style={{ backgroundColor: '#1a1a1a', padding: '2rem', borderRadius: 8, width: 400 }}>
-              <h2 style={{ marginTop: 0 }}>Confirm Disable</h2>
-              <p>Are you sure you want to disable <strong>{deleteTarget.username}</strong>?</p>
-              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>The user will not be able to log in. Their data (favorites, watch history) will be preserved.</p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDelete(deleteTarget.id)}
-                  style={{ padding: '0.5rem 1rem', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                >
-                  Disable User
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+const OVERLAY = 'fixed inset-0 flex items-center justify-center z-50 bg-[rgba(8,6,5,0.72)] backdrop-blur-[3px]'
+const CARD = 'bg-surface border border-border rounded-lg p-6 w-full max-w-md'
+const INPUT = 'w-full bg-surface-2 text-cream text-sm rounded-btn px-3 py-2 outline-none focus:ring-2 focus:ring-accent mb-3'
+const BTN_CANCEL = 'text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn'
+const BTN_PRIMARY = 'bg-accent text-accent-ink text-sm px-4 py-1.5 rounded-btn disabled:opacity-50 hover:brightness-110'
+const BTN_DANGER = 'bg-fav text-cream text-sm px-4 py-1.5 rounded-btn hover:brightness-110'
+
+function CreateUserModal({
+  onClose, onCreate, onError,
+}: { onClose: () => void; onCreate: (u: string, p: string, r: string) => Promise<void>; onError: (msg: string) => void }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState('viewer')
+  const [busy, setBusy] = useState(false)
+
+  const handleSubmit = async () => {
+    if (!username || !password) return
+    setBusy(true)
+    try { await onCreate(username, password, role) }
+    catch (err) { onError(err instanceof Error ? err.message : 'failed to create user') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className={OVERLAY} onClick={onClose}>
+      <div className={CARD} onClick={e => e.stopPropagation()}>
+        <h2 className="font-display font-semibold text-lg text-cream mb-4">建立使用者</h2>
+        <label className="block text-sm text-muted mb-1">使用者名稱</label>
+        <input value={username} onChange={e => setUsername(e.target.value)} className={INPUT} />
+        <label className="block text-sm text-muted mb-1">密碼</label>
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={INPUT} />
+        <label className="block text-sm text-muted mb-1">角色</label>
+        <select value={role} onChange={e => setRole(e.target.value)} className={`${INPUT} mb-5`}>
+          <option value="viewer">Viewer</option>
+          <option value="admin">Admin</option>
+        </select>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={BTN_CANCEL}>取消</button>
+          <button onClick={handleSubmit} disabled={busy || !username || !password} className={BTN_PRIMARY}>
+            {busy ? '建立中...' : '建立'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResetPasswordModal({
+  user, onClose, onReset, onSuccess, onError,
+}: { user: User; onClose: () => void; onReset: (id: string, p: string) => Promise<void>; onSuccess: () => void; onError: (msg: string) => void }) {
+  const [pass, setPass] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const handleSubmit = async () => {
+    if (!pass) return
+    setBusy(true)
+    try { await onReset(user.id, pass); onClose(); onSuccess() }
+    catch (err) { onError(err instanceof Error ? err.message : 'failed to reset password') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className={OVERLAY} onClick={onClose}>
+      <div className={CARD} onClick={e => e.stopPropagation()}>
+        <h2 className="font-display font-semibold text-lg text-cream mb-1">重設密碼</h2>
+        <p className="text-sm text-muted mb-4">使用者：{user.username}</p>
+        <label className="block text-sm text-muted mb-1">新密碼</label>
+        <input type="password" value={pass} onChange={e => setPass(e.target.value)} className={`${INPUT} mb-5`} />
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={BTN_CANCEL}>取消</button>
+          <button onClick={handleSubmit} disabled={busy || !pass} className={BTN_PRIMARY}>
+            {busy ? '更新中...' : '更新密碼'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DisableUserModal({ user, onClose, onConfirm }: { user: User; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <div className={OVERLAY} onClick={onClose}>
+      <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h2 className="font-display font-semibold text-lg text-cream mb-2">確認停用</h2>
+        <p className="text-sm text-muted mb-1">確定要停用 <strong className="text-cream">{user.username}</strong>？</p>
+        <p className="text-xs text-faint mb-5">停用後使用者無法登入，收藏與觀看紀錄將保留。</p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={BTN_CANCEL}>取消</button>
+          <button onClick={onConfirm} className={BTN_DANGER}>確認停用</button>
+        </div>
       </div>
     </div>
   )
