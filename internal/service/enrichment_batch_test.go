@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,43 +259,45 @@ func TestStartBatchAsync_PropagatesProgressAndCompleteMessages(t *testing.T) {
 	waitForEnrichJobStatus(t, svc, job.ID, "completed")
 
 	msgs := notifier.GetMessages()
-	var progressCount, completeCount int
+	var progressCount, perVideoCompleteCount, batchCompleteCount int
 	for _, m := range msgs {
 		switch m.Type {
 		case websocket.TypeEnrichProgress:
 			progressCount++
 		case websocket.TypeEnrichComplete:
-			completeCount++
+			perVideoCompleteCount++
+		case websocket.TypeEnrichBatchComplete:
+			batchCompleteCount++
 		}
 	}
 	if progressCount < 2 {
 		t.Errorf("expected at least 2 enrich_progress messages (one per video), got %d", progressCount)
 	}
-	// EnrichVideo emits one enrich_complete per successful video; the batch
-	// runner emits one more at the end. So for 2 videos we expect at least 3
-	// total (2 per-video + 1 batch-done). We assert >= 1 to remain robust if
-	// the per-video message semantics ever change, but also confirm the batch
-	// completion message was definitely sent.
-	if completeCount < 1 {
-		t.Errorf("expected at least 1 enrich_complete message (batch done), got %d", completeCount)
+	// EnrichVideo emits one enrich_complete per successful video.
+	if perVideoCompleteCount < 2 {
+		t.Errorf("expected at least 2 per-video enrich_complete messages, got %d", perVideoCompleteCount)
+	}
+	// The batch runner emits exactly one enrich_batch_complete at the end.
+	if batchCompleteCount != 1 {
+		t.Errorf("expected exactly 1 enrich_batch_complete message, got %d", batchCompleteCount)
 	}
 	// Verify the last message is the batch-level complete carrying job state.
 	last := msgs[len(msgs)-1]
-	if last.Type != websocket.TypeEnrichComplete {
-		t.Errorf("last message type = %q, want enrich_complete", last.Type)
+	if last.Type != websocket.TypeEnrichBatchComplete {
+		t.Errorf("last message type = %q, want enrich_batch_complete", last.Type)
 	}
 }
 
 func TestCancelBatch_StopsProcessing(t *testing.T) {
 	block := make(chan struct{})
+	started := make(chan struct{})
+	var once sync.Once
 	videos := fakeEnrichVideos(2)
 
-	var callCount int
 	svc := newTestEnrichmentService(t, videos, func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
-		callCount++
-		if callCount == 1 {
-			<-block
-		}
+		// Signal that the first call has entered the scraper, then block.
+		once.Do(func() { close(started) })
+		<-block
 		return &model.EnrichedMetadata{Code: code, Title: "T"}, nil
 	})
 
@@ -303,8 +306,8 @@ func TestCancelBatch_StopsProcessing(t *testing.T) {
 		t.Fatalf("StartBatchAsync failed: %v", err)
 	}
 
-	// Wait briefly for the first video to start, then cancel.
-	time.Sleep(30 * time.Millisecond)
+	// Wait deterministically for the worker to enter the blocking scraper.
+	<-started
 	if err := svc.CancelBatch(job.ID); err != nil {
 		t.Fatalf("CancelBatch failed: %v", err)
 	}

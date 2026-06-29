@@ -31,6 +31,8 @@ const (
 	TypeEnrichComplete = "enrich_complete"
 	// Server → client: enrichment fatal error (no code / all sources failed).
 	TypeEnrichError = "enrich_error"
+	// Server → client: batch enrichment job completed (payload = EnrichJob snapshot).
+	TypeEnrichBatchComplete = "enrich_batch_complete"
 )
 
 // NotificationPayload is the payload for TypeNotification messages.

@@ -120,7 +120,7 @@ func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{
 		})
 		snap := s.snapshotEnrichJob(job)
 		s.notifier.SendToUser(userID, &websocket.Message{
-			Type:    websocket.TypeEnrichComplete,
+			Type:    websocket.TypeEnrichBatchComplete,
 			Payload: snap,
 		})
 		slog.Info("enrich batch finished",
