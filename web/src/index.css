@@ -15,6 +15,9 @@
   --color-border: rgba(244, 237, 228, 0.09);
   --color-fav: #FF5470;
   --color-live: #1FB588;
+  --color-surface-2: #1A1512;
+  --color-data-blue: #43C6FF;
+  --color-data-purple: #B15CFF;
 
   /* Fonts */
   --font-display: "Bricolage Grotesque", "Noto Sans TC", system-ui, sans-serif;

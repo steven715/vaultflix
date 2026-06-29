@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
-import { importVideos, updateVideo, deleteVideo, listMediaSources, getActiveImportJob, startBackfill, getActiveBackfill } from '../../api/admin'
+import {
+  importVideos, updateVideo, deleteVideo, listMediaSources,
+  getActiveImportJob, startBackfill, getActiveBackfill, addVideoTag,
+} from '../../api/admin'
 import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
-import AdminHeader from '../../components/AdminHeader'
+import LibraryToolbar from '../../components/admin/LibraryToolbar'
+import LibraryTable from '../../components/admin/LibraryTable'
+import { BatchTagPicker, ImportModal, EditModal, DeleteConfirm } from '../../components/admin/LibraryModals'
 import Pagination from '../../components/Pagination'
-import TagInput from '../../components/TagInput'
-import ImportProgress from '../../components/admin/ImportProgress'
 import BackfillProgress from '../../components/admin/BackfillProgress'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
-import { formatDuration, formatFileSize } from '../../utils/format'
+import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
+
+type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
 
 export default function VideoManagePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -21,40 +26,32 @@ export default function VideoManagePage() {
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [allTags, setAllTags] = useState<TagWithCount[]>([])
+  const [selected, setSelected] = useState<string[]>([])
+  const [copyFeedback, setCopyFeedback] = useState<Record<string, boolean>>({})
+  const [batchTagPickerId, setBatchTagPickerId] = useState<number | null>(null)
   const toast = useToast()
 
-  // Import state
-  type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
   const [showImport, setShowImport] = useState(false)
   const [importState, setImportState] = useState<ImportState>('idle')
   const [mediaSources, setMediaSources] = useState<MediaSource[]>([])
   const [selectedSourceID, setSelectedSourceID] = useState('')
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
-  // Edit modal state
   const [editingVideo, setEditingVideo] = useState<VideoWithTags | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [saving, setSaving] = useState(false)
-
-  // Delete confirm state
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
-
-  // Backfill state
   const [backfillJobId, setBackfillJobId] = useState<string | null>(null)
   const [backfillStarting, setBackfillStarting] = useState(false)
-
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || 20
   const query = searchParams.get('q') || ''
   const tagIdsStr = searchParams.get('tag_ids') || ''
+  const sortBy = (searchParams.get('sort_by') as LibrarySortBy) || 'created_at'
+  const sortOrder = (searchParams.get('sort_order') as SortOrder) || 'desc'
   const totalPages = Math.ceil(total / pageSize)
-
-  const [searchInput, setSearchInput] = useState(query)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  useEffect(() => { setSearchInput(query) }, [query])
 
   const updateParams = useCallback((updates: Record<string, string>) => {
     setSearchParams((prev) => {
@@ -67,79 +64,46 @@ export default function VideoManagePage() {
     })
   }, [setSearchParams])
 
-  function handleSearch(value: string) {
-    setSearchInput(value)
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      updateParams({ q: value, page: '1' })
-    }, 300)
-  }
-
-  // Fetch videos
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-    listVideos({ page, page_size: pageSize, sort_by: 'created_at', sort_order: 'desc', q: query || undefined, tag_ids: tagIdsStr || undefined })
-      .then((res) => {
-        if (cancelled) return
-        setVideos(res.data)
-        setTotal(res.total)
-      })
+    setLoading(true); setLoadError(false)
+    listVideos({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsStr || undefined })
+      .then((res) => { if (!cancelled) { setVideos(res.data); setTotal(res.total) } })
       .catch(() => { if (!cancelled) { setVideos([]); setTotal(0); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [page, pageSize, query, tagIdsStr, reloadKey])
+  }, [page, pageSize, query, tagIdsStr, sortBy, sortOrder, reloadKey])
 
-  // Fetch tags
   useEffect(() => {
-    listTags().then(setAllTags).catch((err) => {
-      console.warn('failed to load tags', err)
-    })
+    listTags().then(setAllTags).catch((err) => { console.warn('failed to load tags', err) })
   }, [])
 
-  // Fetch media sources when import modal opens
   useEffect(() => {
     if (!showImport) return
     listMediaSources()
       .then((sources) => {
         const enabled = sources.filter((s) => s.enabled)
         setMediaSources(enabled)
-        // Default to the first enabled source only if nothing is selected yet.
-        // Functional update reads the latest value without depending on it.
-        if (enabled.length > 0) {
-          setSelectedSourceID((prev) => prev || enabled[0].id)
-        }
+        if (enabled.length > 0) setSelectedSourceID((prev) => prev || enabled[0].id)
       })
-      .catch((err) => {
-        console.warn('failed to load media sources', err)
-        setMediaSources([])
-      })
+      .catch((err) => { console.warn('failed to load media sources', err); setMediaSources([]) })
   }, [showImport])
 
-  // Check for active import job on mount
   useEffect(() => {
     let cancelled = false
     getActiveImportJob().then((job) => {
       if (cancelled || !job) return
-      setShowImport(true)
-      setCurrentJobId(job.id)
-      setImportState('importing')
-    }).catch((err) => {
-      console.warn('failed to detect active import job', err)
-    })
+      setShowImport(true); setCurrentJobId(job.id); setImportState('importing')
+    }).catch((err) => { console.warn('failed to detect active import job', err) })
     return () => { cancelled = true }
   }, [])
 
-  // Check for active backfill job on mount (only restore if still running).
   useEffect(() => {
     let cancelled = false
     getActiveBackfill().then((job) => {
       if (cancelled || !job || job.status !== 'running') return
       setBackfillJobId(job.id)
-    }).catch((err) => {
-      console.warn('failed to detect active backfill job', err)
-    })
+    }).catch((err) => { console.warn('failed to detect active backfill job', err) })
     return () => { cancelled = true }
   }, [])
 
@@ -153,53 +117,30 @@ export default function VideoManagePage() {
       const axiosErr = err as { response?: { status?: number } }
       if (axiosErr?.response?.status === 409) {
         const active = await getActiveBackfill().catch(() => null)
-        if (active && active.status === 'running') {
-          setBackfillJobId(active.id)
-          toast.error('已有任務進行中')
-        } else {
-          toast.error('已有任務進行中')
-        }
-      } else {
-        toast.error('啟動 backfill 失敗')
-      }
-    } finally {
-      setBackfillStarting(false)
-    }
+        if (active && active.status === 'running') setBackfillJobId(active.id)
+        toast.error('已有任務進行中')
+      } else { toast.error('啟動 backfill 失敗') }
+    } finally { setBackfillStarting(false) }
   }
 
-  function resetImportState() {
-    setImportState('idle')
-    setCurrentJobId(null)
-  }
+  function resetImportState() { setImportState('idle'); setCurrentJobId(null) }
 
   async function handleStartImport() {
     if (!selectedSourceID) return
     try {
       const job = await importVideos(selectedSourceID)
-      setCurrentJobId(job.id)
-      setImportState('importing')
+      setCurrentJobId(job.id); setImportState('importing')
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number } }
       if (axiosErr?.response?.status === 409) {
-        getActiveImportJob().then((activeJob) => {
-          if (activeJob) {
-            setCurrentJobId(activeJob.id)
-            setImportState('importing')
-          }
-        }).catch((detectErr) => {
-          console.warn('failed to detect active import job after 409', detectErr)
-        })
-      } else {
-        toast.error('匯入啟動失敗')
-      }
+        getActiveImportJob().then((j) => { if (j) { setCurrentJobId(j.id); setImportState('importing') } })
+          .catch((e) => { console.warn('failed to detect active import job after 409', e) })
+      } else { toast.error('匯入啟動失敗') }
     }
   }
 
-  // Edit handler
   function openEdit(video: VideoWithTags) {
-    setEditingVideo(video)
-    setEditTitle(video.title)
-    setEditDesc(video.description)
+    setEditingVideo(video); setEditTitle(video.title); setEditDesc(video.description)
   }
 
   async function handleSaveEdit() {
@@ -208,258 +149,108 @@ export default function VideoManagePage() {
     try {
       const updated = await updateVideo(editingVideo.id, { title: editTitle, description: editDesc })
       setVideos((prev) => prev.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v))
-      setEditingVideo(null)
-      toast.success('已儲存')
-    } catch {
-      toast.error('儲存失敗，請重試')
-    } finally { setSaving(false) }
+      setEditingVideo(null); toast.success('已儲存')
+    } catch { toast.error('儲存失敗，請重試') }
+    finally { setSaving(false) }
   }
 
-  // Delete handler
   async function handleDelete() {
     if (!deletingVideo) return
-    const id = deletingVideo.id
-    setDeletingVideo(null)
-    try {
-      await deleteVideo(id)
-      setVideos((prev) => prev.filter((v) => v.id !== id))
-      setTotal((prev) => prev - 1)
-    } catch {
-      toast.error('刪除失敗，請重試')
-    }
+    const id = deletingVideo.id; setDeletingVideo(null)
+    try { await deleteVideo(id); setVideos((prev) => prev.filter((v) => v.id !== id)); setTotal((p) => p - 1) }
+    catch { toast.error('刪除失敗，請重試') }
   }
 
+  async function handleBatchDelete() {
+    for (const id of [...selected]) { try { await deleteVideo(id) } catch { /* continue */ } }
+    setSelected([]); setReloadKey((k) => k + 1)
+  }
+
+  async function handleBatchTag() {
+    if (batchTagPickerId === null) return
+    for (const id of selected) { try { await addVideoTag(id, batchTagPickerId) } catch { /* continue */ } }
+    setBatchTagPickerId(null); setReloadKey((k) => k + 1); toast.success('批次標籤完成')
+  }
+
+  function handleCopyPath(filename: string, id: string) {
+    navigator.clipboard.writeText(filename)
+    setCopyFeedback((prev) => ({ ...prev, [id]: true }))
+    clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopyFeedback((prev) => ({ ...prev, [id]: false })), 1300)
+  }
+
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(copyTimerRef.current), [])
+
+  const sortRef = useRef({ sortBy, sortOrder })
+  sortRef.current = { sortBy, sortOrder }
+  function handleColSort(col: LibrarySortBy) {
+    const { sortBy: by, sortOrder: order } = sortRef.current
+    const next = by === col ? (order === 'asc' ? 'desc' : 'asc') : 'desc'
+    updateParams({ sort_by: col, sort_order: next })
+  }
+
+  function refreshTags() { listTags().then(setAllTags).catch((e) => console.warn('failed to refresh tags', e)) }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
-      <AdminHeader searchQuery={searchInput} onSearch={handleSearch} />
+    <div className="p-7">
+      <h1 className="font-display font-bold tracking-tight text-cream text-xl mb-4">影片庫</h1>
+      <LibraryToolbar
+        total={total} sortBy={sortBy} sortOrder={sortOrder} tagIdsStr={tagIdsStr}
+        allTags={allTags} selected={selected} backfillStarting={backfillStarting} backfillJobId={backfillJobId}
+        onSort={(p) => updateParams({ sort_by: p.sort_by, sort_order: p.sort_order, page: '1' })}
+        onTagFilter={(tag_ids) => updateParams({ tag_ids, page: '1' })}
+        onStartBackfill={handleStartBackfill}
+        onOpenImport={() => { setShowImport(true); resetImportState() }}
+        onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
+        onBatchDelete={handleBatchDelete}
+        onClearSelection={() => setSelected([])}
+      />
 
-      <div className="flex-1 p-6">
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-white">影片管理</h1>
-            <Link to="/admin/recommendations" className="text-sm text-gray-400 hover:text-white transition-colors">
-              推薦管理
-            </Link>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleStartBackfill}
-              disabled={backfillStarting || backfillJobId !== null}
-              className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {backfillStarting ? '啟動中...' : '補齊預覽'}
-            </button>
-            <button
-              onClick={() => { setShowImport(true); resetImportState() }}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded transition-colors"
-            >
-              匯入影片
-            </button>
+      {backfillJobId && (
+        <div className="mb-5">
+          <BackfillProgress jobId={backfillJobId} onComplete={() => {}} />
+          <div className="text-right mt-1">
+            <button onClick={() => setBackfillJobId(null)} className="text-xs text-faint hover:text-muted">關閉</button>
           </div>
         </div>
+      )}
 
-        {/* Backfill progress panel */}
-        {backfillJobId && (
-          <div className="mb-6">
-            <BackfillProgress
-              jobId={backfillJobId}
-              onComplete={() => {
-                // Keep the panel visible so the admin can see the final summary;
-                // they can dismiss by reloading or starting a new job.
-              }}
-            />
-            <div className="text-right mt-1">
-              <button
-                onClick={() => setBackfillJobId(null)}
-                className="text-xs text-gray-500 hover:text-gray-300"
-              >
-                關閉
-              </button>
-            </div>
-          </div>
-        )}
+      {loading ? (
+        <div className="text-faint text-center py-20">載入中...</div>
+      ) : loadError ? (
+        <ErrorBanner message="無法載入影片，請確認服務是否正常運作" onRetry={() => setReloadKey((k) => k + 1)} />
+      ) : videos.length === 0 ? (
+        <div className="text-faint text-center py-20">{query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}</div>
+      ) : (
+        <LibraryTable
+          videos={videos} allTags={allTags} selected={selected} sortBy={sortBy} sortOrder={sortOrder}
+          copyFeedback={copyFeedback} onSelect={setSelected} onColSort={handleColSort}
+          onCopyPath={handleCopyPath} onEdit={openEdit} onDelete={setDeletingVideo} onTagsChange={refreshTags}
+        />
+      )}
 
-        {/* Video table */}
-        {loading ? (
-          <div className="text-gray-500 text-center py-20">載入中...</div>
-        ) : loadError ? (
-          <ErrorBanner
-            message="無法載入影片，請確認服務是否正常運作"
-            onRetry={() => setReloadKey((k) => k + 1)}
-          />
-        ) : videos.length === 0 ? (
-          <div className="text-gray-500 text-center py-20">
-            {query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-gray-400 border-b border-gray-800">
-                <tr>
-                  <th className="py-3 px-2 w-24">縮圖</th>
-                  <th className="py-3 px-2">標題</th>
-                  <th className="py-3 px-2 w-20">時長</th>
-                  <th className="py-3 px-2 w-20">大小</th>
-                  <th className="py-3 px-2 w-48">標籤</th>
-                  <th className="py-3 px-2 w-28">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {videos.map((video) => (
-                  <tr key={video.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
-                    <td className="py-2 px-2">
-                      <div className="w-20 aspect-video bg-gray-800 rounded overflow-hidden">
-                        {video.thumbnail_url ? (
-                          <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-600">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 px-2">
-                      <Link to={`/videos/${video.id}`} className="text-white hover:text-indigo-400 transition-colors">
-                        {video.title}
-                      </Link>
-                      {video.description && (
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{video.description}</p>
-                      )}
-                    </td>
-                    <td className="py-2 px-2 text-gray-400">{formatDuration(video.duration_seconds)}</td>
-                    <td className="py-2 px-2 text-gray-400">{formatFileSize(video.file_size_bytes)}</td>
-                    <td className="py-2 px-2">
-                      <TagInput
-                        videoId={video.id}
-                        initialTags={video.tags}
-                        allTags={allTags}
-                        onTagsChange={() => {
-                          listTags().then(setAllTags).catch((err) => {
-                            console.warn('failed to refresh tags', err)
-                          })
-                        }}
-                      />
-                    </td>
-                    <td className="py-2 px-2">
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(video)} className="text-xs text-gray-400 hover:text-white transition-colors">編輯</button>
-                        <button onClick={() => setDeletingVideo(video)} className="text-xs text-gray-400 hover:text-red-400 transition-colors">刪除</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <Pagination page={page} totalPages={totalPages} onPageChange={(p) => updateParams({ page: String(p) })} />
 
-        <Pagination page={page} totalPages={totalPages} onPageChange={(p) => updateParams({ page: String(p) })} />
-      </div>
+      {selected.length > 0 && batchTagPickerId !== null && (
+        <BatchTagPicker selectedCount={selected.length} allTags={allTags} tagId={batchTagPickerId}
+          onTagChange={setBatchTagPickerId} onApply={handleBatchTag} onClose={() => setBatchTagPickerId(null)} />
+      )}
 
-      {/* Import Modal */}
       {showImport && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => importState !== 'importing' && setShowImport(false)}>
-          <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-white mb-4">匯入影片</h2>
-
-            {importState === 'idle' && (
-              <>
-                <label className="block text-sm text-gray-400 mb-1">選擇媒體來源</label>
-                {mediaSources.length === 0 ? (
-                  <p className="text-sm text-gray-500 mb-4">沒有可用的媒體來源</p>
-                ) : (
-                  <select
-                    value={selectedSourceID}
-                    onChange={(e) => setSelectedSourceID(e.target.value)}
-                    className="w-full bg-gray-800 text-white text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-                  >
-                    {mediaSources.map((s) => (
-                      <option key={s.id} value={s.id}>{s.label} ({s.mount_path})</option>
-                    ))}
-                  </select>
-                )}
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setShowImport(false)} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">取消</button>
-                  <button
-                    onClick={handleStartImport}
-                    disabled={!selectedSourceID || mediaSources.length === 0}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded"
-                  >
-                    開始匯入
-                  </button>
-                </div>
-              </>
-            )}
-
-            {(importState === 'importing' || importState === 'completed' || importState === 'failed') && currentJobId && (
-              <>
-                <ImportProgress jobId={currentJobId} onComplete={() => {
-                  setImportState('completed')
-                  updateParams({ page: '1' })
-                }} />
-                {importState !== 'importing' && (
-                  <div className="flex justify-end gap-2 mt-3">
-                    <button onClick={() => { resetImportState(); setShowImport(false) }} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">關閉</button>
-                    <button onClick={resetImportState} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded">重新匯入</button>
-                  </div>
-                )}
-                {importState === 'importing' && (
-                  <p className="text-xs text-gray-600 text-center mt-3">匯入進行中，請勿關閉此視窗...</p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <ImportModal importState={importState} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
+          currentJobId={currentJobId} onSourceChange={setSelectedSourceID} onClose={() => setShowImport(false)}
+          onStartImport={handleStartImport} onImportComplete={() => { setImportState('completed'); updateParams({ page: '1' }) }}
+          onResetImport={resetImportState} />
       )}
 
-      {/* Edit Modal */}
       {editingVideo && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => !saving && setEditingVideo(null)}>
-          <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-white mb-4">編輯影片</h2>
-            <label className="block text-sm text-gray-400 mb-1">標題</label>
-            <input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full bg-gray-800 text-white text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
-              disabled={saving}
-            />
-            <label className="block text-sm text-gray-400 mb-1">描述</label>
-            <textarea
-              value={editDesc}
-              onChange={(e) => setEditDesc(e.target.value)}
-              rows={3}
-              className="w-full bg-gray-800 text-white text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 mb-4 resize-none"
-              disabled={saving}
-            />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setEditingVideo(null)} disabled={saving} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">取消</button>
-              <button onClick={handleSaveEdit} disabled={saving || !editTitle.trim()} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded">
-                {saving ? '儲存中...' : '儲存'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditModal title={editTitle} desc={editDesc} saving={saving}
+          onTitleChange={setEditTitle} onDescChange={setEditDesc} onSave={handleSaveEdit} onClose={() => setEditingVideo(null)} />
       )}
 
-      {/* Delete Confirm */}
       {deletingVideo && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setDeletingVideo(null)}>
-          <div className="bg-gray-900 rounded-lg p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-white mb-2">確認刪除</h2>
-            <p className="text-sm text-gray-400 mb-4">
-              確定要刪除「<span className="text-white">{deletingVideo.title}</span>」嗎？此操作無法復原。
-            </p>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setDeletingVideo(null)} className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded">取消</button>
-              <button onClick={handleDelete} className="bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-1.5 rounded">刪除</button>
-            </div>
-          </div>
-        </div>
+        <DeleteConfirm video={deletingVideo} onConfirm={handleDelete} onClose={() => setDeletingVideo(null)} />
       )}
     </div>
   )
