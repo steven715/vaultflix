@@ -2,6 +2,23 @@ package model
 
 import "time"
 
+// EnrichJob represents the state of an in-progress or completed batch
+// enrichment run (in-memory; not persisted). Only one job runs per process;
+// concurrent StartBatchAsync calls return model.ErrConflict.
+// Phase 1 omits an Errors slice — the Failed counter suffices; per-video
+// errors are logged with slog.Warn and visible in progress WS messages.
+type EnrichJob struct {
+	ID             string     `json:"id"`
+	Status         string     `json:"status"` // running | completed | cancelled | failed
+	Total          int        `json:"total"`
+	Processed      int        `json:"processed"`
+	Succeeded      int        `json:"succeeded"`
+	Failed         int        `json:"failed"`
+	CurrentVideoID string     `json:"current_video_id,omitempty"`
+	StartedAt      time.Time  `json:"started_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+}
+
 // EnrichedMetadata 是單一來源 scrape 出的 canonical 結果（也是 suggestion payload 的形狀）。
 type EnrichedMetadata struct {
 	Code           string        `json:"code"`

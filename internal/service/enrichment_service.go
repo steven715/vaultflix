@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -31,6 +32,11 @@ type EnrichmentService struct {
 	// downloadImage downloads a URL to a temp file and returns the path.
 	// Overridable in tests to avoid real HTTP. Defaults to defaultDownloadImage.
 	downloadImage func(ctx context.Context, url string) (string, error)
+
+	// Batch-job state. All mutations protected by mu.
+	mu        sync.Mutex
+	activeJob *model.EnrichJob
+	cancelCh  chan struct{}
 }
 
 // NewEnrichmentService constructs an EnrichmentService with real HTTP downloads.
