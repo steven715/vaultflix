@@ -113,50 +113,50 @@ export default function BackfillProgress({ jobId, onComplete }: BackfillProgress
     cancelled: '已取消',
   }
   const stateClass: Record<RunState, string> = {
-    running: 'text-indigo-300',
-    completed: 'text-green-400',
-    failed: 'text-red-400',
-    cancelled: 'text-gray-400',
+    running: 'text-accent',
+    completed: 'text-live',
+    failed: 'text-fav',
+    cancelled: 'text-faint',
   }
   const finalErrors = finalResult?.errors ?? errors
 
   return (
-    <div className="bg-gray-800/50 rounded-lg p-4 mt-3">
+    <div className="bg-surface-2/50 rounded-lg p-4 mt-3">
       {runState === 'running' && (
         <>
           <div className="flex justify-between items-start mb-3">
-            <div className="text-sm text-indigo-300 font-medium">補齊預覽中</div>
+            <div className="text-sm text-accent font-medium">補齊預覽中</div>
             <button
               onClick={handleCancel}
               disabled={cancelling}
-              className="text-xs px-2 py-1 rounded bg-red-900/40 text-red-300 hover:bg-red-900/60 disabled:opacity-50"
+              className="text-xs px-2 py-1 rounded-btn bg-fav/15 text-fav hover:bg-fav/25 disabled:opacity-50"
             >
               {cancelling ? '取消中...' : '取消'}
             </button>
           </div>
           <div className="mb-3">
-            <div className="flex justify-between text-sm text-gray-400 mb-1">
+            <div className="flex justify-between text-sm text-muted mb-1">
               <span>進度</span>
-              <span>{processed} / {total || '...'}</span>
+              <span className="font-mono">{processed} / {total || '...'}</span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-surface-up rounded-full h-2">
               <div
-                className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                className="bg-accent h-2 rounded-full transition-all duration-300"
                 style={{ width: total > 0 ? `${(processed / total) * 100}%` : '0%' }}
               />
             </div>
           </div>
           {currentFile && (
-            <p className="text-xs text-gray-500 mb-2 truncate">處理中: {currentFile}</p>
+            <p className="text-xs text-faint mb-2 truncate">處理中: {currentFile}</p>
           )}
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="text-center">
-              <div className="text-green-400 font-medium">{succeeded}</div>
-              <div className="text-gray-500 text-xs">成功</div>
+              <div className="text-live font-medium font-mono">{succeeded}</div>
+              <div className="text-faint text-xs">成功</div>
             </div>
             <div className="text-center">
-              <div className="text-red-400 font-medium">{failed}</div>
-              <div className="text-gray-500 text-xs">失敗</div>
+              <div className="text-fav font-medium font-mono">{failed}</div>
+              <div className="text-faint text-xs">失敗</div>
             </div>
           </div>
         </>
@@ -168,25 +168,25 @@ export default function BackfillProgress({ jobId, onComplete }: BackfillProgress
             {stateLabel[runState]}
           </div>
           <div className="space-y-1.5 text-sm mb-3">
-            <div className="flex justify-between text-gray-300"><span>掃描影片</span><span>{finalResult?.total ?? total}</span></div>
-            <div className="flex justify-between text-gray-300"><span>已處理</span><span>{finalResult?.processed ?? processed}</span></div>
-            <div className="flex justify-between text-green-400"><span>成功補齊</span><span>{finalResult?.succeeded ?? succeeded}</span></div>
-            <div className="flex justify-between text-red-400"><span>失敗</span><span>{finalResult?.failed ?? failed}</span></div>
+            <div className="flex justify-between text-cream"><span>掃描影片</span><span className="font-mono">{finalResult?.total ?? total}</span></div>
+            <div className="flex justify-between text-cream"><span>已處理</span><span className="font-mono">{finalResult?.processed ?? processed}</span></div>
+            <div className="flex justify-between text-live"><span>成功補齊</span><span className="font-mono">{finalResult?.succeeded ?? succeeded}</span></div>
+            <div className="flex justify-between text-fav"><span>失敗</span><span className="font-mono">{finalResult?.failed ?? failed}</span></div>
           </div>
           {finalErrors.length > 0 && (
             <div>
               <button
                 onClick={() => setShowErrors(!showErrors)}
-                className="text-xs text-red-400 hover:text-red-300 mb-1"
+                className="text-xs text-fav hover:text-fav/80 mb-1"
               >
                 {showErrors ? '收起' : '展開'}失敗詳情 ({finalErrors.length})
               </button>
               {showErrors && (
-                <div className="bg-gray-900 rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                <div className="bg-surface border border-border rounded p-2 max-h-40 overflow-y-auto space-y-1">
                   {finalErrors.map((e, i) => (
                     <div key={i} className="text-xs">
-                      <span className="text-gray-300">{e.original_filename}</span>
-                      <span className="text-gray-600 ml-1">— {e.error}</span>
+                      <span className="text-cream">{e.original_filename}</span>
+                      <span className="text-faint ml-1">— {e.error}</span>
                     </div>
                   ))}
                 </div>
