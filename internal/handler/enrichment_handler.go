@@ -178,6 +178,22 @@ func (h *EnrichmentHandler) ActiveJob(c *gin.Context) {
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
 }
 
+// BackfillCodes seeds enrichment code and status for all existing videos that
+// have enrichment_status='none'. Returns 200 with seeded/no_code counts on
+// success, 500 on failure.
+func (h *EnrichmentHandler) BackfillCodes(c *gin.Context) {
+	seeded, noCode, err := h.svc.BackfillCodes(c.Request.Context())
+	if err != nil {
+		slog.Error("failed to backfill codes", "error", err)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "backfill failed",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, model.SuccessResponse{Data: gin.H{"seeded": seeded, "no_code": noCode}})
+}
+
 // CancelBatch requests the running job to stop after the current video finishes.
 // Returns 204 No Content on success, 404 if no such job, 500 otherwise.
 func (h *EnrichmentHandler) CancelBatch(c *gin.Context) {

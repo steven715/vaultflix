@@ -252,6 +252,7 @@ func main() {
 		api.POST("/enrich-jobs", enrichHandler.StartBatch)
 		api.GET("/enrich-jobs/active", enrichHandler.ActiveJob)
 		api.DELETE("/enrich-jobs/:jid", enrichHandler.CancelBatch)
+		api.POST("/enrich-jobs/backfill-codes", enrichHandler.BackfillCodes)
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)

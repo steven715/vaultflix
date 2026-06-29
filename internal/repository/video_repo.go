@@ -42,6 +42,9 @@ type VideoRepository interface {
 	SetEnrichmentStatus(ctx context.Context, id, status string) error
 	// ListByEnrichmentStatus returns all videos with the given enrichment_status, ordered by created_at.
 	ListByEnrichmentStatus(ctx context.Context, status string) ([]model.Video, error)
+	// SeedCode sets the code and enrichment_status columns for an existing video.
+	// Returns model.ErrNotFound when no video with the given id exists.
+	SeedCode(ctx context.Context, id, code, status string) error
 }
 
 var allowedSortColumns = map[string]string{
@@ -122,6 +125,10 @@ const querySetEnrichmentStatus = `
 const queryVideosByEnrichmentStatus = `
     SELECT id, title, enrichment_status, code, original_filename, source_id, file_path
     FROM videos WHERE enrichment_status = $1 ORDER BY created_at
+`
+
+const querySeedVideoCode = `
+    UPDATE videos SET code = $2, enrichment_status = $3, updated_at = NOW() WHERE id = $1
 `
 
 type videoRepository struct {
@@ -355,6 +362,17 @@ func (r *videoRepository) ListByEnrichmentStatus(ctx context.Context, status str
 	}
 
 	return videos, nil
+}
+
+func (r *videoRepository) SeedCode(ctx context.Context, id, code, status string) error {
+	result, err := r.pool.Exec(ctx, querySeedVideoCode, id, code, status)
+	if err != nil {
+		return fmt.Errorf("failed to seed code for video %s: %w", id, err)
+	}
+	if result.RowsAffected() == 0 {
+		return model.ErrNotFound
+	}
+	return nil
 }
 
 func buildWhereClause(filter model.VideoFilter) (string, []interface{}) {

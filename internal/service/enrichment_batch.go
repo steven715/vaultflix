@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/steven/vaultflix/internal/model"
+	"github.com/steven/vaultflix/internal/scraper/avid"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
@@ -103,6 +105,52 @@ func cloneEnrichJobLocked(j *model.EnrichJob) *model.EnrichJob {
 		cp.FinishedAt = &f
 	}
 	return &cp
+}
+
+// BackfillCodes scans all videos with enrichment_status='none', extracts a JAV
+// code from each original_filename, and seeds the code + status (pending/no_code).
+// Per-video seed failures are logged and skipped (best-effort). Returns counts
+// of videos seeded as pending and no_code.
+func (s *EnrichmentService) BackfillCodes(ctx context.Context) (seeded int, noCode int, err error) {
+	videos, err := s.videoRepo.ListByEnrichmentStatus(ctx, model.EnrichmentNone)
+	if err != nil {
+		return 0, 0, fmt.Errorf("list videos with status none: %w", err)
+	}
+
+	for _, v := range videos {
+		seeded, noCode = s.seedOneCode(ctx, v, seeded, noCode)
+	}
+
+	slog.Info("backfill codes complete",
+		"seeded", seeded,
+		"no_code", noCode,
+		"total", len(videos),
+	)
+	return seeded, noCode, nil
+}
+
+// seedOneCode seeds enrichment code/status for a single video and updates the
+// running counters. Errors from SeedCode are logged and skipped.
+func (s *EnrichmentService) seedOneCode(ctx context.Context, v model.Video, seeded, noCode int) (int, int) {
+	code, ok := avid.ExtractCode(v.OriginalFilename)
+	status := model.EnrichmentPending
+	if !ok {
+		code = ""
+		status = model.EnrichmentNoCode
+	}
+	if err := s.videoRepo.SeedCode(ctx, v.ID, code, status); err != nil {
+		slog.Warn("backfill: seed code failed",
+			"video_id", v.ID,
+			"code", code,
+			"status", status,
+			"error", err,
+		)
+		return seeded, noCode
+	}
+	if ok {
+		return seeded + 1, noCode
+	}
+	return seeded, noCode + 1
 }
 
 // runBatch is the goroutine that drives the batch enrichment loop.

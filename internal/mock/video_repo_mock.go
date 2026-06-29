@@ -20,6 +20,7 @@ type VideoRepository struct {
 	UpdateMetadataFunc          func(ctx context.Context, id string, m model.VideoMetadataUpdate) error
 	SetEnrichmentStatusFunc     func(ctx context.Context, id, status string) error
 	ListByEnrichmentStatusFunc  func(ctx context.Context, status string) ([]model.Video, error)
+	SeedCodeFunc                func(ctx context.Context, id, code, status string) error
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -104,4 +105,11 @@ func (m *VideoRepository) ListByEnrichmentStatus(ctx context.Context, status str
 		return nil, fmt.Errorf("mock: ListByEnrichmentStatusFunc not set")
 	}
 	return m.ListByEnrichmentStatusFunc(ctx, status)
+}
+
+func (m *VideoRepository) SeedCode(ctx context.Context, id, code, status string) error {
+	if m.SeedCodeFunc == nil {
+		return fmt.Errorf("mock: SeedCodeFunc not set")
+	}
+	return m.SeedCodeFunc(ctx, id, code, status)
 }

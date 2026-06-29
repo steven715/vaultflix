@@ -252,3 +252,52 @@ func TestEnrichmentHandler_StartBatch_ConflictWhenRunning(t *testing.T) {
 		t.Fatalf("expected 409 Conflict on second StartBatch, got %d body: %s", w2.Code, w2.Body.String())
 	}
 }
+
+// --- BackfillCodes handler tests ---
+
+func TestEnrichmentHandler_BackfillCodes_Returns200(t *testing.T) {
+	videos := []model.Video{
+		{ID: "vid-1", OriginalFilename: "DASD-626.mp4"},
+		{ID: "vid-2", OriginalFilename: "家庭聚會.mp4"},
+	}
+	videoRepo := &mock.VideoRepository{
+		ListByEnrichmentStatusFunc: func(_ context.Context, status string) ([]model.Video, error) {
+			return videos, nil
+		},
+		SeedCodeFunc: func(_ context.Context, id, code, status string) error {
+			return nil
+		},
+	}
+	r, svc := buildEnrichmentRouter(videoRepo, nil, nil, nil)
+	_ = svc
+
+	r.POST("/enrich-jobs/backfill-codes", func(c *gin.Context) {
+		h := NewEnrichmentHandler(service.NewEnrichmentService(nil, videoRepo, &mock.ActressRepository{},
+			&mock.SuggestionRepository{}, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{}))
+		h.BackfillCodes(c)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/enrich-jobs/backfill-codes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Seeded int `json:"seeded"`
+			NoCode int `json:"no_code"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Data.Seeded != 1 {
+		t.Errorf("seeded = %d, want 1", resp.Data.Seeded)
+	}
+	if resp.Data.NoCode != 1 {
+		t.Errorf("no_code = %d, want 1", resp.Data.NoCode)
+	}
+}
