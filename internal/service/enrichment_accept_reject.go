@@ -98,6 +98,16 @@ func (s *EnrichmentService) linkGenres(ctx context.Context, videoID string, genr
 	return nil
 }
 
+// ListSuggestions returns all staged MetadataSuggestion rows for a given video.
+// Returns an empty slice (not ErrNotFound) when the video has no pending suggestions.
+func (s *EnrichmentService) ListSuggestions(ctx context.Context, videoID string) ([]model.MetadataSuggestion, error) {
+	suggestions, err := s.suggestionRepo.GetByVideoID(ctx, videoID)
+	if err != nil {
+		return nil, fmt.Errorf("list suggestions for video %s: %w", videoID, err)
+	}
+	return suggestions, nil
+}
+
 // RejectSuggestion deletes a staged suggestion. If the video has no remaining
 // suggestions after the deletion, resets the enrichment status to none so the
 // video can be re-enriched.
