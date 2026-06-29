@@ -69,8 +69,12 @@ func parseJavBus(html []byte, code string) (*model.EnrichedMetadata, error) {
 	// 基本資訊區塊（製作商、發行商、系列、片長）
 	parseInfoBlock(doc, m)
 
-	// 類別
+	// 類別：只收 href 含 /genre/ 的連結，跳過 /star/ 等非類別連結
 	doc.Find(".genre a").Each(func(_ int, a *goquery.Selection) {
+		href, _ := a.Attr("href")
+		if !strings.Contains(href, "/genre/") {
+			return
+		}
 		if g := strings.TrimSpace(a.Text()); g != "" {
 			m.Genres = append(m.Genres, g)
 		}

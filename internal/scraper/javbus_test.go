@@ -32,6 +32,25 @@ func TestParseJavBus_DASD626(t *testing.T) {
 	if len(got.Genres) == 0 {
 		t.Error("expected genres")
 	}
+	// 確認 actress 名稱沒有混入 genres（star link 過濾正確）
+	for _, actress := range got.Actresses {
+		for _, g := range got.Genres {
+			if g == actress.NameJa {
+				t.Errorf("actress name %q wrongly appeared in genres", actress.NameJa)
+			}
+		}
+	}
+	// 確認真實類別存在（fixture 中的真實 genre）
+	foundRealGenre := false
+	for _, g := range got.Genres {
+		if g == "巨乳" {
+			foundRealGenre = true
+			break
+		}
+	}
+	if !foundRealGenre {
+		t.Errorf("expected real genre '巨乳' in genres, got %v", got.Genres)
+	}
 	if got.CoverURL == "" {
 		t.Error("cover url empty")
 	}
