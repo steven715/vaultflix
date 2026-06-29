@@ -129,7 +129,7 @@ func scanSuggestion(rows pgx.Rows) (model.MetadataSuggestion, error) {
 	var s model.MetadataSuggestion
 	var payloadJSON []byte
 	if err := rows.Scan(&s.ID, &s.VideoID, &s.Source, &s.Code, &payloadJSON, &s.FetchedAt, &s.Status); err != nil {
-		return s, err
+		return s, fmt.Errorf("scan suggestion row: %w", err)
 	}
 	if err := json.Unmarshal(payloadJSON, &s.Payload); err != nil {
 		return s, fmt.Errorf("unmarshal payload: %w", err)
