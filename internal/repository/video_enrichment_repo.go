@@ -20,7 +20,7 @@ const querySetEnrichmentStatus = `
 `
 
 const queryVideosByEnrichmentStatus = `
-    SELECT id, title, enrichment_status, code, original_filename, source_id, file_path
+    SELECT id, title, enrichment_status, COALESCE(code, '') AS code, original_filename, source_id, file_path
     FROM videos WHERE enrichment_status = $1 ORDER BY created_at
 `
 
