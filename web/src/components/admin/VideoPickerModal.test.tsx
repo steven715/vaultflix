@@ -38,19 +38,12 @@ describe('VideoPickerModal', () => {
     )
 
     await waitFor(() => {
-      expect(container.querySelector('[class*="片X"]')).toBeTruthy()
-    }).catch(() => {
-      // Title appears as text content, not class — use text check instead
-    })
-
-    await waitFor(() => {
       const found = Array.from(container.querySelectorAll('*')).some(
         (el) => el.textContent === '片X',
       )
       expect(found).toBe(true)
     })
 
-    expect(container.querySelector('.bg-gray-900')).toBeNull()
     expect(container.innerHTML).not.toMatch(/(?:bg|text)-(?:gray|indigo)-/)
   })
 })
