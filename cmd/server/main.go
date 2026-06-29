@@ -148,6 +148,7 @@ func main() {
 		UserAgent:   cfg.EnrichUserAgent,
 		MinInterval: 2 * time.Second,
 		MaxRetries:  2,
+		Cookies:     scraper.ParseCookieHeader(cfg.EnrichJavBusCookie),
 	})
 	scrapers := []scraper.MetadataScraper{
 		scraper.NewJavBusScraper(enrichHTTPClient, ""),

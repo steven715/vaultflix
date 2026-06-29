@@ -51,8 +51,9 @@ type Config struct {
 	AdminDefaultPassword string
 
 	// Enrichment HTTP client (infra parameters; business params are per-request)
-	EnrichHTTPTimeout time.Duration
-	EnrichUserAgent   string
+	EnrichHTTPTimeout  time.Duration
+	EnrichUserAgent    string
+	EnrichJavBusCookie string
 }
 
 func (c *Config) DatabaseDSN() string {
@@ -94,8 +95,9 @@ func Load() (*Config, error) {
 		AdminDefaultUsername: getEnv("ADMIN_DEFAULT_USERNAME", "admin"),
 		AdminDefaultPassword: os.Getenv("ADMIN_DEFAULT_PASSWORD"),
 
-		EnrichHTTPTimeout: getEnvDuration("ENRICH_HTTP_TIMEOUT", 15*time.Second),
-		EnrichUserAgent:   getEnv("ENRICH_USER_AGENT", "Vaultflix/1.0"),
+		EnrichHTTPTimeout:  getEnvDuration("ENRICH_HTTP_TIMEOUT", 15*time.Second),
+		EnrichUserAgent:    getEnv("ENRICH_USER_AGENT", "Vaultflix/1.0"),
+		EnrichJavBusCookie: getEnv("ENRICH_JAVBUS_COOKIE", "age=verified; existmag=all"),
 	}
 
 	if err := cfg.validateSecrets(); err != nil {
