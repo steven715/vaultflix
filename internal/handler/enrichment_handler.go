@@ -135,16 +135,14 @@ func (h *EnrichmentHandler) RejectSuggestion(c *gin.Context) {
 }
 
 // StartBatch launches a background batch enrichment job.
-// Optional JSON body: {"status": "pending"} — empty body defaults to "pending".
+// Optional JSON body: {"status":"pending","auto_accept":false,"limit":0} — empty body defaults to pending, no auto-accept, no cap.
 // Returns 202 Accepted with job_id on success, 409 Conflict when a job is running, 500 otherwise.
 func (h *EnrichmentHandler) StartBatch(c *gin.Context) {
 	userID := c.GetString("user_id")
 
-	var body struct {
-		Status string `json:"status"`
-	}
+	var req model.EnrichBatchRequest
 	// Empty body is fine; ignore EOF.
-	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "invalid_body",
 			Message: "request body is not valid JSON",
@@ -152,7 +150,7 @@ func (h *EnrichmentHandler) StartBatch(c *gin.Context) {
 		return
 	}
 
-	job, err := h.svc.StartBatchAsync(c.Request.Context(), body.Status, userID)
+	job, err := h.svc.StartBatchAsync(c.Request.Context(), req, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrConflict) {
 			c.JSON(http.StatusConflict, model.ErrorResponse{

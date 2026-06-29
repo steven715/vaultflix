@@ -15,12 +15,12 @@ import (
 
 // StartBatchAsync launches a batch enrichment worker in the background and
 // returns a snapshot of the new job. Returns model.ErrConflict when another
-// batch is already running. status filters which videos to process; an empty
-// string defaults to model.EnrichmentPending. Notifications are pushed to the
-// WebSocket connections of userID.
-func (s *EnrichmentService) StartBatchAsync(ctx context.Context, status, userID string) (*model.EnrichJob, error) {
-	if status == "" {
-		status = model.EnrichmentPending
+// batch is already running. req.Status filters which videos to process; an
+// empty string defaults to model.EnrichmentPending. Notifications are pushed
+// to the WebSocket connections of userID.
+func (s *EnrichmentService) StartBatchAsync(ctx context.Context, req model.EnrichBatchRequest, userID string) (*model.EnrichJob, error) {
+	if req.Status == "" {
+		req.Status = model.EnrichmentPending
 	}
 
 	s.mu.Lock()
@@ -41,7 +41,7 @@ func (s *EnrichmentService) StartBatchAsync(ctx context.Context, status, userID 
 	snapshot := cloneEnrichJobLocked(job)
 	s.mu.Unlock()
 
-	go s.runBatch(job, cancelCh, status, userID)
+	go s.runBatch(job, cancelCh, req, userID)
 
 	// Return a snapshot: the worker goroutine mutates job under s.mu.
 	return snapshot, nil
@@ -154,7 +154,7 @@ func (s *EnrichmentService) seedOneCode(ctx context.Context, v model.Video, seed
 }
 
 // runBatch is the goroutine that drives the batch enrichment loop.
-func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{}, status, userID string) {
+func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{}, req model.EnrichBatchRequest, userID string) {
 	jobID := job.ID
 
 	defer func() {
@@ -180,7 +180,7 @@ func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{
 		)
 	}()
 
-	videos, err := s.videoRepo.ListByEnrichmentStatus(context.Background(), status)
+	videos, err := s.videoRepo.ListByEnrichmentStatus(context.Background(), req.Status)
 	if err != nil {
 		s.updateEnrichJob(job, func(j *model.EnrichJob) { j.Status = "failed" })
 		s.notifier.SendToUser(userID, &websocket.Message{
@@ -188,6 +188,11 @@ func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{
 			Payload: map[string]string{"job_id": jobID, "error": err.Error()},
 		})
 		return
+	}
+
+	// Apply the limit cap: if Limit > 0, process at most Limit videos.
+	if req.Limit > 0 && len(videos) > req.Limit {
+		videos = videos[:req.Limit]
 	}
 
 	total := len(videos)
@@ -214,6 +219,17 @@ func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{
 		})
 
 		enrichErr := s.EnrichVideo(context.Background(), v.ID, userID)
+
+		if enrichErr == nil && req.AutoAccept {
+			if aaErr := s.autoAcceptHighestPriority(context.Background(), v.ID, userID); aaErr != nil {
+				slog.Warn("enrich batch: auto-accept failed",
+					"job_id", jobID,
+					"video_id", v.ID,
+					"error", aaErr,
+				)
+				enrichErr = aaErr
+			}
+		}
 
 		s.updateEnrichJob(job, func(j *model.EnrichJob) {
 			j.Processed = i + 1

@@ -114,7 +114,7 @@ func TestStartBatchAsync_RunsAllAndCompletes(t *testing.T) {
 		return &model.EnrichedMetadata{Code: code, Title: "Test Title"}, nil
 	})
 
-	job, err := svc.StartBatchAsync(context.Background(), "", "user-1")
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if err != nil {
 		t.Fatalf("StartBatchAsync failed: %v", err)
 	}
@@ -148,13 +148,13 @@ func TestStartBatchAsync_ConflictWhenAlreadyRunning(t *testing.T) {
 		return &model.EnrichedMetadata{Code: code, Title: "T"}, nil
 	})
 
-	job, err := svc.StartBatchAsync(context.Background(), "", "user-1")
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if err != nil {
 		t.Fatalf("first StartBatchAsync failed: %v", err)
 	}
 
 	// Second call while the first is still blocked inside the scraper.
-	_, err2 := svc.StartBatchAsync(context.Background(), "", "user-1")
+	_, err2 := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if !errors.Is(err2, model.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err2)
 	}
@@ -201,7 +201,7 @@ func TestStartBatchAsync_DefaultStatusIsPending(t *testing.T) {
 		return "", errors.New("no real HTTP in tests")
 	}
 
-	job, err := svc.StartBatchAsync(context.Background(), "", "user-1")
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if err != nil {
 		t.Fatalf("StartBatchAsync failed: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestStartBatchAsync_PropagatesProgressAndCompleteMessages(t *testing.T) {
 		return "", errors.New("no real HTTP in tests")
 	}
 
-	job, err := svc.StartBatchAsync(context.Background(), "", "user-1")
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if err != nil {
 		t.Fatalf("StartBatchAsync failed: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestCancelBatch_StopsProcessing(t *testing.T) {
 		return &model.EnrichedMetadata{Code: code, Title: "T"}, nil
 	})
 
-	job, err := svc.StartBatchAsync(context.Background(), "", "user-1")
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{}, "user-1")
 	if err != nil {
 		t.Fatalf("StartBatchAsync failed: %v", err)
 	}
@@ -328,7 +328,170 @@ func TestCancelBatch_UnknownJob(t *testing.T) {
 
 // Compile-time assertion that EnrichmentService exposes the batch API.
 var _ interface {
-	StartBatchAsync(ctx context.Context, status, userID string) (*model.EnrichJob, error)
+	StartBatchAsync(ctx context.Context, req model.EnrichBatchRequest, userID string) (*model.EnrichJob, error)
 	ActiveJob() *model.EnrichJob
 	CancelBatch(jobID string) error
 } = (*EnrichmentService)(nil)
+
+func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
+	// Stateful suggestion store so Create → GetByVideoID/GetByID are consistent.
+	var (
+		sugMu   sync.Mutex
+		sugRows []model.MetadataSuggestion
+	)
+
+	videos := []model.Video{{ID: "vid-auto-1", OriginalFilename: "DASD-626.mp4", DurationSeconds: 90}}
+
+	// Track which operations occurred.
+	var metadataUpdated, genreLinked, actressLinked bool
+
+	videoRepo := &mock.VideoRepository{
+		ListByEnrichmentStatusFunc: func(_ context.Context, _ string) ([]model.Video, error) {
+			return videos, nil
+		},
+		GetByIDFunc: func(_ context.Context, id string) (*model.Video, error) {
+			return &videos[0], nil
+		},
+		SetEnrichmentStatusFunc: func(_ context.Context, _, _ string) error { return nil },
+		UpdateMetadataFunc: func(_ context.Context, _ string, _ model.VideoMetadataUpdate) error {
+			metadataUpdated = true
+			return nil
+		},
+	}
+
+	scrapeResult := &model.EnrichedMetadata{
+		Code:      "DASD-626",
+		Title:     "Test Title",
+		Maker:     "Mellow Moon",
+		Genres:    []string{"巨乳"},
+		Actresses: []model.ActressMeta{{NameJa: "女優A"}},
+	}
+
+	sc := &mock.Scraper{
+		SourceValue: "javbus",
+		ScrapeByCodeFunc: func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
+			return scrapeResult, nil
+		},
+	}
+
+	sugRepo := &mock.SuggestionRepository{
+		CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error {
+			// Assign a stable ID so GetByID can retrieve it.
+			s.ID = "sug-auto-1"
+			sugMu.Lock()
+			sugRows = append(sugRows, *s)
+			sugMu.Unlock()
+			return nil
+		},
+		GetByVideoIDFunc: func(_ context.Context, videoID string) ([]model.MetadataSuggestion, error) {
+			sugMu.Lock()
+			defer sugMu.Unlock()
+			var out []model.MetadataSuggestion
+			for _, s := range sugRows {
+				if s.VideoID == videoID {
+					out = append(out, s)
+				}
+			}
+			return out, nil
+		},
+		GetByIDFunc: func(_ context.Context, id string) (*model.MetadataSuggestion, error) {
+			sugMu.Lock()
+			defer sugMu.Unlock()
+			for i := range sugRows {
+				if sugRows[i].ID == id {
+					return &sugRows[i], nil
+				}
+			}
+			return nil, model.ErrNotFound
+		},
+		DeleteFunc: func(_ context.Context, id string) error {
+			sugMu.Lock()
+			defer sugMu.Unlock()
+			for i, s := range sugRows {
+				if s.ID == id {
+					sugRows = append(sugRows[:i], sugRows[i+1:]...)
+					return nil
+				}
+			}
+			return nil
+		},
+	}
+
+	actressRepo := &mock.ActressRepository{
+		UpsertFunc: func(_ context.Context, a *model.Actress) error {
+			a.ID = "actress-auto-1"
+			return nil
+		},
+		AddVideoActressFunc: func(_ context.Context, _, _ string) error {
+			actressLinked = true
+			return nil
+		},
+	}
+
+	tagRepo := &mock.TagRepository{
+		GetOrCreateByNameFunc: func(_ context.Context, name, _ string) (*model.Tag, error) {
+			return &model.Tag{ID: 1, Name: name}, nil
+		},
+		AddVideoTagFunc: func(_ context.Context, _ string, _ int) error {
+			genreLinked = true
+			return nil
+		},
+	}
+
+	svc := NewEnrichmentService(
+		[]scraper.MetadataScraper{sc},
+		videoRepo,
+		actressRepo,
+		sugRepo,
+		tagRepo,
+		&mock.MinIOClient{},
+		&mock.Notifier{},
+	)
+	svc.downloadImage = func(_ context.Context, url string) (string, error) {
+		return "", errors.New("no real HTTP in tests")
+	}
+
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{AutoAccept: true}, "user-1")
+	if err != nil {
+		t.Fatalf("StartBatchAsync failed: %v", err)
+	}
+	final := waitForEnrichJobStatus(t, svc, job.ID, "completed")
+
+	if final.Succeeded != 1 {
+		t.Errorf("Succeeded = %d, want 1", final.Succeeded)
+	}
+	if final.Failed != 0 {
+		t.Errorf("Failed = %d, want 0", final.Failed)
+	}
+	if !metadataUpdated {
+		t.Error("expected UpdateMetadata to be called (auto-accept should apply metadata)")
+	}
+	if !genreLinked {
+		t.Error("expected genre tag to be linked (auto-accept should apply genres)")
+	}
+	if !actressLinked {
+		t.Error("expected actress to be linked (auto-accept should apply actresses)")
+	}
+}
+
+func TestStartBatchAsync_LimitCapsProcessed(t *testing.T) {
+	videos := fakeEnrichVideos(3)
+
+	svc := newTestEnrichmentService(t, videos, func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
+		return &model.EnrichedMetadata{Code: code, Title: "T"}, nil
+	})
+
+	job, err := svc.StartBatchAsync(context.Background(), model.EnrichBatchRequest{Limit: 1}, "user-1")
+	if err != nil {
+		t.Fatalf("StartBatchAsync failed: %v", err)
+	}
+	final := waitForEnrichJobStatus(t, svc, job.ID, "completed")
+
+	// Only 1 video should have been processed despite 3 being available.
+	if final.Total != 1 {
+		t.Errorf("Total = %d, want 1 (limit capped)", final.Total)
+	}
+	if final.Processed != 1 {
+		t.Errorf("Processed = %d, want 1", final.Processed)
+	}
+}

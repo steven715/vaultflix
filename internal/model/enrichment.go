@@ -2,6 +2,13 @@ package model
 
 import "time"
 
+// EnrichBatchRequest configures a batch enrichment run.
+type EnrichBatchRequest struct {
+	Status     string `json:"status"`      // which enrichment_status to process; "" defaults to pending
+	AutoAccept bool   `json:"auto_accept"` // if true, auto-apply the highest-priority suggestion per video (no staging review)
+	Limit      int    `json:"limit"`       // cap number of videos processed this run; 0 = no cap (process all)
+}
+
 // EnrichJob represents the state of an in-progress or completed batch
 // enrichment run (in-memory; not persisted). Only one job runs per process;
 // concurrent StartBatchAsync calls return model.ErrConflict.

@@ -98,6 +98,42 @@ func (s *EnrichmentService) linkGenres(ctx context.Context, videoID string, genr
 	return nil
 }
 
+// autoAcceptHighestPriority accepts the suggestion from the highest-priority
+// source available for the video, with no field overrides. Priority is
+// determined by the order of s.scrapers (index 0 = highest). If no scraper
+// matches a suggestion's source, falls back to the first suggestion.
+// Returns model.ErrNotFound (wrapped) when the video has no suggestions.
+// Used by the batch auto-accept path.
+func (s *EnrichmentService) autoAcceptHighestPriority(ctx context.Context, videoID, userID string) error {
+	sugs, err := s.ListSuggestions(ctx, videoID)
+	if err != nil {
+		return fmt.Errorf("auto-accept list suggestions for %s: %w", videoID, err)
+	}
+	if len(sugs) == 0 {
+		return fmt.Errorf("auto-accept video %s: %w", videoID, model.ErrNotFound)
+	}
+
+	// Pick the suggestion whose Source matches the highest-priority scraper.
+	var picked *model.MetadataSuggestion
+	for _, sc := range s.scrapers {
+		for i := range sugs {
+			if sugs[i].Source == sc.Source() {
+				picked = &sugs[i]
+				break
+			}
+		}
+		if picked != nil {
+			break
+		}
+	}
+	// Fall back to the first suggestion if no scraper-source match found.
+	if picked == nil {
+		picked = &sugs[0]
+	}
+
+	return s.AcceptSuggestion(ctx, videoID, picked.ID, model.SuggestionOverride{})
+}
+
 // ListSuggestions returns all staged MetadataSuggestion rows for a given video.
 // Returns an empty slice (not ErrNotFound) when the video has no pending suggestions.
 func (s *EnrichmentService) ListSuggestions(ctx context.Context, videoID string) ([]model.MetadataSuggestion, error) {
