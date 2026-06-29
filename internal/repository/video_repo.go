@@ -61,8 +61,8 @@ const queryExistsVideoByFilenameAndSize = `
 const queryCreateVideo = `
     INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key, preview_key,
                         duration_seconds, resolution, file_size_bytes, mime_type,
-                        original_filename, source_id, file_path)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        original_filename, source_id, file_path, code, enrichment_status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING created_at, updated_at
 `
 
@@ -147,7 +147,7 @@ func (r *videoRepository) Create(ctx context.Context, video *model.Video) error 
 	err := r.pool.QueryRow(ctx, queryCreateVideo,
 		video.ID, video.Title, video.Description, video.MinIOObjectKey, video.ThumbnailKey, video.PreviewKey,
 		video.DurationSeconds, video.Resolution, video.FileSizeBytes, video.MimeType,
-		video.OriginalFilename, video.SourceID, video.FilePath,
+		video.OriginalFilename, video.SourceID, video.FilePath, video.Code, video.EnrichmentStatus,
 	).Scan(&video.CreatedAt, &video.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create video %s: %w", video.OriginalFilename, err)
