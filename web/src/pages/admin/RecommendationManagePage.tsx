@@ -92,24 +92,19 @@ export default function RecommendationManagePage() {
     <div className="p-7">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <Link to="/admin/library" className="text-sm text-muted hover:text-cream transition-colors">
-            影片庫
-          </Link>
-          <h1 className="font-display font-bold tracking-tight text-cream text-xl">推薦管理</h1>
-        </div>
+        <h1 className="font-display font-bold tracking-tight text-cream text-xl">推薦管理</h1>
       </div>
 
       {/* Date selector */}
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => shiftDate(-1)} className="bg-surface-2 text-muted hover:text-cream px-3 py-1.5 rounded transition-colors">&lt;</button>
+        <button onClick={() => shiftDate(-1)} className="bg-surface-2 text-muted hover:text-cream px-3 py-1.5 rounded-btn transition-colors">&lt;</button>
         <input
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
-          className="bg-surface-2 text-cream text-sm rounded px-3 py-1.5 outline-none focus:ring-1 focus:ring-accent"
+          className="bg-surface-2 text-cream text-sm rounded-btn px-3 py-1.5 outline-none focus:ring-1 focus:ring-accent"
         />
-        <button onClick={() => shiftDate(1)} className="bg-surface-2 text-muted hover:text-cream px-3 py-1.5 rounded transition-colors">&gt;</button>
+        <button onClick={() => shiftDate(1)} className="bg-surface-2 text-muted hover:text-cream px-3 py-1.5 rounded-btn transition-colors">&gt;</button>
         <button onClick={() => setSelectedDate(formatDate(new Date()))} className="text-xs text-accent hover:text-accent/80">今天</button>
       </div>
 
@@ -150,7 +145,7 @@ export default function RecommendationManagePage() {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                       }}
-                      className="w-14 bg-surface-2 text-muted text-sm text-center rounded px-1 py-1 outline-none focus:ring-1 focus:ring-accent"
+                      className="w-14 bg-surface-2 text-muted text-sm text-center rounded-btn px-1 py-1 outline-none focus:ring-1 focus:ring-accent"
                     />
                   </td>
                   <td className="py-2 px-2">
@@ -175,7 +170,7 @@ export default function RecommendationManagePage() {
       {/* Add recommendation */}
       <button
         onClick={() => setShowPicker(true)}
-        className="bg-accent text-accent-ink hover:brightness-110 text-sm px-4 py-2 rounded transition-colors"
+        className="bg-accent text-accent-ink hover:brightness-110 text-sm px-4 py-2 rounded-btn transition-colors"
       >
         + 新增推薦
       </button>
@@ -205,12 +200,12 @@ export default function RecommendationManagePage() {
               value={sortOrder}
               onChange={(e) => setSortOrder(Number(e.target.value))}
               min={1}
-              className="w-full bg-surface-2 text-cream text-sm rounded px-3 py-2 outline-none focus:ring-2 focus:ring-accent mb-4"
+              className="w-full bg-surface-2 text-cream text-sm rounded-btn px-3 py-2 outline-none focus:ring-2 focus:ring-accent mb-4"
               disabled={creating}
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setPickedVideo(null)} disabled={creating} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded">取消</button>
-              <button onClick={handleCreate} disabled={creating} className="bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50 text-sm px-4 py-1.5 rounded">
+              <button onClick={() => setPickedVideo(null)} disabled={creating} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">取消</button>
+              <button onClick={handleCreate} disabled={creating} className="bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50 text-sm px-4 py-1.5 rounded-btn">
                 {creating ? '建立中...' : '確認'}
               </button>
             </div>
@@ -225,8 +220,8 @@ export default function RecommendationManagePage() {
             <h2 className="font-display font-bold tracking-tight text-cream text-lg mb-2">確認移除</h2>
             <p className="text-sm text-muted mb-4">確定要移除此推薦嗎？</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDeletingId(null)} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded">取消</button>
-              <button onClick={() => handleDelete(deletingId)} className="bg-fav text-cream hover:brightness-110 text-sm px-4 py-1.5 rounded">移除</button>
+              <button onClick={() => setDeletingId(null)} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">取消</button>
+              <button onClick={() => handleDelete(deletingId)} className="bg-fav text-cream hover:brightness-110 text-sm px-4 py-1.5 rounded-btn">移除</button>
             </div>
           </div>
         </div>
