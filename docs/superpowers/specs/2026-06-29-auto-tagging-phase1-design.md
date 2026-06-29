@@ -277,7 +277,8 @@ none ──(import 抽到番號)──▶ pending ──(scrape 成功)──▶
 
 - [ ] `avid.ExtractCode` 通過 table-driven 測試（三階梯 + 清洗）
 - [ ] migration 013 up/down 可逆，`task` 套用無誤
-- [ ] JavBus + JavLibrary scraper 以離線 fixture 通過解析測試
+- [ ] JavBus scraper 以離線 fixture 通過解析測試（含 age-gate → `ErrScrapeBlocked` 偵測）
+- [ ] ~~JavLibrary scraper~~ **延後至 Phase 1.x**：開發 sandbox 無法繞過 Cloudflare「Just a moment」challenge 抓真實頁面，無法做計畫要求的真實 fixture TDD。Aggregator 維持泛用（吃 source list），本 Phase 只註冊並驗收 JavBus；Phase 1.x 補做時需先由有瀏覽器/cf_clearance 的環境抓真實詳情頁存成 fixture
 - [ ] EnrichmentService 單片 + 批次（含取消/進度/WS）可運作，mock 測試綠
 - [ ] cover/頭像存入 MinIO 並可 presign
 - [ ] enrich 端點 + suggestions accept/reject 端點完整，含 400/404 測試
