@@ -44,11 +44,18 @@ func (s *JavBusScraper) ScrapeByCode(ctx context.Context, code string) (*model.E
 
 // parseJavBus 解析 JavBus 影片頁 HTML，回傳 EnrichedMetadata。
 // html 為頁面內容；code 為番號。
-// 解析出的 title 為空時，表示頁面不存在或被擋，回 model.ErrCodeNotFound。
+// 偵測到年齡驗證頁時回 model.ErrScrapeBlocked；
+// 解析出的 title 為空時，表示頁面不存在，回 model.ErrCodeNotFound。
 func parseJavBus(html []byte, code string) (*model.EnrichedMetadata, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
 	if err != nil {
 		return nil, fmt.Errorf("parse javbus html: %w", model.ErrSourceUnavailable)
+	}
+
+	// 年齡驗證頁偵測：title 含 "Age Verification" 或 body 含 driver-verify marker
+	pageTitle := strings.TrimSpace(doc.Find("title").First().Text())
+	if strings.Contains(pageTitle, "Age Verification") || doc.Find("[name=driver-verify]").Length() > 0 {
+		return nil, fmt.Errorf("javbus age-gate for %s: %w", code, model.ErrScrapeBlocked)
 	}
 
 	m := &model.EnrichedMetadata{Code: code}

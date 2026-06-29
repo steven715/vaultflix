@@ -1,8 +1,11 @@
 package scraper
 
 import (
+	"errors"
 	"os"
 	"testing"
+
+	"github.com/steven/vaultflix/internal/model"
 )
 
 func TestParseJavBus_DASD626(t *testing.T) {
@@ -31,5 +34,16 @@ func TestParseJavBus_DASD626(t *testing.T) {
 	}
 	if got.CoverURL == "" {
 		t.Error("cover url empty")
+	}
+}
+
+func TestParseJavBus_AgeGate_ReturnsBlocked(t *testing.T) {
+	ageGateHTML := []byte(`<!DOCTYPE html><html><head><title>Age Verification</title></head><body><p>You must verify your age.</p></body></html>`)
+	_, err := parseJavBus(ageGateHTML, "DASD-626")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, model.ErrScrapeBlocked) {
+		t.Errorf("expected ErrScrapeBlocked, got %v", err)
 	}
 }
