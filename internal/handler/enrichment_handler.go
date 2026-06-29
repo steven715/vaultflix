@@ -84,7 +84,7 @@ func (h *EnrichmentHandler) AcceptSuggestion(c *gin.Context) {
 	sid := c.Param("sid")
 
 	var ov model.SuggestionOverride
-	if err := c.ShouldBindJSON(&ov); err != nil && err != io.EOF {
+	if err := c.ShouldBindJSON(&ov); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "invalid_body",
 			Message: "request body is not valid JSON",
@@ -144,7 +144,7 @@ func (h *EnrichmentHandler) StartBatch(c *gin.Context) {
 		Status string `json:"status"`
 	}
 	// Empty body is fine; ignore EOF.
-	if err := c.ShouldBindJSON(&body); err != nil && err != io.EOF {
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "invalid_body",
 			Message: "request body is not valid JSON",
