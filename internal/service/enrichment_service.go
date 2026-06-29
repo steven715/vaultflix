@@ -128,7 +128,7 @@ func (s *EnrichmentService) handleAllFailed(ctx context.Context, videoID, userID
 		Payload: map[string]string{"video_id": videoID, "code": code, "error": "all sources failed"},
 	})
 	if scrapeErr != nil {
-		return fmt.Errorf("enrich %s: all sources failed: %w", code, model.ErrSourceUnavailable)
+		return fmt.Errorf("enrich %s: all sources failed (%v): %w", code, scrapeErr, model.ErrSourceUnavailable)
 	}
 	return fmt.Errorf("enrich %s: no scrapers configured", code)
 }
