@@ -7,15 +7,19 @@ import (
 )
 
 type MinIOClient struct {
-	UploadVideoFunc                   func(ctx context.Context, objectKey, filePath string) error
-	UploadThumbnailFunc               func(ctx context.Context, objectKey, filePath string) error
-	UploadPreviewFunc                 func(ctx context.Context, objectKey, filePath string) error
-	GeneratePresignedURLFunc          func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
-	GenerateThumbnailPresignedURLFunc func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
-	GeneratePreviewPresignedURLFunc   func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
-	DeleteVideoFunc                   func(ctx context.Context, objectKey string) error
-	DeleteThumbnailFunc               func(ctx context.Context, objectKey string) error
-	DeletePreviewFunc                 func(ctx context.Context, objectKey string) error
+	UploadVideoFunc                       func(ctx context.Context, objectKey, filePath string) error
+	UploadThumbnailFunc                   func(ctx context.Context, objectKey, filePath string) error
+	UploadPreviewFunc                     func(ctx context.Context, objectKey, filePath string) error
+	UploadCoverFunc                       func(ctx context.Context, objectKey, filePath string) error
+	UploadActressAvatarFunc               func(ctx context.Context, objectKey, filePath string) error
+	GeneratePresignedURLFunc              func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GenerateThumbnailPresignedURLFunc     func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GeneratePreviewPresignedURLFunc       func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GenerateCoverPresignedURLFunc         func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GenerateActressAvatarPresignedURLFunc func(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	DeleteVideoFunc                       func(ctx context.Context, objectKey string) error
+	DeleteThumbnailFunc                   func(ctx context.Context, objectKey string) error
+	DeletePreviewFunc                     func(ctx context.Context, objectKey string) error
 }
 
 func (m *MinIOClient) UploadVideo(ctx context.Context, objectKey, filePath string) error {
@@ -79,4 +83,32 @@ func (m *MinIOClient) DeletePreview(ctx context.Context, objectKey string) error
 		return fmt.Errorf("mock: DeletePreviewFunc not set")
 	}
 	return m.DeletePreviewFunc(ctx, objectKey)
+}
+
+func (m *MinIOClient) UploadCover(ctx context.Context, objectKey, filePath string) error {
+	if m.UploadCoverFunc == nil {
+		return fmt.Errorf("mock: UploadCoverFunc not set")
+	}
+	return m.UploadCoverFunc(ctx, objectKey, filePath)
+}
+
+func (m *MinIOClient) UploadActressAvatar(ctx context.Context, objectKey, filePath string) error {
+	if m.UploadActressAvatarFunc == nil {
+		return fmt.Errorf("mock: UploadActressAvatarFunc not set")
+	}
+	return m.UploadActressAvatarFunc(ctx, objectKey, filePath)
+}
+
+func (m *MinIOClient) GenerateCoverPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	if m.GenerateCoverPresignedURLFunc == nil {
+		return "", fmt.Errorf("mock: GenerateCoverPresignedURLFunc not set")
+	}
+	return m.GenerateCoverPresignedURLFunc(ctx, objectKey, expiry)
+}
+
+func (m *MinIOClient) GenerateActressAvatarPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	if m.GenerateActressAvatarPresignedURLFunc == nil {
+		return "", fmt.Errorf("mock: GenerateActressAvatarPresignedURLFunc not set")
+	}
+	return m.GenerateActressAvatarPresignedURLFunc(ctx, objectKey, expiry)
 }

@@ -3,21 +3,30 @@ package model
 import "time"
 
 type Video struct {
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	Description      string    `json:"description"`
-	MinIOObjectKey   string    `json:"minio_object_key"`
-	ThumbnailKey     string    `json:"thumbnail_key"`
-	PreviewKey       string    `json:"preview_key"`
-	DurationSeconds  int       `json:"duration_seconds"`
-	Resolution       string    `json:"resolution"`
-	FileSizeBytes    int64     `json:"file_size_bytes"`
-	MimeType         string    `json:"mime_type"`
-	OriginalFilename string    `json:"original_filename"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	SourceID         *string   `json:"source_id,omitempty"`
-	FilePath         *string   `json:"file_path,omitempty"`
+	ID               string     `json:"id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	MinIOObjectKey   string     `json:"minio_object_key"`
+	ThumbnailKey     string     `json:"thumbnail_key"`
+	PreviewKey       string     `json:"preview_key"`
+	DurationSeconds  int        `json:"duration_seconds"`
+	Resolution       string     `json:"resolution"`
+	FileSizeBytes    int64      `json:"file_size_bytes"`
+	MimeType         string     `json:"mime_type"`
+	OriginalFilename string     `json:"original_filename"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	SourceID         *string    `json:"source_id,omitempty"`
+	FilePath         *string    `json:"file_path,omitempty"`
+	Code             string     `json:"code,omitempty"`
+	ReleaseDate      *time.Time `json:"release_date,omitempty"`
+	RuntimeMinutes   int        `json:"runtime_minutes,omitempty"`
+	Maker            string     `json:"maker,omitempty"`
+	Label            string     `json:"label,omitempty"`
+	Series           string     `json:"series,omitempty"`
+	CoverKey         string     `json:"cover_key,omitempty"`
+	EnrichmentStatus string     `json:"enrichment_status"`
+	EnrichedAt       *time.Time `json:"enriched_at,omitempty"`
 }
 
 type VideoWithTags struct {

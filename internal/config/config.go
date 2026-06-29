@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -48,6 +49,11 @@ type Config struct {
 	// Admin defaults
 	AdminDefaultUsername string
 	AdminDefaultPassword string
+
+	// Enrichment HTTP client (infra parameters; business params are per-request)
+	EnrichHTTPTimeout  time.Duration
+	EnrichUserAgent    string
+	EnrichJavBusCookie string
 }
 
 func (c *Config) DatabaseDSN() string {
@@ -88,6 +94,10 @@ func Load() (*Config, error) {
 
 		AdminDefaultUsername: getEnv("ADMIN_DEFAULT_USERNAME", "admin"),
 		AdminDefaultPassword: os.Getenv("ADMIN_DEFAULT_PASSWORD"),
+
+		EnrichHTTPTimeout:  getEnvDuration("ENRICH_HTTP_TIMEOUT", 15*time.Second),
+		EnrichUserAgent:    getEnv("ENRICH_USER_AGENT", "Vaultflix/1.0"),
+		EnrichJavBusCookie: getEnv("ENRICH_JAVBUS_COOKIE", "age=verified; existmag=all"),
 	}
 
 	if err := cfg.validateSecrets(); err != nil {
@@ -154,6 +164,15 @@ func getEnvBool(key string, fallback bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
+		}
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return fallback

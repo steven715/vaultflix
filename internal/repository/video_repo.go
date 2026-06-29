@@ -18,6 +18,9 @@ import (
 // Update returns model.ErrNotFound when the video does not exist.
 // Delete returns model.ErrNotFound when the video does not exist.
 // UpdatePreviewKey returns model.ErrNotFound when the video does not exist.
+// UpdateMetadata applies enriched scalar fields to a video and sets enrichment_status='enriched'.
+// SetEnrichmentStatus updates the enrichment_status column for the given video.
+// ListByEnrichmentStatus returns videos matching the given enrichment_status, ordered by created_at.
 type VideoRepository interface {
 	ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error)
 	Create(ctx context.Context, video *model.Video) error
@@ -33,6 +36,15 @@ type VideoRepository interface {
 	ListMissingPreviews(ctx context.Context) ([]model.Video, error)
 	// UpdatePreviewKey persists the given preview object key for the video.
 	UpdatePreviewKey(ctx context.Context, id string, previewKey string) error
+	// UpdateMetadata applies enriched scalar fields to a video and marks it as 'enriched'.
+	UpdateMetadata(ctx context.Context, id string, m model.VideoMetadataUpdate) error
+	// SetEnrichmentStatus updates the enrichment_status column for the given video.
+	SetEnrichmentStatus(ctx context.Context, id, status string) error
+	// ListByEnrichmentStatus returns all videos with the given enrichment_status, ordered by created_at.
+	ListByEnrichmentStatus(ctx context.Context, status string) ([]model.Video, error)
+	// SeedCode sets the code and enrichment_status columns for an existing video.
+	// Returns model.ErrNotFound when no video with the given id exists.
+	SeedCode(ctx context.Context, id, code, status string) error
 }
 
 var allowedSortColumns = map[string]string{
@@ -52,8 +64,8 @@ const queryExistsVideoByFilenameAndSize = `
 const queryCreateVideo = `
     INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key, preview_key,
                         duration_seconds, resolution, file_size_bytes, mime_type,
-                        original_filename, source_id, file_path)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        original_filename, source_id, file_path, code, enrichment_status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING created_at, updated_at
 `
 
@@ -121,7 +133,7 @@ func (r *videoRepository) Create(ctx context.Context, video *model.Video) error 
 	err := r.pool.QueryRow(ctx, queryCreateVideo,
 		video.ID, video.Title, video.Description, video.MinIOObjectKey, video.ThumbnailKey, video.PreviewKey,
 		video.DurationSeconds, video.Resolution, video.FileSizeBytes, video.MimeType,
-		video.OriginalFilename, video.SourceID, video.FilePath,
+		video.OriginalFilename, video.SourceID, video.FilePath, video.Code, video.EnrichmentStatus,
 	).Scan(&video.CreatedAt, &video.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create video %s: %w", video.OriginalFilename, err)
@@ -275,31 +287,4 @@ func (r *videoRepository) FindBySourceAndPath(ctx context.Context, sourceID stri
 		return nil, fmt.Errorf("failed to find video by source %s and path %s: %w", sourceID, filePath, err)
 	}
 	return &video, nil
-}
-
-func buildWhereClause(filter model.VideoFilter) (string, []interface{}) {
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	if filter.Query != "" {
-		conditions = append(conditions, "to_tsvector('simple', v.title) @@ to_tsquery('simple', $"+strconv.Itoa(argIdx)+")")
-		args = append(args, filter.Query)
-		argIdx++
-	}
-
-	if len(filter.TagIDs) > 0 {
-		conditions = append(conditions,
-			"v.id IN (SELECT vt.video_id FROM video_tags vt WHERE vt.tag_id = ANY($"+strconv.Itoa(argIdx)+") "+
-				"GROUP BY vt.video_id HAVING COUNT(DISTINCT vt.tag_id) = $"+strconv.Itoa(argIdx+1)+")")
-		args = append(args, filter.TagIDs, len(filter.TagIDs))
-		argIdx += 2
-	}
-
-	clause := ""
-	if len(conditions) > 0 {
-		clause = " WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	return clause, args
 }

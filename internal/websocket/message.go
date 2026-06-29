@@ -25,6 +25,14 @@ const (
 	TypeNotification = "notification"
 	// Client → server: heartbeat keepalive.
 	TypePing = "ping"
+	// Server → client: per-video progress during enrichment.
+	TypeEnrichProgress = "enrich_progress"
+	// Server → client: enrichment completed (suggestion staged).
+	TypeEnrichComplete = "enrich_complete"
+	// Server → client: enrichment fatal error (no code / all sources failed).
+	TypeEnrichError = "enrich_error"
+	// Server → client: batch enrichment job completed (payload = EnrichJob snapshot).
+	TypeEnrichBatchComplete = "enrich_batch_complete"
 )
 
 // NotificationPayload is the payload for TypeNotification messages.

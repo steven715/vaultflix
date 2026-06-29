@@ -2,11 +2,17 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
 # or via `task test-integration`.
 services:
-  # DB / MinIO become ephemeral (no named volume): every `up` is a clean environment
+  # DB / MinIO become ephemeral (no named volume): every `up` is a clean environment.
+  # ports !override []: the test stack talks to postgres/minio/api over the compose
+  # network by service name (API_BASE=http://vaultflix-api:8080), so it never needs to
+  # publish host ports. Dropping them lets integration run alongside a running dev stack
+  # (which already holds 5432/9000/8080) without a "port is already allocated" conflict.
   postgres:
     volumes: !override []
+    ports: !override []
   minio:
     volumes: !override []
+    ports: !override []
 
   vaultflix-api:
     # Replace base's video mounts: use the repo-internal fixture, host-OS independent
@@ -15,6 +21,7 @@ services:
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
       - ./.ci/fixtures:/mnt/host/videos:ro
+    ports: !override []
 
   test-runner:
     # The scripts log in as admin; the password must match the seeded admin

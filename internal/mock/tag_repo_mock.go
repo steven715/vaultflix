@@ -8,13 +8,14 @@ import (
 )
 
 type TagRepository struct {
-	ListFunc           func(ctx context.Context, category string) ([]model.TagWithCount, error)
-	CreateFunc         func(ctx context.Context, tag *model.Tag) error
-	GetByIDFunc        func(ctx context.Context, id int) (*model.Tag, error)
-	GetByVideoIDFunc   func(ctx context.Context, videoID string) ([]model.Tag, error)
-	GetByVideoIDsFunc  func(ctx context.Context, videoIDs []string) (map[string][]model.Tag, error)
-	AddVideoTagFunc    func(ctx context.Context, videoID string, tagID int) error
-	RemoveVideoTagFunc func(ctx context.Context, videoID string, tagID int) error
+	ListFunc              func(ctx context.Context, category string) ([]model.TagWithCount, error)
+	CreateFunc            func(ctx context.Context, tag *model.Tag) error
+	GetByIDFunc           func(ctx context.Context, id int) (*model.Tag, error)
+	GetByVideoIDFunc      func(ctx context.Context, videoID string) ([]model.Tag, error)
+	GetByVideoIDsFunc     func(ctx context.Context, videoIDs []string) (map[string][]model.Tag, error)
+	AddVideoTagFunc       func(ctx context.Context, videoID string, tagID int) error
+	RemoveVideoTagFunc    func(ctx context.Context, videoID string, tagID int) error
+	GetOrCreateByNameFunc func(ctx context.Context, name, category string) (*model.Tag, error)
 }
 
 func (m *TagRepository) List(ctx context.Context, category string) ([]model.TagWithCount, error) {
@@ -64,4 +65,11 @@ func (m *TagRepository) RemoveVideoTag(ctx context.Context, videoID string, tagI
 		return fmt.Errorf("mock: RemoveVideoTagFunc not set")
 	}
 	return m.RemoveVideoTagFunc(ctx, videoID, tagID)
+}
+
+func (m *TagRepository) GetOrCreateByName(ctx context.Context, name, category string) (*model.Tag, error) {
+	if m.GetOrCreateByNameFunc == nil {
+		return nil, fmt.Errorf("mock: GetOrCreateByNameFunc not set")
+	}
+	return m.GetOrCreateByNameFunc(ctx, name, category)
 }

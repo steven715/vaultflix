@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ import (
 	"github.com/steven/vaultflix/internal/handler"
 	"github.com/steven/vaultflix/internal/middleware"
 	"github.com/steven/vaultflix/internal/repository"
+	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
 	"github.com/steven/vaultflix/internal/websocket"
 )
@@ -138,6 +140,23 @@ func main() {
 	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 
+	// Enrichment: scraper clients, service, and handler
+	actressRepo := repository.NewActressRepository(pool)
+	suggestionRepo := repository.NewSuggestionRepository(pool)
+	enrichHTTPClient := scraper.NewClient(scraper.ClientOptions{
+		Timeout:     cfg.EnrichHTTPTimeout,
+		UserAgent:   cfg.EnrichUserAgent,
+		MinInterval: 2 * time.Second,
+		MaxRetries:  2,
+		Cookies:     scraper.ParseCookieHeader(cfg.EnrichJavBusCookie),
+	})
+	scrapers := []scraper.MetadataScraper{
+		scraper.NewJavBusScraper(enrichHTTPClient, ""),
+		// JavLibrary deferred to Phase 1.x (Cloudflare-blocked); see spec §14.
+	}
+	enrichService := service.NewEnrichmentService(scrapers, videoRepo, actressRepo, suggestionRepo, tagRepo, minioService, hub)
+	enrichHandler := handler.NewEnrichmentHandler(enrichService)
+
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
 
@@ -225,6 +244,16 @@ func main() {
 		api.POST("/admin/videos/backfill-previews", backfillHandler.Start)
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
+
+		// Enrichment endpoints
+		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)
+		api.GET("/videos/:id/suggestions", enrichHandler.ListSuggestions)
+		api.POST("/videos/:id/suggestions/:sid/accept", enrichHandler.AcceptSuggestion)
+		api.DELETE("/videos/:id/suggestions/:sid", enrichHandler.RejectSuggestion)
+		api.POST("/enrich-jobs", enrichHandler.StartBatch)
+		api.GET("/enrich-jobs/active", enrichHandler.ActiveJob)
+		api.DELETE("/enrich-jobs/:jid", enrichHandler.CancelBatch)
+		api.POST("/enrich-jobs/backfill-codes", enrichHandler.BackfillCodes)
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)

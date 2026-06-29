@@ -18,6 +18,7 @@ import (
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
+	"github.com/steven/vaultflix/internal/scraper/avid"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
@@ -271,6 +272,8 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		FilePath:         &relPath,
 	}
 
+	seedEnrichment(video, filename)
+
 	if err := s.videoRepo.Create(ctx, video); err != nil {
 		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
 	}
@@ -286,6 +289,18 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 	)
 
 	return fileResult{Status: "success"}
+}
+
+// seedEnrichment extracts a JAV code from the filename and sets Code and
+// EnrichmentStatus on video before it is persisted. If a code is found the
+// status is set to pending (eligible for batch enrichment); otherwise no_code.
+func seedEnrichment(video *model.Video, filename string) {
+	if code, ok := avid.ExtractCode(filename); ok {
+		video.Code = code
+		video.EnrichmentStatus = model.EnrichmentPending
+	} else {
+		video.EnrichmentStatus = model.EnrichmentNoCode
+	}
 }
 
 // GetJob returns a snapshot of the job with the given ID. Returns

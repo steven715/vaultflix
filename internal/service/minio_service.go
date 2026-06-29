@@ -27,9 +27,13 @@ type MinIOClient interface {
 	UploadVideo(ctx context.Context, objectKey, filePath string) error
 	UploadThumbnail(ctx context.Context, objectKey, filePath string) error
 	UploadPreview(ctx context.Context, objectKey, filePath string) error
+	UploadCover(ctx context.Context, objectKey, filePath string) error
+	UploadActressAvatar(ctx context.Context, objectKey, filePath string) error
 	GeneratePresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
 	GenerateThumbnailPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
 	GeneratePreviewPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GenerateCoverPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	GenerateActressAvatarPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
 	DeleteVideo(ctx context.Context, objectKey string) error
 	DeleteThumbnail(ctx context.Context, objectKey string) error
 	DeletePreview(ctx context.Context, objectKey string) error
@@ -145,6 +149,46 @@ func (s *minIOService) UploadPreview(ctx context.Context, objectKey, filePath st
 
 func (s *minIOService) GeneratePreviewPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
 	return s.presignCached(ctx, s.previewBucket, "preview", "preview", objectKey, expiry)
+}
+
+// uploadImage opens filePath, stats it, and PutObjects it into thumbnailBucket
+// as image/jpeg. label is used only in error messages.
+func (s *minIOService) uploadImage(ctx context.Context, objectKey, filePath, label string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open %s file %s: %w", label, filePath, err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat %s file %s: %w", label, filePath, err)
+	}
+
+	_, err = s.client.PutObject(ctx, s.thumbnailBucket, objectKey, file, stat.Size(), minio.PutObjectOptions{
+		ContentType: "image/jpeg",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload %s to minio %s: %w", label, objectKey, err)
+	}
+
+	return nil
+}
+
+func (s *minIOService) UploadCover(ctx context.Context, objectKey, filePath string) error {
+	return s.uploadImage(ctx, objectKey, filePath, "cover")
+}
+
+func (s *minIOService) UploadActressAvatar(ctx context.Context, objectKey, filePath string) error {
+	return s.uploadImage(ctx, objectKey, filePath, "actress avatar")
+}
+
+func (s *minIOService) GenerateCoverPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	return s.presignCached(ctx, s.thumbnailBucket, "cover", "cover", objectKey, expiry)
+}
+
+func (s *minIOService) GenerateActressAvatarPresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	return s.presignCached(ctx, s.thumbnailBucket, "avatar", "avatar", objectKey, expiry)
 }
 
 // presignCached produces a presigned GET URL and memoises it in urlCache. The

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -183,5 +184,99 @@ func TestStartAsync_ScanError(t *testing.T) {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
+	}
+}
+
+// TestSeedEnrichment verifies the seedEnrichment helper sets Code and
+// EnrichmentStatus correctly for filenames with and without a JAV code.
+func TestSeedEnrichment(t *testing.T) {
+	cases := []struct {
+		filename             string
+		wantCode             string
+		wantEnrichmentStatus string
+	}{
+		{
+			filename:             "DASD-626.mp4",
+			wantCode:             "DASD-626",
+			wantEnrichmentStatus: model.EnrichmentPending,
+		},
+		{
+			filename:             "家庭聚會.mp4",
+			wantCode:             "",
+			wantEnrichmentStatus: model.EnrichmentNoCode,
+		},
+		{
+			filename:             "FC2-PPV-1234567.mkv",
+			wantCode:             "FC2-PPV-1234567",
+			wantEnrichmentStatus: model.EnrichmentPending,
+		},
+		{
+			filename:             "random_home_video.mp4",
+			wantCode:             "",
+			wantEnrichmentStatus: model.EnrichmentNoCode,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.filename, func(t *testing.T) {
+			v := &model.Video{}
+			seedEnrichment(v, tc.filename)
+			if v.Code != tc.wantCode {
+				t.Errorf("Code: got %q, want %q", v.Code, tc.wantCode)
+			}
+			if v.EnrichmentStatus != tc.wantEnrichmentStatus {
+				t.Errorf("EnrichmentStatus: got %q, want %q", v.EnrichmentStatus, tc.wantEnrichmentStatus)
+			}
+		})
+	}
+}
+
+// TestSeedEnrichment_CreateCapture verifies that a Video passed through
+// seedEnrichment before Create carries the expected Code and EnrichmentStatus.
+// This mirrors the exact call sequence in processOneFile.
+func TestSeedEnrichment_CreateCapture(t *testing.T) {
+	cases := []struct {
+		name                 string
+		filename             string
+		wantCode             string
+		wantEnrichmentStatus string
+	}{
+		{
+			name:                 "JAV code extracted → pending",
+			filename:             "DASD-626.mp4",
+			wantCode:             "DASD-626",
+			wantEnrichmentStatus: model.EnrichmentPending,
+		},
+		{
+			name:                 "no JAV code → no_code",
+			filename:             "家庭聚會.mp4",
+			wantCode:             "",
+			wantEnrichmentStatus: model.EnrichmentNoCode,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var captured model.Video
+			videoRepo := &mock.VideoRepository{
+				CreateFunc: func(_ context.Context, v *model.Video) error {
+					captured = *v
+					return nil
+				},
+			}
+
+			v := &model.Video{OriginalFilename: tc.filename}
+			seedEnrichment(v, tc.filename)
+			if err := videoRepo.CreateFunc(context.Background(), v); err != nil {
+				t.Fatalf("CreateFunc: %v", err)
+			}
+
+			if captured.Code != tc.wantCode {
+				t.Errorf("Code: got %q, want %q", captured.Code, tc.wantCode)
+			}
+			if captured.EnrichmentStatus != tc.wantEnrichmentStatus {
+				t.Errorf("EnrichmentStatus: got %q, want %q", captured.EnrichmentStatus, tc.wantEnrichmentStatus)
+			}
+		})
 	}
 }
