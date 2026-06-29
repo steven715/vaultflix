@@ -221,3 +221,70 @@ func TestRejectSuggestion_DeletesAndResetsStatusWhenLast(t *testing.T) {
 		t.Errorf("enrichment status = %q, want %q", statusSet, model.EnrichmentNone)
 	}
 }
+
+// seedCall records a single SeedCode invocation.
+type seedCall struct {
+	id     string
+	code   string
+	status string
+}
+
+func TestBackfillCodes_SeedsPendingAndNoCode(t *testing.T) {
+	videos := []model.Video{
+		{ID: "v1", OriginalFilename: "DASD-626.mp4"},
+		{ID: "v2", OriginalFilename: "SSIS-001.mkv"},
+		{ID: "v3", OriginalFilename: "家庭聚會.mp4"},
+	}
+
+	var calls []seedCall
+
+	videoRepo := &mock.VideoRepository{
+		ListByEnrichmentStatusFunc: func(_ context.Context, status string) ([]model.Video, error) {
+			if status != model.EnrichmentNone {
+				t.Errorf("ListByEnrichmentStatus called with %q, want %q", status, model.EnrichmentNone)
+			}
+			return videos, nil
+		},
+		SeedCodeFunc: func(_ context.Context, id, code, status string) error {
+			calls = append(calls, seedCall{id: id, code: code, status: status})
+			return nil
+		},
+	}
+
+	svc := NewEnrichmentService(
+		nil,
+		videoRepo,
+		&mock.ActressRepository{},
+		&mock.SuggestionRepository{},
+		&mock.TagRepository{},
+		&mock.MinIOClient{},
+		&mock.Notifier{},
+	)
+
+	seeded, noCode, err := svc.BackfillCodes(context.Background())
+	if err != nil {
+		t.Fatalf("BackfillCodes returned unexpected error: %v", err)
+	}
+	if seeded != 2 {
+		t.Errorf("seeded = %d, want 2", seeded)
+	}
+	if noCode != 1 {
+		t.Errorf("noCode = %d, want 1", noCode)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("SeedCode called %d times, want 3", len(calls))
+	}
+
+	// v1: DASD-626.mp4 → code "DASD-626", status pending
+	if calls[0].id != "v1" || calls[0].code != "DASD-626" || calls[0].status != model.EnrichmentPending {
+		t.Errorf("call[0] = %+v, want {v1 DASD-626 pending}", calls[0])
+	}
+	// v2: SSIS-001.mkv → code non-empty, status pending
+	if calls[1].id != "v2" || calls[1].code == "" || calls[1].status != model.EnrichmentPending {
+		t.Errorf("call[1] = %+v, want code non-empty and status pending", calls[1])
+	}
+	// v3: 家庭聚會.mp4 → no code, status no_code
+	if calls[2].id != "v3" || calls[2].code != "" || calls[2].status != model.EnrichmentNoCode {
+		t.Errorf("call[2] = %+v, want {v3 '' no_code}", calls[2])
+	}
+}
