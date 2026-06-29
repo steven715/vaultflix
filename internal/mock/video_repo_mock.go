@@ -17,6 +17,9 @@ type VideoRepository struct {
 	FindBySourceAndPathFunc     func(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
 	ListMissingPreviewsFunc     func(ctx context.Context) ([]model.Video, error)
 	UpdatePreviewKeyFunc        func(ctx context.Context, id string, previewKey string) error
+	UpdateMetadataFunc          func(ctx context.Context, id string, m model.VideoMetadataUpdate) error
+	SetEnrichmentStatusFunc     func(ctx context.Context, id, status string) error
+	ListByEnrichmentStatusFunc  func(ctx context.Context, status string) ([]model.Video, error)
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -80,4 +83,25 @@ func (m *VideoRepository) UpdatePreviewKey(ctx context.Context, id string, previ
 		return fmt.Errorf("mock: UpdatePreviewKeyFunc not set")
 	}
 	return m.UpdatePreviewKeyFunc(ctx, id, previewKey)
+}
+
+func (m *VideoRepository) UpdateMetadata(ctx context.Context, id string, upd model.VideoMetadataUpdate) error {
+	if m.UpdateMetadataFunc == nil {
+		return fmt.Errorf("mock: UpdateMetadataFunc not set")
+	}
+	return m.UpdateMetadataFunc(ctx, id, upd)
+}
+
+func (m *VideoRepository) SetEnrichmentStatus(ctx context.Context, id, status string) error {
+	if m.SetEnrichmentStatusFunc == nil {
+		return fmt.Errorf("mock: SetEnrichmentStatusFunc not set")
+	}
+	return m.SetEnrichmentStatusFunc(ctx, id, status)
+}
+
+func (m *VideoRepository) ListByEnrichmentStatus(ctx context.Context, status string) ([]model.Video, error) {
+	if m.ListByEnrichmentStatusFunc == nil {
+		return nil, fmt.Errorf("mock: ListByEnrichmentStatusFunc not set")
+	}
+	return m.ListByEnrichmentStatusFunc(ctx, status)
 }

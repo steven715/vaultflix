@@ -17,6 +17,7 @@ import (
 // Create returns model.ErrAlreadyExists when the tag name is duplicated.
 // AddVideoTag returns model.ErrConflict when the relation already exists.
 // RemoveVideoTag returns model.ErrNotFound when the relation does not exist.
+// GetOrCreateByName upserts a tag by name and returns the full tag record.
 type TagRepository interface {
 	List(ctx context.Context, category string) ([]model.TagWithCount, error)
 	Create(ctx context.Context, tag *model.Tag) error
@@ -25,6 +26,9 @@ type TagRepository interface {
 	GetByVideoIDs(ctx context.Context, videoIDs []string) (map[string][]model.Tag, error)
 	AddVideoTag(ctx context.Context, videoID string, tagID int) error
 	RemoveVideoTag(ctx context.Context, videoID string, tagID int) error
+	// GetOrCreateByName inserts a tag with the given name and category if it does not exist,
+	// or returns the existing tag if the name is already taken. Returns the full tag record.
+	GetOrCreateByName(ctx context.Context, name, category string) (*model.Tag, error)
 }
 
 const queryListTags = `
@@ -78,6 +82,12 @@ const queryGetTagsByVideoIDs = `
     INNER JOIN video_tags vt ON t.id = vt.tag_id
     WHERE vt.video_id = ANY($1)
     ORDER BY t.name
+`
+
+const queryGetOrCreateTag = `
+    INSERT INTO tags (name, category) VALUES ($1, $2)
+    ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id, name, category
 `
 
 type tagRepository struct {
@@ -211,4 +221,14 @@ func (r *tagRepository) GetByVideoIDs(ctx context.Context, videoIDs []string) (m
 	}
 
 	return result, nil
+}
+
+func (r *tagRepository) GetOrCreateByName(ctx context.Context, name, category string) (*model.Tag, error) {
+	var tag model.Tag
+	err := r.pool.QueryRow(ctx, queryGetOrCreateTag, name, category).
+		Scan(&tag.ID, &tag.Name, &tag.Category)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create tag %s: %w", name, err)
+	}
+	return &tag, nil
 }
