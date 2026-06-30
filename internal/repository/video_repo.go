@@ -45,6 +45,12 @@ type VideoRepository interface {
 	// SeedCode sets the code and enrichment_status columns for an existing video.
 	// Returns model.ErrNotFound when no video with the given id exists.
 	SeedCode(ctx context.Context, id, code, status string) error
+	// UpdateCodecs persists the video and audio codec for the given video.
+	// Returns model.ErrNotFound when no video with the given id exists.
+	UpdateCodecs(ctx context.Context, id, videoCodec, audioCodec string) error
+	// ListMissingCodecs returns videos whose video_codec is NULL or empty and
+	// whose source_id and file_path are non-null, up to limit rows.
+	ListMissingCodecs(ctx context.Context, limit int) ([]model.Video, error)
 }
 
 var allowedSortColumns = map[string]string{

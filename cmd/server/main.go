@@ -176,6 +176,9 @@ func main() {
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 	backfillHandler := handler.NewBackfillHandler(backfillService)
 
+	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceRepo)
+	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
+
 	wsHandler := handler.NewWSHandler(hub)
 
 	// Initialize default admin account
@@ -252,6 +255,7 @@ func main() {
 		api.POST("/admin/videos/backfill-previews", backfillHandler.Start)
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
+		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
 
 		// Enrichment endpoints
 		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)
