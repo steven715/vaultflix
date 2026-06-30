@@ -13,6 +13,8 @@ type Video struct {
 	Resolution       string     `json:"resolution"`
 	FileSizeBytes    int64      `json:"file_size_bytes"`
 	MimeType         string     `json:"mime_type"`
+	VideoCodec       string     `json:"video_codec,omitempty"`
+	AudioCodec       string     `json:"audio_codec,omitempty"`
 	OriginalFilename string     `json:"original_filename"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -38,9 +40,10 @@ type VideoWithTags struct {
 
 type VideoDetail struct {
 	VideoWithTags
-	StreamURL     string `json:"stream_url"`
-	IsFavorited   bool   `json:"is_favorited"`
-	WatchProgress int    `json:"watch_progress"`
+	StreamURL     string   `json:"stream_url"`
+	PlayMode      PlayMode `json:"play_mode"`
+	IsFavorited   bool     `json:"is_favorited"`
+	WatchProgress int      `json:"watch_progress"`
 }
 
 type UpdateVideoInput struct {
@@ -56,3 +59,15 @@ type VideoFilter struct {
 	Query     string
 	TagIDs    []int
 }
+
+// PlayMode 表示前端應如何播放這部影片。
+type PlayMode string
+
+const (
+	// PlayModeDirect：容器與編碼皆瀏覽器原生相容，直接 http.ServeFile。
+	PlayModeDirect PlayMode = "direct"
+	// PlayModeRemux：編碼相容、容器不相容，走即時 HLS -c copy。
+	PlayModeRemux PlayMode = "remux"
+	// PlayModeTranscode：編碼不相容，需真正轉碼（Phase 2 才支援）。
+	PlayModeTranscode PlayMode = "transcode"
+)
