@@ -70,7 +70,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// Scope-limited stream tokens may be used ONLY on the streaming route
+		// Scope-limited stream tokens may be used ONLY on the allowed streaming routes
 		// and ONLY for the video they were issued for. This bounds the damage
 		// if such a token leaks via the URL: it cannot reach any other endpoint
 		// nor stream a different video, and it expires quickly.

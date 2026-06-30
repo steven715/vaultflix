@@ -50,6 +50,9 @@ func (r *videoRepository) ListMissingCodecs(ctx context.Context, limit int) ([]m
 		}
 		videos = append(videos, v)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate videos missing codecs: %w", err)
+	}
 
 	if videos == nil {
 		videos = []model.Video{}

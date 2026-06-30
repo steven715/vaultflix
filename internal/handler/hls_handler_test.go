@@ -40,3 +40,72 @@ func TestHLSSegment_RejectsNonSegmentName(t *testing.T) {
 		t.Errorf("status = %d, want 400", w.Code)
 	}
 }
+
+func TestRewritePlaylistTokens(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		token    string
+		wantLine string // a line that must appear in output
+	}{
+		{
+			name:     "comment lines pass through unchanged",
+			raw:      "#EXTM3U\n#EXT-X-VERSION:3\n",
+			token:    "mytoken",
+			wantLine: "#EXTM3U",
+		},
+		{
+			name:     "segment URI gets token appended",
+			raw:      "#EXTM3U\nseg00000.ts\n",
+			token:    "mytoken",
+			wantLine: "seg00000.ts?token=mytoken",
+		},
+		{
+			name:     "empty token leaves raw unchanged",
+			raw:      "#EXTM3U\nseg00000.ts\n",
+			token:    "",
+			wantLine: "seg00000.ts",
+		},
+		{
+			name:     "segment URI already with query gets amp-token",
+			raw:      "#EXTM3U\nseg00000.ts?foo=bar\n",
+			token:    "mytoken",
+			wantLine: "seg00000.ts?foo=bar&token=mytoken",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := string(rewritePlaylistTokens([]byte(tc.raw), tc.token))
+			found := false
+			for _, line := range splitLines(got) {
+				if line == tc.wantLine {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("rewritePlaylistTokens output:\n%s\ndoes not contain expected line: %q", got, tc.wantLine)
+			}
+		})
+	}
+}
+
+// splitLines splits s by newline, filtering empty strings.
+func splitLines(s string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			line := s[start:i]
+			if line != "" {
+				out = append(out, line)
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) && s[start:] != "" {
+		out = append(out, s[start:])
+	}
+	return out
+}

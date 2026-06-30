@@ -4,8 +4,10 @@
 # 測試項目:
 #   1. 確認 sample_h264.mkv 已匯入且 play_mode == "remux"
 #   2. 取得 stream token
-#   3. GET /api/videos/:id/hls/index.m3u8?token= → 200 且 body 含 #EXTM3U
-#   4. 從 playlist 解出第一個 segment，GET /api/videos/:id/hls/:segment?token= → 200
+#   3. GET /api/videos/:id/hls/seg00000.ts（無 token）→ 401
+#   4. GET /api/videos/:id/hls/index.m3u8?token= → 200 且 body 含 #EXTM3U
+#   5. 確認 playlist 的 segment 行含有 token= 參數
+#   6. 從 playlist 取出含 token 的 segment URI，GET → 200
 # 前置條件: 先跑 test_import.sh（sample_h264.mkv 在 /mnt/host/videos）
 # =============================================================================
 
@@ -91,10 +93,20 @@ STREAM_TOKEN=$(echo "$TOKEN_RESP" | jq -r '.data.token // empty')
 assert_not_empty "stream token 不為空" "$STREAM_TOKEN"
 
 # =====================================================================
-# [4] GET HLS playlist — 200 + body 含 #EXTM3U
+# [4] 無 token 請求 segment → 401
 # =====================================================================
 echo ""
-bold "[4] GET /api/videos/:id/hls/index.m3u8 — 200 + #EXTM3U"
+bold "[4] GET /api/videos/:id/hls/seg00000.ts（無 token）→ 401"
+
+NO_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${API_BASE}/api/videos/${MKV_ID}/hls/seg00000.ts")
+assert_eq "無 token 請求 segment 回 401" "401" "$NO_TOKEN_CODE"
+
+# =====================================================================
+# [5] GET HLS playlist — 200 + body 含 #EXTM3U
+# =====================================================================
+echo ""
+bold "[5] GET /api/videos/:id/hls/index.m3u8 — 200 + #EXTM3U"
 
 PLAYLIST_CODE=$(curl -s -o /tmp/hls_playlist.m3u8 -w "%{http_code}" \
     "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${STREAM_TOKEN}")
@@ -104,29 +116,40 @@ PLAYLIST_BODY=$(cat /tmp/hls_playlist.m3u8)
 assert_contains "playlist 包含 #EXTM3U" "$PLAYLIST_BODY" "#EXTM3U"
 
 # =====================================================================
-# [5] 解出第一個 segment 並 GET 它 → 200
+# [6] 確認 playlist 的 segment 行含有 token= 參數
+#     輪詢直到 playlist 包含至少一個 segment 行
 # =====================================================================
 echo ""
-bold "[5] GET 第一個 HLS segment → 200"
+bold "[6] 確認 playlist segment 行含有 token= 參數"
 
-# 從 playlist 取第一個 seg*.ts 行（playlist 可能是 event 型，會持續更新）
-# 給 ffmpeg 最多 10s 產出第一個 segment，輪詢直到解析到 segment 名稱
-FIRST_SEG=""
+FIRST_SEG_URI=""
 for i in $(seq 1 20); do
     PLAYLIST_NOW=$(curl -s \
         "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${STREAM_TOKEN}" 2>/dev/null || echo "")
-    FIRST_SEG=$(echo "$PLAYLIST_NOW" | grep -E '^seg[0-9]{5}\.ts$' | head -1 || echo "")
-    if [ -n "$FIRST_SEG" ]; then
+    # segment URI 行：含 token= 的 seg*.ts 行
+    FIRST_SEG_URI=$(echo "$PLAYLIST_NOW" | grep -E '^seg[0-9]{5}\.ts\?token=' | head -1 || echo "")
+    if [ -n "$FIRST_SEG_URI" ]; then
         break
     fi
     sleep 0.5
 done
 
-assert_not_empty "playlist 包含至少一個 segment 行" "$FIRST_SEG"
+assert_not_empty "playlist 含有帶 token= 的 segment 行" "$FIRST_SEG_URI"
+
+# =====================================================================
+# [7] 用 playlist 中帶 token 的完整 URI 請求 segment → 200
+# =====================================================================
+echo ""
+bold "[7] GET 帶 token 的 segment URI → 200"
+
+# FIRST_SEG_URI 格式: seg00000.ts?token=<value>
+# 需要拆出 segment 名稱和 query 部分
+FIRST_SEG_NAME=$(echo "$FIRST_SEG_URI" | cut -d'?' -f1)
+FIRST_SEG_QUERY=$(echo "$FIRST_SEG_URI" | cut -d'?' -f2-)
 
 SEG_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-    "${API_BASE}/api/videos/${MKV_ID}/hls/${FIRST_SEG}?token=${STREAM_TOKEN}")
-assert_eq "第一個 segment (${FIRST_SEG}) 回 200" "200" "$SEG_CODE"
+    "${API_BASE}/api/videos/${MKV_ID}/hls/${FIRST_SEG_NAME}?${FIRST_SEG_QUERY}")
+assert_eq "第一個 segment (${FIRST_SEG_NAME}) 帶 token 回 200" "200" "$SEG_CODE"
 
 # ---------------------------------------------------------------------------
 print_summary "HLS remux 播放鏈"

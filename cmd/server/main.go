@@ -163,7 +163,7 @@ func main() {
 
 	transcoder := streaming.NewFFmpegTranscoder()
 	streamManager := streaming.NewManager(transcoder, cfg.TranscodeCacheDir, 60*time.Second)
-	streamManager.StartSweeper(context.Background())
+	streamManager.StartSweeper(ctx)
 	hlsHandler := handler.NewHLSHandler(videoService, streamManager)
 
 	authHandler := handler.NewAuthHandler(authService)

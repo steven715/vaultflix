@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,12 +33,41 @@ func NewHLSHandler(videoSvc *service.VideoService, mgr *streaming.Manager) *HLSH
 	return &HLSHandler{videoService: videoSvc, manager: mgr}
 }
 
-// Playlist 啟動/取得 HLS session 並回傳 playlist 檔案。
+// rewritePlaylistTokens rewrites segment URIs in an m3u8 playlist to append
+// a token query parameter. Lines starting with '#' or blank lines pass through
+// unchanged. Non-comment, non-empty lines (segment URIs) get '?token=<escaped>'
+// appended if they do not already contain '?', or '&token=<escaped>' if they do.
+// If token is empty the raw bytes are returned unchanged.
+func rewritePlaylistTokens(raw []byte, token string) []byte {
+	if token == "" {
+		return raw
+	}
+	escaped := url.QueryEscape(token)
+	var buf bytes.Buffer
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			buf.WriteString(line)
+		} else {
+			if strings.Contains(line, "?") {
+				buf.WriteString(line + "&token=" + escaped)
+			} else {
+				buf.WriteString(line + "?token=" + escaped)
+			}
+		}
+		buf.WriteByte('\n')
+	}
+	return buf.Bytes()
+}
+
+// Playlist 啟動/取得 HLS session 並回傳 playlist 檔案（segment URI 已內嵌 token）。
 // GET /api/videos/:id/hls/index.m3u8
 func (h *HLSHandler) Playlist(c *gin.Context) {
 	ctx := c.Request.Context()
 	videoID := c.Param("id")
 	userID := c.GetString("user_id")
+	token := c.Query("token")
 
 	inputPath, err := h.videoService.ResolveDiskPath(ctx, videoID)
 	if err != nil {
@@ -62,9 +95,19 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Type", "application/vnd.apple.mpegurl")
+	raw, err := os.ReadFile(playlistPath)
+	if err != nil {
+		slog.Error("failed to read playlist", "error", err, "video_id", videoID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to read playlist",
+		})
+		return
+	}
+
+	rewritten := rewritePlaylistTokens(raw, token)
 	c.Header("Cache-Control", "no-cache")
-	c.File(playlistPath)
+	c.Data(http.StatusOK, "application/vnd.apple.mpegurl", rewritten)
 }
 
 // Segment 回傳指定 .ts 分段檔案。
