@@ -54,6 +54,10 @@ type Config struct {
 	EnrichHTTPTimeout  time.Duration
 	EnrichUserAgent    string
 	EnrichJavBusCookie string
+
+	// HLS transcode cache directory. A writable directory where FFmpeg writes
+	// per-video HLS segments. Mounted as a named Docker volume in production.
+	TranscodeCacheDir string
 }
 
 func (c *Config) DatabaseDSN() string {
@@ -98,6 +102,8 @@ func Load() (*Config, error) {
 		EnrichHTTPTimeout:  getEnvDuration("ENRICH_HTTP_TIMEOUT", 15*time.Second),
 		EnrichUserAgent:    getEnv("ENRICH_USER_AGENT", "Vaultflix/1.0"),
 		EnrichJavBusCookie: getEnv("ENRICH_JAVBUS_COOKIE", "age=verified; existmag=all"),
+
+		TranscodeCacheDir: getEnv("TRANSCODE_CACHE_DIR", "/var/cache/vaultflix/transcode"),
 	}
 
 	if err := cfg.validateSecrets(); err != nil {

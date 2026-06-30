@@ -21,6 +21,7 @@ import (
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
+	"github.com/steven/vaultflix/internal/streaming"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
@@ -160,6 +161,11 @@ func main() {
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
 
+	transcoder := streaming.NewFFmpegTranscoder()
+	streamManager := streaming.NewManager(transcoder, cfg.TranscodeCacheDir, 60*time.Second)
+	streamManager.StartSweeper(context.Background())
+	hlsHandler := handler.NewHLSHandler(videoService, streamManager)
+
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
 	tagHandler := handler.NewTagHandler(tagRepo, videoRepo)
@@ -203,6 +209,8 @@ func main() {
 		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
 		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
 		api.GET("/videos/:id/stream", videoHandler.Stream)
+		api.GET("/videos/:id/hls/index.m3u8", hlsHandler.Playlist)
+		api.GET("/videos/:id/hls/:segment", hlsHandler.Segment)
 		api.GET("/videos/:id/stream-token", authHandler.StreamToken)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
