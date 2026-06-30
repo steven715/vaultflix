@@ -96,14 +96,19 @@ export default function PlayerPage() {
 
   // remux 影片用 hls.js 播放即時 HLS；direct 影片維持原生 src。
   useEffect(() => {
-    if (!video || video.play_mode !== 'remux' || !streamToken || !videoRef.current) return
+    const videoID = video?.id
+    const playMode = video?.play_mode
+    if (!videoID || playMode !== 'remux' || !streamToken || !videoRef.current) return
     const el = videoRef.current
-    const url = `/api/videos/${video.id}/hls/index.m3u8?token=${streamToken}`
+    const url = `/api/videos/${videoID}/hls/index.m3u8?token=${streamToken}`
 
     // Safari 原生支援 HLS。
     if (el.canPlayType('application/vnd.apple.mpegurl')) {
       el.src = url
-      return
+      return () => {
+        el.removeAttribute('src')
+        el.load()
+      }
     }
     if (!Hls.isSupported()) {
       setError('此瀏覽器不支援串流播放')
@@ -115,7 +120,7 @@ export default function PlayerPage() {
     return () => {
       hls.destroy()
     }
-  }, [video, streamToken])
+  }, [video?.id, video?.play_mode, streamToken])
 
   // Keyboard shortcuts: space toggles play/pause, arrows seek ±5s.
   useEffect(() => {
