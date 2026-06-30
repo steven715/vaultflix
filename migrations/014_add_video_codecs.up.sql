@@ -1,0 +1,2 @@
+ALTER TABLE videos ADD COLUMN video_codec VARCHAR(64);
+ALTER TABLE videos ADD COLUMN audio_codec VARCHAR(64);
