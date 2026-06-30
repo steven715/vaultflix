@@ -24,6 +24,16 @@ describe('AdminTopbar', () => {
     expect(screen.getByText('帳號')).toBeInTheDocument()
   })
 
+  it('renders a 回前台 link back to the user-facing site', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/library']}>
+        <AdminTopbar />
+      </MemoryRouter>,
+    )
+    const back = screen.getByRole('link', { name: '回前台' })
+    expect(back).toHaveAttribute('href', '/')
+  })
+
   it('navigates to library with q on search input', async () => {
     render(
       <MemoryRouter initialEntries={['/admin/users']}>

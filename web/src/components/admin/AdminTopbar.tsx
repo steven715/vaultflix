@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { adminPageTitle } from '../../lib/adminNav'
 
@@ -41,6 +41,16 @@ export default function AdminTopbar() {
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
+        <Link
+          to="/"
+          title="回前台"
+          className="flex items-center gap-1.5 text-xs text-muted hover:text-cream bg-surface-2 rounded-pill px-2.5 py-1 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+          </svg>
+          <span>回前台</span>
+        </Link>
         <span className="hidden md:flex items-center gap-1.5 text-xs font-mono text-muted bg-surface-2 rounded-pill px-2.5 py-1">
           <span className="w-1.5 h-1.5 rounded-full bg-live" /> API 正常 · 8080
         </span>
@@ -55,6 +65,8 @@ export default function AdminTopbar() {
             <>
               <div className="fixed inset-0" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 mt-2 w-36 bg-surface-2 rounded-card shadow-float py-1 z-10 border border-border">
+                <Link to="/" onClick={() => setMenuOpen(false)}
+                  className="block px-3 py-1.5 text-sm text-muted hover:bg-surface hover:text-cream">回前台</Link>
                 <button onClick={() => { logout(); setMenuOpen(false) }}
                   className="w-full text-left px-3 py-1.5 text-sm text-muted hover:bg-surface hover:text-cream">登出</button>
               </div>
