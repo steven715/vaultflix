@@ -133,7 +133,7 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
 	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
-	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
+	videoService := service.NewVideoService(videoRepo, mediaSourceRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
 

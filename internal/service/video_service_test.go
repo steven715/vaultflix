@@ -40,7 +40,7 @@ func TestVideoService_GetByID_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	detail, err := svc.GetByID(context.Background(), "vid-1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -69,7 +69,7 @@ func TestVideoService_GetByID_NotFound(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	_, err := svc.GetByID(context.Background(), "nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -102,7 +102,7 @@ func TestVideoService_List_WithTags(t *testing.T) {
 	}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	result, total, err := svc.List(context.Background(), model.VideoFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -152,7 +152,7 @@ func TestVideoService_List_WithThumbnailURLs(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	result, _, err := svc.List(context.Background(), model.VideoFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -175,7 +175,7 @@ func TestVideoService_List_EmptyResult(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	result, total, err := svc.List(context.Background(), model.VideoFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -219,7 +219,7 @@ func TestVideoService_Delete_MinIOFailure(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	err := svc.Delete(context.Background(), "vid-1")
 
 	// Delete should succeed even if MinIO fails
@@ -250,7 +250,7 @@ func TestVideoService_Update_Success(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	input := model.UpdateVideoInput{Title: "New Title", Description: "New desc"}
 	result, err := svc.Update(context.Background(), "vid-1", input)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestVideoService_Update_NotFound(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	_, err := svc.Update(context.Background(), "nonexistent", model.UpdateVideoInput{Title: "x"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -312,7 +312,7 @@ func TestVideoService_Delete_RemovesPreview(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	if err := svc.Delete(context.Background(), "vid-1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestVideoService_Delete_PreviewFailure_DoesNotPropagate(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	if err := svc.Delete(context.Background(), "vid-1"); err != nil {
 		t.Fatalf("expected nil error (preview failure is best-effort), got %v", err)
 	}
@@ -357,7 +357,7 @@ func TestVideoService_Delete_NotFound(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	err := svc.Delete(context.Background(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -396,7 +396,7 @@ func TestVideoService_GetByID_LocalPathMode(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	detail, err := svc.GetByID(context.Background(), "vid-1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -431,7 +431,7 @@ func TestGetByID_SetsPlayModeRemux(t *testing.T) {
 	}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	detail, err := svc.GetByID(context.Background(), "v1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -477,7 +477,7 @@ func TestVideoService_Delete_LocalPathMode(t *testing.T) {
 		},
 	}
 
-	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	err := svc.Delete(context.Background(), "vid-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
