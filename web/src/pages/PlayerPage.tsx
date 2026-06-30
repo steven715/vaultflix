@@ -310,7 +310,7 @@ export default function PlayerPage() {
     <AppShell showTabBar={false}>
       <Container className="py-6">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/')}
           className="mb-5 flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-cream"
         >
           <ChevronLeft className="h-4 w-4" />
