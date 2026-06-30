@@ -413,6 +413,34 @@ func TestVideoService_GetByID_LocalPathMode(t *testing.T) {
 	}
 }
 
+func TestGetByID_SetsPlayModeRemux(t *testing.T) {
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return &model.Video{
+				ID:               id,
+				OriginalFilename: "movie.mkv",
+				VideoCodec:       "h264",
+				AudioCodec:       "aac",
+			}, nil
+		},
+	}
+	tagRepo := &mock.TagRepository{
+		GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
+			return []model.Tag{}, nil
+		},
+	}
+	minioSvc := &mock.MinIOClient{}
+
+	svc := NewVideoService(videoRepo, tagRepo, minioSvc)
+	detail, err := svc.GetByID(context.Background(), "v1", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detail.PlayMode != model.PlayModeRemux {
+		t.Errorf("PlayMode = %q, want remux", detail.PlayMode)
+	}
+}
+
 func TestVideoService_Delete_LocalPathMode(t *testing.T) {
 	sourceID := "src-1"
 	filePath := "movies/test.mp4"
