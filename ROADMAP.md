@@ -4,10 +4,7 @@
 
 ### 後端
 
-- [x] **匯入改為非同步處理** — Phase 12 已完成：背景 worker + WebSocket 進度推送
 - [ ] **匯入 handler 加入 context timeout** — 目前直接使用 `c.Request.Context()`，沒有明確 timeout 保護
-- [x] **匯入目錄路徑驗證** — Phase 8 已完成：AllowedMountPrefix + filepath.Clean 防護
-- [x] **Presigned URL 快取** — Slice 1.6 (hover preview) 已完成：`URLCache` interface + 記憶體實作，thumbnail/preview presign 共用，TTL = expiry − 5min
 - [ ] **推薦服務批次產生 URL** — Recommendation 仍逐一呼叫；雖然 1.6 加了 cache 緩解 N+1 成本，但 batch query 還沒做
 - [ ] **優化 GetRandomUnwatched 查詢** — 目前用 `LEFT JOIN + OR` 條件，大量觀看記錄時效能差，應改用 `NOT EXISTS` 子查詢
 - [ ] **MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 失敗只 log 不中斷，長期會累積孤兒檔案，需記錄失敗項供後續清理
@@ -16,27 +13,26 @@
 
 ### 前端
 
-- [x] **API 錯誤回饋** — Phase 14 已完成：ToastProvider + ErrorBanner 系統，22+ 處靜默 catch 全數收尾
-- [x] **Modal 操作回饋** — Phase 14 已完成：編輯/刪除/匯入操作失敗統一以 toast 回饋
-- [x] **收藏/歷史錯誤狀態** — Phase 14 已完成：載入失敗顯示 ErrorBanner + 重試按鈕
 - [ ] **載入骨架屏** — 影片網格載入時只顯示文字「載入中...」，缺少 skeleton placeholder，造成版面跳動
-- [ ] **修 React 19 hooks lint baseline** — `eslint-plugin-react-hooks ^7.0.1` 啟用嚴格規則後 HEAD 累積 10 errors + 2 warnings（`set-state-in-effect` 多處、`useWebSocket.ts` TDZ access、`AuthContext.tsx` fast-refresh export 拆檔），需獨立 refactor PR 收尾
 - [ ] **Header 搜尋列 RWD** — 搜尋框在手機寬度下擠壓變形，需改為可收合的搜尋抽屜
 - [ ] **TagSidebar 手機適配** — 固定寬度 `w-56` 在小平板造成水平溢出，需可收合或隱藏
 - [ ] **影片資訊區塊 RWD** — metadata（時長、解析度等）在手機上換行不可控，需改為垂直堆疊
-- [x] **Presigned URL 續期** — Phase 10 已完成：影片改為 API stream endpoint，不再使用 presigned URL
 
 ---
 
-## 未來功能
+### 🎯 進行中（優先）
+
+- [ ] **自動標籤（AI 影片分析）** — 透過 AI 分析影片檔名（JAV 番號、女優名）與內容，自動建議標籤分類。**目前最高優先**。
+  - 規劃分階段：① 檔名/番號 scraper 比對既有 metadata 來源 → ② LLM（Claude API）依檔名+metadata 建議標籤 → ③（選用）抽幀電腦視覺內容分析
+  - 詳細 Spec / 選型見後續 feature 對話與研究筆記
+
+### 其他未來功能
 
 - [ ] **全文搜尋引擎** — 引入 Meilisearch，改善中日文標題搜尋品質（目前用 PostgreSQL `gin` 索引，對 CJK 分詞效果有限）
 - [ ] **LLM Chat 助手** — `/api/chat` 端點串接 Claude API，結合影片 metadata 做語意搜尋與推薦對話
-- [ ] **自動標籤** — 透過 LLM 分析影片檔名或內容，自動建議標籤分類
 - [ ] **行動端支援** — React Native 或獨立 APP，搭配現有 API
 - [ ] **多使用者** — 開放註冊、使用者偏好設定、個人化推薦
 - [ ] **API Gateway** — 引入 Traefik 做 rate limiting、SSL termination、反向代理
-- [x] **匯入進度即時回報** — Phase 12 已完成：WebSocket 即時推送 + 前端進度元件
 - [ ] **孤兒檔案清理排程** — 定期比對 MinIO 與 DB，清理不一致的孤兒物件
 
 ---
