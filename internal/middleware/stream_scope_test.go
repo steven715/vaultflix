@@ -19,6 +19,8 @@ func setupStreamScopeRouter() *gin.Engine {
 	r.Use(JWTAuth(testJWTSecret))
 	ok := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) }
 	r.GET("/api/videos/:id/stream", ok)
+	r.GET("/api/videos/:id/hls/index.m3u8", ok)
+	r.GET("/api/videos/:id/hls/:segment", ok)
 	r.GET("/api/videos/:id/other", ok)
 	r.GET("/api/users", ok)
 	return r
@@ -64,6 +66,30 @@ func TestJWTAuth_StreamScope(t *testing.T) {
 			name:   "stream token on an unrelated endpoint",
 			token:  generateTestToken(t, testJWTSecret, streamClaims("v1")),
 			path:   "/api/users",
+			status: http.StatusForbidden,
+		},
+		{
+			name:   "stream token on HLS playlist for same video",
+			token:  generateTestToken(t, testJWTSecret, streamClaims("v1")),
+			path:   "/api/videos/v1/hls/index.m3u8",
+			status: http.StatusOK,
+		},
+		{
+			name:   "stream token on HLS segment for same video",
+			token:  generateTestToken(t, testJWTSecret, streamClaims("v1")),
+			path:   "/api/videos/v1/hls/seg00001.ts",
+			status: http.StatusOK,
+		},
+		{
+			name:   "stream token on HLS playlist for different video",
+			token:  generateTestToken(t, testJWTSecret, streamClaims("v1")),
+			path:   "/api/videos/v2/hls/index.m3u8",
+			status: http.StatusForbidden,
+		},
+		{
+			name:   "stream token on HLS segment for different video",
+			token:  generateTestToken(t, testJWTSecret, streamClaims("v1")),
+			path:   "/api/videos/v2/hls/seg00001.ts",
 			status: http.StatusForbidden,
 		},
 		{
