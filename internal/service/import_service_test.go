@@ -231,6 +231,45 @@ func TestSeedEnrichment(t *testing.T) {
 	}
 }
 
+func TestParseProbeOutput_ExtractsCodecs(t *testing.T) {
+	raw := []byte(`{
+		"format": {"duration": "120.5", "size": "1048576"},
+		"streams": [
+			{"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080},
+			{"codec_type": "audio", "codec_name": "aac"}
+		]
+	}`)
+	md, err := parseProbeOutput(raw, ".mkv")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if md.videoCodec != "h264" {
+		t.Errorf("videoCodec = %q, want h264", md.videoCodec)
+	}
+	if md.audioCodec != "aac" {
+		t.Errorf("audioCodec = %q, want aac", md.audioCodec)
+	}
+	if md.durationSeconds != 120 {
+		t.Errorf("durationSeconds = %d, want 120", md.durationSeconds)
+	}
+	if md.resolution != "1920x1080" {
+		t.Errorf("resolution = %q, want 1920x1080", md.resolution)
+	}
+}
+
+func TestParseProbeOutput_DirectMP4GetsVideoMP4Mime(t *testing.T) {
+	raw := []byte(`{"format":{"duration":"10"},"streams":[
+		{"codec_type":"video","codec_name":"h264","width":640,"height":480},
+		{"codec_type":"audio","codec_name":"aac"}]}`)
+	md, err := parseProbeOutput(raw, ".mp4")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if md.mimeType != "video/mp4" {
+		t.Errorf("mimeType = %q, want video/mp4", md.mimeType)
+	}
+}
+
 // TestSeedEnrichment_CreateCapture verifies that a Video passed through
 // seedEnrichment before Create carries the expected Code and EnrichmentStatus.
 // This mirrors the exact call sequence in processOneFile.
