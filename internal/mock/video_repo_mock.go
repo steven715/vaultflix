@@ -21,6 +21,8 @@ type VideoRepository struct {
 	SetEnrichmentStatusFunc     func(ctx context.Context, id, status string) error
 	ListByEnrichmentStatusFunc  func(ctx context.Context, status string) ([]model.Video, error)
 	SeedCodeFunc                func(ctx context.Context, id, code, status string) error
+	UpdateCodecsFunc            func(ctx context.Context, id, videoCodec, audioCodec string) error
+	ListMissingCodecsFunc       func(ctx context.Context, limit int) ([]model.Video, error)
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -112,4 +114,18 @@ func (m *VideoRepository) SeedCode(ctx context.Context, id, code, status string)
 		return fmt.Errorf("mock: SeedCodeFunc not set")
 	}
 	return m.SeedCodeFunc(ctx, id, code, status)
+}
+
+func (m *VideoRepository) UpdateCodecs(ctx context.Context, id, videoCodec, audioCodec string) error {
+	if m.UpdateCodecsFunc == nil {
+		return fmt.Errorf("mock: UpdateCodecsFunc not set")
+	}
+	return m.UpdateCodecsFunc(ctx, id, videoCodec, audioCodec)
+}
+
+func (m *VideoRepository) ListMissingCodecs(ctx context.Context, limit int) ([]model.Video, error) {
+	if m.ListMissingCodecsFunc == nil {
+		return nil, fmt.Errorf("mock: ListMissingCodecsFunc not set")
+	}
+	return m.ListMissingCodecsFunc(ctx, limit)
 }

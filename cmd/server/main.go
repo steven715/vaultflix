@@ -21,6 +21,7 @@ import (
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
+	"github.com/steven/vaultflix/internal/streaming"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
@@ -133,7 +134,7 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
 	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
-	videoService := service.NewVideoService(videoRepo, tagRepo, minioService)
+	videoService := service.NewVideoService(videoRepo, mediaSourceRepo, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
 
@@ -160,6 +161,11 @@ func main() {
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
 
+	transcoder := streaming.NewFFmpegTranscoder()
+	streamManager := streaming.NewManager(transcoder, cfg.TranscodeCacheDir, 60*time.Second)
+	streamManager.StartSweeper(ctx)
+	hlsHandler := handler.NewHLSHandler(videoService, streamManager)
+
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
 	tagHandler := handler.NewTagHandler(tagRepo, videoRepo)
@@ -169,6 +175,9 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 	backfillHandler := handler.NewBackfillHandler(backfillService)
+
+	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceRepo)
+	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
 
 	wsHandler := handler.NewWSHandler(hub)
 
@@ -203,6 +212,8 @@ func main() {
 		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
 		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
 		api.GET("/videos/:id/stream", videoHandler.Stream)
+		api.GET("/videos/:id/hls/index.m3u8", hlsHandler.Playlist)
+		api.GET("/videos/:id/hls/:segment", hlsHandler.Segment)
 		api.GET("/videos/:id/stream-token", authHandler.StreamToken)
 		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
 		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
@@ -244,6 +255,7 @@ func main() {
 		api.POST("/admin/videos/backfill-previews", backfillHandler.Start)
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
+		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
 
 		// Enrichment endpoints
 		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)

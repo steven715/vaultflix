@@ -18,8 +18,12 @@ services:
       VIDEO_XACCEL_PREFIX: /internal-video/
     # Replace base's volumes (drop .:/app and go caches, keep only read-only video mounts)
     volumes: !override
+      - vaultflix-transcode-cache:/var/cache/vaultflix/transcode
       - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
       - /mnt/g/下載:/mnt/host/G/下載:ro
   # vaultflix-nginx needs no volumes override here: compose merges the base
   # file's nginx video mounts into this layer, so the X-Accel offload target
   # is already present in prod.
+
+volumes:
+  vaultflix-transcode-cache:

@@ -267,6 +267,8 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		Resolution:       metadata.resolution,
 		FileSizeBytes:    fileSize,
 		MimeType:         metadata.mimeType,
+		VideoCodec:       metadata.videoCodec,
+		AudioCodec:       metadata.audioCodec,
 		OriginalFilename: filename,
 		SourceID:         &source.ID,
 		FilePath:         &relPath,
@@ -374,6 +376,8 @@ type videoMetadata struct {
 	durationSeconds int
 	resolution      string
 	mimeType        string
+	videoCodec      string
+	audioCodec      string
 }
 
 type ffprobeOutput struct {
@@ -388,6 +392,7 @@ type ffprobeFormat struct {
 
 type ffprobeStream struct {
 	CodecType string `json:"codec_type"`
+	CodecName string `json:"codec_name"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 }
@@ -410,29 +415,52 @@ func (s *ImportService) probeMetadata(ctx context.Context, filePath string) (*vi
 		return nil, fmt.Errorf("ffprobe failed: %w, stderr: %s", err, stderr)
 	}
 
+	ext := strings.ToLower(filepath.Ext(filePath))
+	return parseProbeOutput(output, ext)
+}
+
+// parseProbeOutput parses raw ffprobe JSON output and extracts video metadata.
+// ext must be lower-case (e.g. ".mp4"). Pure function — no I/O, easily unit-tested.
+func parseProbeOutput(raw []byte, ext string) (*videoMetadata, error) {
 	var probe ffprobeOutput
-	if err := json.Unmarshal(output, &probe); err != nil {
+	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, fmt.Errorf("failed to parse ffprobe output: %w", err)
 	}
 
 	duration, _ := strconv.ParseFloat(probe.Format.Duration, 64)
 
-	var resolution string
+	var resolution, videoCodec, audioCodec string
 	for _, stream := range probe.Streams {
-		if stream.CodecType == "video" {
-			resolution = fmt.Sprintf("%dx%d", stream.Width, stream.Height)
-			break
+		switch stream.CodecType {
+		case "video":
+			if videoCodec == "" {
+				videoCodec = stream.CodecName
+				resolution = fmt.Sprintf("%dx%d", stream.Width, stream.Height)
+			}
+		case "audio":
+			if audioCodec == "" {
+				audioCodec = stream.CodecName
+			}
 		}
 	}
-
-	ext := strings.ToLower(filepath.Ext(filePath))
-	mimeType := extensionToMIME(ext)
 
 	return &videoMetadata{
 		durationSeconds: int(duration),
 		resolution:      resolution,
-		mimeType:        mimeType,
+		mimeType:        mimeTypeFor(ext, videoCodec, audioCodec),
+		videoCodec:      videoCodec,
+		audioCodec:      audioCodec,
 	}, nil
+}
+
+// mimeTypeFor returns "video/mp4" for direct-play videos (h264+aac in mp4/mov),
+// falling back to extensionToMIME for everything else. This fixes the prior bug
+// where .avi files were labelled "video/x-msvideo" and browsers refused to play.
+func mimeTypeFor(ext, videoCodec, audioCodec string) string {
+	if ClassifyPlayMode(ext, videoCodec, audioCodec) == model.PlayModeDirect {
+		return "video/mp4"
+	}
+	return extensionToMIME(ext)
 }
 
 func (s *ImportService) generateThumbnail(ctx context.Context, filePath string, durationSeconds int) (string, error) {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -11,17 +14,19 @@ import (
 
 type VideoService struct {
 	videoRepo   repository.VideoRepository
+	sourceRepo  repository.MediaSourceRepository
 	tagRepo     repository.TagRepository
 	minioSvc    MinIOClient
 	favoriteSvc FavoriteService
 	historySvc  WatchHistoryService
 }
 
-func NewVideoService(videoRepo repository.VideoRepository, tagRepo repository.TagRepository, minioSvc MinIOClient) *VideoService {
+func NewVideoService(videoRepo repository.VideoRepository, sourceRepo repository.MediaSourceRepository, tagRepo repository.TagRepository, minioSvc MinIOClient) *VideoService {
 	return &VideoService{
-		videoRepo: videoRepo,
-		tagRepo:   tagRepo,
-		minioSvc:  minioSvc,
+		videoRepo:  videoRepo,
+		sourceRepo: sourceRepo,
+		tagRepo:    tagRepo,
+		minioSvc:   minioSvc,
 	}
 }
 
@@ -131,6 +136,7 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 		}
 	}
 
+	container := strings.TrimPrefix(filepath.Ext(video.OriginalFilename), ".")
 	detail := &model.VideoDetail{
 		VideoWithTags: model.VideoWithTags{
 			Video:        *video,
@@ -139,6 +145,7 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 			PreviewURL:   previewURL,
 		},
 		StreamURL: streamURL,
+		PlayMode:  ClassifyPlayMode(container, video.VideoCodec, video.AudioCodec),
 	}
 
 	// Enrich with user-specific data if services are available and userID is provided
@@ -187,6 +194,45 @@ func (s *VideoService) Update(ctx context.Context, id string, input model.Update
 	}
 
 	return video, nil
+}
+
+// ResolveDiskPath returns the validated absolute on-disk path of a video.
+//
+// Returns model.ErrNotFound if the video is missing or has no disk source;
+// model.ErrConflict if the source is disabled;
+// model.ErrPathNotAllowed on path-traversal attempt;
+// model.ErrPathNotExist if the file is absent from disk;
+// a wrapped error otherwise.
+func (s *VideoService) ResolveDiskPath(ctx context.Context, videoID string) (string, error) {
+	video, err := s.videoRepo.GetByID(ctx, videoID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get video %s: %w", videoID, err)
+	}
+	if video.SourceID == nil || video.FilePath == nil {
+		return "", model.ErrNotFound
+	}
+
+	source, err := s.sourceRepo.FindByID(ctx, *video.SourceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get source %s: %w", *video.SourceID, err)
+	}
+	if !source.Enabled {
+		return "", model.ErrConflict
+	}
+
+	cleanPath := filepath.Clean(filepath.Join(source.MountPath, *video.FilePath))
+	cleanMount := filepath.Clean(source.MountPath)
+	if !strings.HasPrefix(cleanPath, cleanMount+string(filepath.Separator)) && cleanPath != cleanMount {
+		return "", model.ErrPathNotAllowed
+	}
+
+	if _, err := os.Stat(cleanPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", model.ErrPathNotExist
+		}
+		return "", fmt.Errorf("failed to stat %s: %w", cleanPath, err)
+	}
+	return cleanPath, nil
 }
 
 func (s *VideoService) Delete(ctx context.Context, id string) error {

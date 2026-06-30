@@ -85,6 +85,7 @@ services:
       - .:/app
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
+      - vaultflix-transcode-cache:/var/cache/vaultflix/transcode
       # 影片來源目錄：掛載到 /mnt/host/ 下，符合 AllowedMountPrefix 安全驗證
       - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
       - /mnt/g/下載:/mnt/host/G/下載:ro
@@ -134,3 +135,4 @@ volumes:
   minio_data:
   go_modules:
   go_build_cache:
+  vaultflix-transcode-cache:

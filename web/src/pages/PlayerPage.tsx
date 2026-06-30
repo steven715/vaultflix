@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import Hls from 'hls.js'
 import { getVideo, getStreamToken, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
@@ -86,13 +87,40 @@ export default function PlayerPage() {
   }, [id])
 
   // Reload the media element whenever the stream token changes (initial load
-  // and post-expiry refresh). Doing it in an effect guarantees the new src is
-  // committed to the DOM before load(), so we never reload a stale URL.
+  // and post-expiry refresh). Only for direct mode; remux is handled below.
   useEffect(() => {
-    if (streamToken && videoRef.current) {
+    if (video?.play_mode === 'direct' && streamToken && videoRef.current) {
       videoRef.current.load()
     }
-  }, [streamToken])
+  }, [video, streamToken])
+
+  // remux 影片用 hls.js 播放即時 HLS；direct 影片維持原生 src。
+  useEffect(() => {
+    const videoID = video?.id
+    const playMode = video?.play_mode
+    if (!videoID || playMode !== 'remux' || !streamToken || !videoRef.current) return
+    const el = videoRef.current
+    const url = `/api/videos/${videoID}/hls/index.m3u8?token=${streamToken}`
+
+    // Safari 原生支援 HLS。
+    if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = url
+      return () => {
+        el.removeAttribute('src')
+        el.load()
+      }
+    }
+    if (!Hls.isSupported()) {
+      setError('此瀏覽器不支援串流播放')
+      return
+    }
+    const hls = new Hls()
+    hls.loadSource(url)
+    hls.attachMedia(el)
+    return () => {
+      hls.destroy()
+    }
+  }, [video?.id, video?.play_mode, streamToken])
 
   // Keyboard shortcuts: space toggles play/pause, arrows seek ±5s.
   useEffect(() => {
@@ -292,20 +320,33 @@ export default function PlayerPage() {
         <div className="flex flex-col gap-8 lg:flex-row">
           {/* Player + info */}
           <div className="min-w-0 flex-1">
-            <div className="relative overflow-hidden rounded-lg bg-black">
-              <video
-                ref={videoRef}
-                controls
-                preload="metadata"
-                src={streamToken ? `${video.stream_url}?token=${streamToken}` : undefined}
-                className="aspect-video w-full"
-                onError={handleVideoError}
-                onTimeUpdate={handleTimeUpdate}
-                onPause={handlePause}
-                onLoadedMetadata={handleLoadedMetadata}
-                onVolumeChange={handleVolumeChange}
-              />
-            </div>
+            {video.play_mode === 'transcode' ? (
+              <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-surface text-center text-sm text-muted">
+                <div className="px-6">
+                  此影片格式（{video.video_codec || '未知編碼'}）尚未支援線上播放，
+                  將於後續版本（Phase 2 轉碼）支援。
+                </div>
+              </div>
+            ) : (
+              <div className="relative overflow-hidden rounded-lg bg-black">
+                <video
+                  ref={videoRef}
+                  controls
+                  preload="metadata"
+                  src={
+                    video.play_mode === 'direct' && streamToken
+                      ? `${video.stream_url}?token=${streamToken}`
+                      : undefined
+                  }
+                  className="aspect-video w-full"
+                  onError={handleVideoError}
+                  onTimeUpdate={handleTimeUpdate}
+                  onPause={handlePause}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onVolumeChange={handleVolumeChange}
+                />
+              </div>
+            )}
 
             <div className="mt-5">
               <div className="flex flex-wrap items-start justify-between gap-3">

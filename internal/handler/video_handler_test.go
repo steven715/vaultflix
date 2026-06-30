@@ -42,7 +42,7 @@ func TestListVideos_DefaultPagination(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos", nil)
@@ -76,7 +76,7 @@ func TestListVideos_DefaultPagination(t *testing.T) {
 }
 
 func TestListVideos_InvalidPageSize(t *testing.T) {
-	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
+	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.MediaSourceRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos?page_size=999", nil)
@@ -97,7 +97,7 @@ func TestListVideos_InvalidPageSize(t *testing.T) {
 }
 
 func TestListVideos_InvalidSortBy(t *testing.T) {
-	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
+	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.MediaSourceRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos?sort_by=xxx", nil)
@@ -135,7 +135,7 @@ func TestGetVideo_Success(t *testing.T) {
 		},
 	}
 
-	svc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos/vid-1", nil)
@@ -172,7 +172,7 @@ func TestGetVideo_NotFound(t *testing.T) {
 	tagRepo := &mock.TagRepository{}
 	minioSvc := &mock.MinIOClient{}
 
-	svc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos/nonexistent", nil)
@@ -216,7 +216,7 @@ func TestDeleteVideo_Success(t *testing.T) {
 		},
 	}
 
-	svc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+	svc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/videos/vid-1", nil)
@@ -232,7 +232,7 @@ func TestDeleteVideo_Success(t *testing.T) {
 }
 
 func TestListVideos_InvalidTagIDs(t *testing.T) {
-	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
+	svc := service.NewVideoService(&mock.VideoRepository{}, &mock.MediaSourceRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
 	r, _ := setupVideoRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/videos?tag_ids=abc,def", nil)
@@ -503,7 +503,7 @@ func TestStreamVideo(t *testing.T) {
 				},
 			}
 
-			videoSvc := service.NewVideoService(videoRepo, tagRepo, minioSvc)
+			videoSvc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, minioSvc)
 
 			var mediaSourceSvc *service.MediaSourceService
 			if tt.source != nil || tt.sourceErr != nil {
@@ -574,7 +574,7 @@ func TestStream_XAccelRedirect(t *testing.T) {
 			return []model.Tag{}, nil
 		},
 	}
-	videoSvc := service.NewVideoService(videoRepo, tagRepo, &mock.MinIOClient{})
+	videoSvc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, tagRepo, &mock.MinIOClient{})
 
 	mediaSourceRepo := &mock.MediaSourceRepository{
 		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
