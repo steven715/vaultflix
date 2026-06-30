@@ -96,11 +96,15 @@ func (m *Manager) Sweep(now time.Time) {
 		if now.Sub(st.lastAccess) <= m.idleTimeout {
 			continue
 		}
+		// NOTE: Stop() blocks on the proc's done channel while we hold m.mu.
+		// Acceptable for the single-user design (sweep is background-only, few
+		// sessions). If concurrent callers/scale are added, switch to a
+		// two-phase sweep: collect victims under lock, Stop()/RemoveAll outside.
 		if err := st.proc.Stop(); err != nil {
 			slog.Warn("failed to stop transcode proc", "key", key, "error", err)
 		}
 		if err := os.RemoveAll(st.dir); err != nil {
-			slog.Warn("failed to remove session dir", "dir", st.dir, "error", err)
+			slog.Error("failed to remove session dir", "dir", st.dir, "error", err)
 		}
 		delete(m.sessions, key)
 	}
