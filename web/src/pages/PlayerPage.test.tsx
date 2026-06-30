@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import PlayerPage from './PlayerPage'
@@ -64,5 +65,28 @@ describe('PlayerPage play_mode', () => {
     } as never)
     renderPlayer()
     expect(await screen.findByText(/尚未支援|Phase 2|無法播放/)).toBeInTheDocument()
+  })
+
+  it('returns to the library (not the previous player page) when clicking 返回片庫', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({
+      ...base,
+      play_mode: 'direct',
+    } as never)
+
+    // Simulate history: library → video v0 → video v1 (current).
+    render(
+      <MemoryRouter initialEntries={['/', '/watch/v0', '/watch/v1']} initialIndex={2}>
+        <Routes>
+          <Route path="/" element={<div>片庫首頁</div>} />
+          <Route path="/watch/:id" element={<PlayerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const backButton = await screen.findByRole('button', { name: /返回片庫/ })
+    await userEvent.click(backButton)
+
+    // Must land on the library, not back on the previous player page (v0).
+    expect(await screen.findByText('片庫首頁')).toBeInTheDocument()
   })
 })
