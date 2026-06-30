@@ -17,3 +17,7 @@ export async function listWatchHistory(
   })
   return res.data
 }
+
+export async function clearWatchHistory(): Promise<void> {
+  await client.delete('/watch-history')
+}

@@ -11,6 +11,7 @@ type WatchHistoryRepository struct {
 	UpsertFunc            func(ctx context.Context, record *model.WatchHistory) error
 	ListByUserFunc        func(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryWithVideo, int64, error)
 	GetByUserAndVideoFunc func(ctx context.Context, userID, videoID string) (*model.WatchHistory, error)
+	DeleteAllByUserFunc   func(ctx context.Context, userID string) (int64, error)
 }
 
 func (m *WatchHistoryRepository) Upsert(ctx context.Context, record *model.WatchHistory) error {
@@ -32,4 +33,11 @@ func (m *WatchHistoryRepository) GetByUserAndVideo(ctx context.Context, userID, 
 		return nil, fmt.Errorf("mock: GetByUserAndVideoFunc not set")
 	}
 	return m.GetByUserAndVideoFunc(ctx, userID, videoID)
+}
+
+func (m *WatchHistoryRepository) DeleteAllByUser(ctx context.Context, userID string) (int64, error) {
+	if m.DeleteAllByUserFunc == nil {
+		return 0, fmt.Errorf("mock: DeleteAllByUserFunc not set")
+	}
+	return m.DeleteAllByUserFunc(ctx, userID)
 }

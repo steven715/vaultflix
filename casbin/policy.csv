@@ -9,6 +9,7 @@ p, viewer, /api/tags, GET
 p, viewer, /api/watch-history, GET
 p, viewer, /api/watch-history, POST
 p, viewer, /api/watch-history, PUT
+p, viewer, /api/watch-history, DELETE
 p, viewer, /api/favorites, GET
 p, viewer, /api/favorites, POST
 p, viewer, /api/favorites/:videoId, DELETE

@@ -225,6 +225,7 @@ func main() {
 		// Watch history endpoints
 		api.POST("/watch-history", historyHandler.SaveProgress)
 		api.GET("/watch-history", historyHandler.List)
+		api.DELETE("/watch-history", historyHandler.ClearHistory)
 
 		// Favorite endpoints
 		api.GET("/favorites", favoriteHandler.List)

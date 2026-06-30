@@ -14,10 +14,13 @@ import (
 // SaveProgress auto-marks completed when progress >= 90% of video duration.
 // GetProgress returns (0, nil) when the user has never watched the video — not an error.
 // List returns items with presigned thumbnail URLs.
+// ClearHistory removes all of the user's watch history and returns the number of rows deleted;
+// clearing an already-empty history returns (0, nil), not an error.
 type WatchHistoryService interface {
 	SaveProgress(ctx context.Context, userID, videoID string, progressSeconds int) error
 	List(ctx context.Context, userID string, page, pageSize int) ([]model.WatchHistoryItem, int64, error)
 	GetProgress(ctx context.Context, userID, videoID string) (int, error)
+	ClearHistory(ctx context.Context, userID string) (int64, error)
 }
 
 type watchHistoryService struct {
@@ -97,6 +100,14 @@ func (s *watchHistoryService) List(ctx context.Context, userID string, page, pag
 	}
 
 	return result, total, nil
+}
+
+func (s *watchHistoryService) ClearHistory(ctx context.Context, userID string) (int64, error) {
+	deleted, err := s.historyRepo.DeleteAllByUser(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to clear watch history for user %s: %w", userID, err)
+	}
+	return deleted, nil
 }
 
 func (s *watchHistoryService) GetProgress(ctx context.Context, userID, videoID string) (int, error) {
