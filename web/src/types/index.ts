@@ -12,6 +12,7 @@ export interface Video {
   original_filename: string
   created_at: string
   updated_at: string
+  video_codec?: string
 }
 
 export interface Tag {
@@ -35,6 +36,7 @@ export interface VideoDetail extends VideoWithTags {
   thumbnail_url: string
   is_favorited: boolean
   watch_progress: number
+  play_mode: 'direct' | 'remux' | 'transcode'
 }
 
 export interface PaginatedResponse<T> {

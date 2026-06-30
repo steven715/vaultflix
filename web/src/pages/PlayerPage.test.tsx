@@ -1,0 +1,68 @@
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { vi, describe, it, expect, beforeEach } from 'vitest'
+import PlayerPage from './PlayerPage'
+import * as videosApi from '../api/videos'
+
+vi.mock('../api/videos')
+
+// Mock contexts used by AppShell/PlayerPage
+vi.mock('../contexts/ToastContext', () => ({
+  useToast: () => ({ info: vi.fn(), success: vi.fn(), error: vi.fn() }),
+}))
+
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { username: 'steven', role: 'admin' }, logout: vi.fn() }),
+}))
+
+const base = {
+  id: 'v1',
+  title: 'T',
+  description: '',
+  tags: [],
+  resolution: '1920x1080',
+  duration_seconds: 10,
+  file_size_bytes: 1,
+  created_at: '2026-06-30T00:00:00Z',
+  updated_at: '2026-06-30T00:00:00Z',
+  stream_url: '/api/videos/v1/stream',
+  is_favorited: false,
+  watch_progress: 0,
+  minio_object_key: '',
+  thumbnail_key: '',
+  preview_key: '',
+  mime_type: 'video/mp4',
+  original_filename: 'T.mp4',
+  thumbnail_url: '',
+}
+
+function renderPlayer() {
+  return render(
+    <MemoryRouter initialEntries={['/watch/v1']}>
+      <Routes>
+        <Route path="/watch/:id" element={<PlayerPage />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+describe('PlayerPage play_mode', () => {
+  beforeEach(() => {
+    vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })
+    vi.mocked(videosApi.listVideos).mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      page_size: 12,
+    } as never)
+  })
+
+  it('shows a notice for transcode videos instead of a player', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({
+      ...base,
+      play_mode: 'transcode',
+    } as never)
+    renderPlayer()
+    expect(await screen.findByText(/尚未支援|Phase 2|無法播放/)).toBeInTheDocument()
+  })
+})
