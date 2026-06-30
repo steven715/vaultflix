@@ -231,42 +231,112 @@ func TestSeedEnrichment(t *testing.T) {
 	}
 }
 
-func TestParseProbeOutput_ExtractsCodecs(t *testing.T) {
-	raw := []byte(`{
-		"format": {"duration": "120.5", "size": "1048576"},
-		"streams": [
-			{"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080},
-			{"codec_type": "audio", "codec_name": "aac"}
-		]
-	}`)
-	md, err := parseProbeOutput(raw, ".mkv")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseProbeOutput(t *testing.T) {
+	cases := []struct {
+		name           string
+		raw            []byte
+		ext            string
+		wantVideoCodec string
+		wantAudioCodec string
+		wantMimeType   string
+		wantDuration   int
+		wantResolution string
+		wantErr        bool
+	}{
+		{
+			// Original flat test: codec/resolution/duration extraction for mkv.
+			// .mkv h264+aac is PlayModeRemux (not direct), so mime falls back to
+			// extensionToMIME(".mkv") = "video/x-matroska".
+			name: "mkv h264+aac extracts codecs and resolution",
+			raw: []byte(`{
+				"format": {"duration": "120.5", "size": "1048576"},
+				"streams": [
+					{"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080},
+					{"codec_type": "audio", "codec_name": "aac"}
+				]
+			}`),
+			ext:            ".mkv",
+			wantVideoCodec: "h264",
+			wantAudioCodec: "aac",
+			wantMimeType:   "video/x-matroska",
+			wantDuration:   120,
+			wantResolution: "1920x1080",
+		},
+		{
+			// Original flat test: .mp4 h264+aac is PlayModeDirect → mime = "video/mp4".
+			name: "mp4 h264+aac direct play gets video/mp4 mime",
+			raw: []byte(`{"format":{"duration":"10"},"streams":[
+				{"codec_type":"video","codec_name":"h264","width":640,"height":480},
+				{"codec_type":"audio","codec_name":"aac"}]}`),
+			ext:            ".mp4",
+			wantVideoCodec: "h264",
+			wantAudioCodec: "aac",
+			wantMimeType:   "video/mp4",
+		},
+		{
+			// Remux case: .mkv h264+aac → ClassifyPlayMode returns PlayModeRemux,
+			// so mimeTypeFor falls back to extensionToMIME(".mkv") = "video/x-matroska".
+			name: "mkv remux h264+aac gets extensionToMIME fallback video/x-matroska",
+			raw: []byte(`{"format":{"duration":"60"},"streams":[
+				{"codec_type":"video","codec_name":"h264","width":1280,"height":720},
+				{"codec_type":"audio","codec_name":"aac"}]}`),
+			ext:            ".mkv",
+			wantVideoCodec: "h264",
+			wantAudioCodec: "aac",
+			wantMimeType:   "video/x-matroska",
+			wantDuration:   60,
+			wantResolution: "1280x720",
+		},
+		{
+			// Transcode case: .avi mpeg4+mp3 → ClassifyPlayMode returns PlayModeTranscode,
+			// so mimeTypeFor falls back to extensionToMIME(".avi") = "video/x-msvideo".
+			name: "avi mpeg4+mp3 gets extensionToMIME fallback video/x-msvideo",
+			raw: []byte(`{"format":{"duration":"90"},"streams":[
+				{"codec_type":"video","codec_name":"mpeg4","width":720,"height":480},
+				{"codec_type":"audio","codec_name":"mp3"}]}`),
+			ext:            ".avi",
+			wantVideoCodec: "mpeg4",
+			wantAudioCodec: "mp3",
+			wantMimeType:   "video/x-msvideo",
+			wantDuration:   90,
+			wantResolution: "720x480",
+		},
+		{
+			name:    "malformed JSON returns error",
+			raw:     []byte(`{not valid json`),
+			ext:     ".mp4",
+			wantErr: true,
+		},
 	}
-	if md.videoCodec != "h264" {
-		t.Errorf("videoCodec = %q, want h264", md.videoCodec)
-	}
-	if md.audioCodec != "aac" {
-		t.Errorf("audioCodec = %q, want aac", md.audioCodec)
-	}
-	if md.durationSeconds != 120 {
-		t.Errorf("durationSeconds = %d, want 120", md.durationSeconds)
-	}
-	if md.resolution != "1920x1080" {
-		t.Errorf("resolution = %q, want 1920x1080", md.resolution)
-	}
-}
 
-func TestParseProbeOutput_DirectMP4GetsVideoMP4Mime(t *testing.T) {
-	raw := []byte(`{"format":{"duration":"10"},"streams":[
-		{"codec_type":"video","codec_name":"h264","width":640,"height":480},
-		{"codec_type":"audio","codec_name":"aac"}]}`)
-	md, err := parseProbeOutput(raw, ".mp4")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if md.mimeType != "video/mp4" {
-		t.Errorf("mimeType = %q, want video/mp4", md.mimeType)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			md, err := parseProbeOutput(tc.raw, tc.ext)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if md.videoCodec != tc.wantVideoCodec {
+				t.Errorf("videoCodec = %q, want %q", md.videoCodec, tc.wantVideoCodec)
+			}
+			if md.audioCodec != tc.wantAudioCodec {
+				t.Errorf("audioCodec = %q, want %q", md.audioCodec, tc.wantAudioCodec)
+			}
+			if md.mimeType != tc.wantMimeType {
+				t.Errorf("mimeType = %q, want %q", md.mimeType, tc.wantMimeType)
+			}
+			if tc.wantDuration != 0 && md.durationSeconds != tc.wantDuration {
+				t.Errorf("durationSeconds = %d, want %d", md.durationSeconds, tc.wantDuration)
+			}
+			if tc.wantResolution != "" && md.resolution != tc.wantResolution {
+				t.Errorf("resolution = %q, want %q", md.resolution, tc.wantResolution)
+			}
+		})
 	}
 }
 

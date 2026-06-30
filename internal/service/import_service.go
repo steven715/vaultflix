@@ -447,7 +447,7 @@ func parseProbeOutput(raw []byte, ext string) (*videoMetadata, error) {
 	return &videoMetadata{
 		durationSeconds: int(duration),
 		resolution:      resolution,
-		mimeType:        mimeTypeFor(strings.ToLower(ext), videoCodec, audioCodec),
+		mimeType:        mimeTypeFor(ext, videoCodec, audioCodec),
 		videoCodec:      videoCodec,
 		audioCodec:      audioCodec,
 	}, nil
