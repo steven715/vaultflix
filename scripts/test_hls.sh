@@ -13,10 +13,44 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/test_helpers.sh"
 
+IMPORT_DIR="${IMPORT_DIR:-/mnt/host/videos}"
+SOURCE_LABEL="${SOURCE_LABEL:-integration-test}"
+
 bold "=== HLS remux 播放鏈整合測試 ==="
 check_prerequisites
 
 ADMIN_TOKEN=$(login_as "$ADMIN_USER" "$ADMIN_PASS")
+
+# =====================================================================
+# 前置準備：確保 sample_h264.mkv 已匯入（冪等；補救 test_videos.sh 可能刪掉它）
+# =====================================================================
+echo ""
+bold "[pre] 確保 sample_h264.mkv 已匯入（自我佈建）"
+
+EXISTING_SOURCES=$(curl -s "${API_BASE}/api/media-sources" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}")
+SOURCE_ID=$(echo "$EXISTING_SOURCES" | jq -r \
+    ".data[] | select(.mount_path == \"${IMPORT_DIR}\") | .id // empty" 2>/dev/null | head -1)
+
+if [ -z "$SOURCE_ID" ]; then
+    yellow "  media source 不存在，建立中..."
+    CREATE_RESP=$(curl -s -X POST "${API_BASE}/api/media-sources" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"label\":\"${SOURCE_LABEL}\",\"mount_path\":\"${IMPORT_DIR}\"}")
+    SOURCE_ID=$(echo "$CREATE_RESP" | jq -r '.data.id // empty')
+    if [ -z "$SOURCE_ID" ]; then
+        red "  建立 media source 失敗: $CREATE_RESP"
+        exit 1
+    fi
+    green "  Media source 建立成功: ${SOURCE_ID}"
+else
+    yellow "  使用既有 media source: ${SOURCE_ID}"
+fi
+
+yellow "  觸發匯入（冪等，已存在的檔案會 skip）..."
+run_import "$ADMIN_TOKEN" "$SOURCE_ID" >/dev/null
+green "  匯入完成（或全部跳過）"
 
 # =====================================================================
 # [1] 找到已匯入的 sample_h264.mkv — 靠 original_filename 過濾
