@@ -64,6 +64,36 @@ func TestSummary_MergesPresentDay(t *testing.T) {
 	}
 }
 
+func TestSummary_RoundsTopVideoWatchHours(t *testing.T) {
+	// The repository returns full-precision watch hours (e.g. derived from
+	// raw seconds); Summary must round them to 1 decimal place, same as
+	// TotalWatchHours and the daily trend.
+	repo := &mock.AnalyticsRepository{
+		KPIsFunc: func(_ context.Context, _ int) (int, int64, float64, int, error) { return 1, 600, 1.0, 1, nil },
+		DailyRawFunc: func(_ context.Context, _ int) (map[string]model.DailyRawRow, error) {
+			return map[string]model.DailyRawRow{}, nil
+		},
+		TopVideosFunc: func(_ context.Context, _, _ int) ([]model.TopVideo, error) {
+			return []model.TopVideo{
+				{VideoID: "v1", Title: "Video 1", WatchHours: 0.16666666666666666},
+			}, nil
+		},
+		TopTagsFunc: func(_ context.Context, _, _ int) ([]model.TopTag, error) { return []model.TopTag{}, nil },
+	}
+	svc := NewAnalyticsService(repo)
+
+	got, err := svc.Summary(context.Background(), model.AnalyticsQuery{Days: 7, Limit: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.TopVideos) != 1 {
+		t.Fatalf("expected 1 top video, got %d", len(got.TopVideos))
+	}
+	if got.TopVideos[0].WatchHours != 0.2 {
+		t.Fatalf("expected rounded watch_hours 0.2, got %v", got.TopVideos[0].WatchHours)
+	}
+}
+
 func todayDateString() string {
 	return time.Now().Format("2006-01-02")
 }

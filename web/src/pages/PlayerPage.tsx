@@ -269,8 +269,10 @@ export default function PlayerPage() {
       // Restoring position after a token-refresh reload — not a fresh open.
       videoRef.current.currentTime = pendingSeekRef.current
       pendingSeekRef.current = null
+      lastSampleSecondsRef.current = videoRef.current.currentTime
     } else if (video.watch_progress > 0) {
       videoRef.current.currentTime = video.watch_progress
+      lastSampleSecondsRef.current = videoRef.current.currentTime
       toast.info(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
     }
   }

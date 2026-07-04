@@ -38,6 +38,10 @@ func (s *AnalyticsService) Summary(ctx context.Context, q model.AnalyticsQuery) 
 		return nil, fmt.Errorf("failed to get top tags: %w", err)
 	}
 
+	for i := range topVideos {
+		topVideos[i].WatchHours = round1(topVideos[i].WatchHours)
+	}
+
 	return &model.AnalyticsSummary{
 		RangeDays:         q.Days,
 		TotalViews:        views,
