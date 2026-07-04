@@ -17,6 +17,7 @@ import RecommendationManagePage from './pages/admin/RecommendationManagePage'
 import UserManagePage from './pages/admin/UserManagePage'
 import MediaSourcePage from './pages/admin/MediaSourcePage'
 import TagManagePage from './pages/admin/TagManagePage'
+import AnalyticsPage from './pages/admin/AnalyticsPage'
 
 function RootLayout() {
   return (
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
                   { path: '/admin/recommendations', element: <RecommendationManagePage /> },
                   { path: '/admin/users', element: <UserManagePage /> },
                   { path: '/admin/media-sources', element: <MediaSourcePage /> },
+                  { path: '/admin/analytics', element: <AnalyticsPage /> },
                 ],
               },
             ],

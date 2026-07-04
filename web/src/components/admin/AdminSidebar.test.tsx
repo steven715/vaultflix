@@ -11,13 +11,11 @@ describe('AdminSidebar', () => {
     }
     expect(screen.queryByText('總覽')).toBeNull()
   })
-  it('renders enabled items as links and disabled items as non-links', () => {
+  it('renders all items as links now that every nav item is enabled', () => {
     renderWithRouter(<AdminSidebar />, { route: '/admin/library' })
-    // 影片 is enabled → its label sits inside an anchor
+    // 影片 and 分析 are both enabled → their labels sit inside anchors
     expect(screen.getByText('影片').closest('a')).not.toBeNull()
-    // 分析 is disabled → no anchor, marked aria-disabled
-    expect(screen.getByText('分析').closest('a')).toBeNull()
-    expect(screen.getByText('分析').closest('[aria-disabled="true"]')).not.toBeNull()
+    expect(screen.getByText('分析').closest('a')).not.toBeNull()
   })
   it('marks the active item with aria-current', () => {
     renderWithRouter(<AdminSidebar />, { route: '/admin/users' })
