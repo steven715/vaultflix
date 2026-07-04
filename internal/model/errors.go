@@ -10,6 +10,7 @@ var (
 	ErrCannotDisableAdmin = errors.New("cannot disable admin account")
 	ErrPathNotAllowed     = errors.New("path is not within allowed mount prefix")
 	ErrPathNotExist       = errors.New("path does not exist on filesystem")
+	ErrInvalidInput       = errors.New("invalid input")
 )
 
 // ErrCodeNotFound 表示來源站找不到該番號的頁面。
