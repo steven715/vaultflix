@@ -40,3 +40,9 @@ type AnalyticsSummary struct {
 	TopVideos         []TopVideo   `json:"top_videos"`
 	TopTags           []TopTag     `json:"top_tags"`
 }
+
+// DailyRawRow is one present day from the DB before zero-fill (seconds, not hours).
+type DailyRawRow struct {
+	Views          int
+	WatchedSeconds int64
+}
