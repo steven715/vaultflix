@@ -129,6 +129,7 @@ func main() {
 	recRepo := repository.NewRecommendationRepository(pool)
 	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
 	watchSessionRepo := repository.NewWatchSessionRepository(pool)
+	analyticsRepo := repository.NewAnalyticsRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket, service.NewInMemoryURLCache())
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
@@ -142,6 +143,7 @@ func main() {
 	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 	watchSessionService := service.NewWatchSessionService(watchSessionRepo)
+	analyticsService := service.NewAnalyticsService(analyticsRepo)
 
 	// Enrichment: scraper clients, service, and handler
 	actressRepo := repository.NewActressRepository(pool)
@@ -178,6 +180,7 @@ func main() {
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 	watchSessionHandler := handler.NewWatchSessionHandler(watchSessionService)
 	backfillHandler := handler.NewBackfillHandler(backfillService)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 
 	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceRepo)
 	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
@@ -263,6 +266,9 @@ func main() {
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
 		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
+
+		// Analytics (admin only, enforced by Casbin)
+		api.GET("/admin/analytics", analyticsHandler.Get)
 
 		// Enrichment endpoints
 		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)
