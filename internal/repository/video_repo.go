@@ -199,25 +199,34 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 		return nil, 0, fmt.Errorf("failed to count videos: %w", err)
 	}
 
-	sortCol := allowedSortColumns[filter.SortBy]
-	if sortCol == "" {
-		sortCol = "v.created_at"
-	}
-	sortOrder := "DESC"
-	if strings.EqualFold(filter.SortOrder, "asc") {
-		sortOrder = "ASC"
-	}
-
 	offset := (filter.Page - 1) * filter.PageSize
 	nextArg := len(args) + 1
 
-	dataQuery := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, v.preview_key, " +
+	selectClause := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, v.preview_key, " +
 		"v.duration_seconds, v.resolution, v.file_size_bytes, v.mime_type, " +
 		"COALESCE(v.video_codec, '') AS video_codec, COALESCE(v.audio_codec, '') AS audio_codec, " +
 		"v.original_filename, v.created_at, v.updated_at, v.source_id, v.file_path " +
-		"FROM videos v" + whereClause +
-		" ORDER BY " + sortCol + " " + sortOrder +
-		" LIMIT $" + strconv.Itoa(nextArg) + " OFFSET $" + strconv.Itoa(nextArg+1)
+		"FROM videos v" + whereClause
+
+	limitOffset := " LIMIT $" + strconv.Itoa(nextArg) + " OFFSET $" + strconv.Itoa(nextArg+1)
+
+	var dataQuery string
+	if filter.SortBy == "random" {
+		// SELECT DISTINCT forbids ORDER BY RANDOM() (the ORDER BY expression must
+		// appear in the select list), so wrap the DISTINCT rows in a subquery and
+		// shuffle the outer result. sort_order is irrelevant for a random sample.
+		dataQuery = "SELECT * FROM (" + selectClause + ") sub ORDER BY RANDOM()" + limitOffset
+	} else {
+		sortCol := allowedSortColumns[filter.SortBy]
+		if sortCol == "" {
+			sortCol = "v.created_at"
+		}
+		sortOrder := "DESC"
+		if strings.EqualFold(filter.SortOrder, "asc") {
+			sortOrder = "ASC"
+		}
+		dataQuery = selectClause + " ORDER BY " + sortCol + " " + sortOrder + limitOffset
+	}
 	args = append(args, filter.PageSize, offset)
 
 	rows, err := r.pool.Query(ctx, dataQuery, args...)

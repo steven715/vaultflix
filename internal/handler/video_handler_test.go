@@ -109,6 +109,29 @@ func TestListVideos_InvalidSortBy(t *testing.T) {
 	}
 }
 
+func TestListVideos_RandomSortAccepted(t *testing.T) {
+	var capturedFilter model.VideoFilter
+	videoRepo := &mock.VideoRepository{
+		ListFunc: func(ctx context.Context, filter model.VideoFilter) ([]model.Video, int64, error) {
+			capturedFilter = filter
+			return []model.Video{}, 0, nil
+		},
+	}
+	svc := service.NewVideoService(videoRepo, &mock.MediaSourceRepository{}, &mock.TagRepository{}, &mock.MinIOClient{})
+	r, _ := setupVideoRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos?sort_by=random", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for sort_by=random, got %d", w.Code)
+	}
+	if capturedFilter.SortBy != "random" {
+		t.Errorf("expected sort_by random to reach the filter, got %q", capturedFilter.SortBy)
+	}
+}
+
 func TestGetVideo_Success(t *testing.T) {
 	video := &model.Video{
 		ID:             "vid-1",
