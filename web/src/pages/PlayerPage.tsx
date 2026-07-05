@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import Hls from 'hls.js'
 import { getVideo, getStreamToken, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import { postHeartbeat } from '../api/watchSession'
-import type { VideoDetail, VideoWithTags } from '../types'
+import { getTodayRecommendations } from '../api/recommendations'
+import type { VideoDetail, VideoWithTags, RecommendationItem } from '../types'
 import { formatDuration, formatFileSize, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
 import AppShell, { Container } from '../components/AppShell'
 import UpNextList from '../components/UpNextList'
+import RecommendationList from '../components/RecommendationList'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 import { clampDelta } from '../lib/heartbeat'
 
@@ -19,6 +21,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [streamToken, setStreamToken] = useState('')
@@ -26,6 +29,7 @@ export default function PlayerPage() {
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
   const [upNext, setUpNext] = useState<VideoWithTags[]>([])
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
   // Playback position to restore after a stream-token refresh reload.
@@ -111,20 +115,38 @@ export default function PlayerPage() {
     }
   }, [id, flushHeartbeat])
 
-  // Up-next column: a handful of other videos, excluding the current one.
+  // Up-next column: 5 random other videos, excluding the current one. A random
+  // sample (sort_by: 'random') rather than "newest", so the list differs on each
+  // video you open instead of always showing the same latest few. Fetch 6 so that
+  // excluding the current one (if it lands in the sample) still fills 5 rows.
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    listVideos({ page: 1, page_size: 12, sort_by: 'created_at', sort_order: 'desc' })
+    listVideos({ page: 1, page_size: 6, sort_by: 'random' })
       .then((res) => {
         if (cancelled) return
-        setUpNext(res.data.filter((v) => v.id !== id).slice(0, 8))
+        setUpNext(res.data.filter((v) => v.id !== id).slice(0, 5))
       })
       .catch((err) => console.warn('failed to load up-next', err))
     return () => {
       cancelled = true
     }
   }, [id])
+
+  // Today's recommendations (same source as the home page). Refetch on every
+  // navigation — location.key changes even when navigating to the same :id, so
+  // clicking another up-next item (or re-opening the same video) reloads these.
+  useEffect(() => {
+    let cancelled = false
+    getTodayRecommendations(5)
+      .then((items) => {
+        if (!cancelled) setRecommendations(items.slice(0, 5))
+      })
+      .catch((err) => console.warn('failed to load recommendations', err))
+    return () => {
+      cancelled = true
+    }
+  }, [location.key])
 
   // Reload the media element whenever the stream token changes (initial load
   // and post-expiry refresh). Only for direct mode; remux is handled below.
@@ -455,8 +477,14 @@ export default function PlayerPage() {
             </div>
           </div>
 
-          {/* Up next */}
+          {/* Recommendations (top) + up next (below) */}
           <aside className="w-full shrink-0 lg:w-[380px]">
+            {recommendations.length > 0 && (
+              <div className="mb-8">
+                <h2 className="mb-3 font-display text-lg font-bold text-cream">今日推薦</h2>
+                <RecommendationList items={recommendations} />
+              </div>
+            )}
             <h2 className="mb-3 font-display text-lg font-bold text-cream">接著看</h2>
             <UpNextList items={upNext} />
           </aside>

@@ -4,7 +4,13 @@ vars:
   GIT_SHA:
     sh: git rev-parse --short HEAD
   IMAGE_API: ghcr.io/steven715/vaultflix-api
-  COMPOSE_TEST: docker compose -f docker-compose.yml -f docker-compose.test.yml
+  # Integration tests run under a DEDICATED compose project (-p vaultflix-inttest)
+  # so they are fully isolated from the dev/prod `vaultflix` stack: the test stack
+  # gets its own ephemeral postgres/minio volumes and never recreates the prod api
+  # container (which would swap in the fixture mount and break real video playback)
+  # nor pollutes the dev DB. Its `down -v` only removes the isolated project's
+  # volumes, so it can never wipe the dev `vaultflix-postgres-data`.
+  COMPOSE_TEST: docker compose -p vaultflix-inttest -f docker-compose.yml -f docker-compose.test.yml
   COMPOSE_PROD: docker compose -f docker-compose.yml -f docker-compose.prod.yml
 
 tasks:
@@ -60,9 +66,14 @@ tasks:
   test-integration:
     desc: "Integration tests (clean stack + fixture) - shared by local/CI"
     cmds:
+      # Start from a pristine isolated stack every run (removes any stale ephemeral
+      # volume from a previous run so the DB is always clean — no cross-run pollution).
+      - "{{.COMPOSE_TEST}} --profile test down -v --remove-orphans"
       - "{{.COMPOSE_TEST}} --profile test up -d vaultflix-api"
       - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
-      - defer: "{{.COMPOSE_TEST}} --profile test down"
+      # -v removes the isolated project's ephemeral volumes only; the dev/prod
+      # `vaultflix` project's named volumes are untouched.
+      - defer: "{{.COMPOSE_TEST}} --profile test down -v --remove-orphans"
 
   test-full:
     desc: "Full test = test-fast + test-integration"
