@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import {
@@ -7,8 +7,10 @@ import {
   classifyPhase,
   estimateDownlinkMbps,
   familyOf,
+  fatalFamilyOf,
   type BufferSample,
   type PlaybackStats,
+  type SessionSummary,
   type TimeRange,
 } from '../utils/playbackStats'
 
@@ -46,7 +48,7 @@ export function usePlaybackStats(
   videoRef: RefObject<HTMLVideoElement | null>,
   streamPath: string | null,
   avgBitrateBps: number | null,
-): PlaybackStats {
+): { stats: PlaybackStats; getSessionSummary: () => SessionSummary } {
   const [stats, setStats] = useState<PlaybackStats>(INITIAL_STATS)
 
   const rebufferRef = useRef(0)
@@ -55,6 +57,28 @@ export function usePlaybackStats(
   const ttfbAtRef = useRef<number | null>(null) // perf time of the latest TTFB
   const prevBufRef = useRef<BufferSample | null>(null)
   const mbpsRef = useRef<number | null>(null) // EWMA-smoothed throughput
+
+  const playStartRef = useRef<number | null>(null) // perf time of first play intent
+  const ttffRef = useRef<number | null>(null) // first-frame latency, set once
+  const watchedMsRef = useRef(0) // wall-clock time spent in `playing`
+  const stallStartRef = useRef<number | null>(null) // perf time the current stall began
+  const rebufferMsRef = useRef(0) // cumulative stall duration
+  const mbpsSumRef = useRef(0)
+  const mbpsCountRef = useRef(0)
+  const fatalFamilyRef = useRef<'starved' | 'codec' | null>(null)
+  const lastTickRef = useRef<number | null>(null) // perf time of previous publish
+
+  const getSessionSummary = useCallback(
+    (): SessionSummary => ({
+      ttffMs: ttffRef.current,
+      watchedMs: Math.round(watchedMsRef.current),
+      rebufferCount: rebufferRef.current,
+      rebufferMs: Math.round(rebufferMsRef.current),
+      avgDownlinkMbps: mbpsCountRef.current > 0 ? mbpsSumRef.current / mbpsCountRef.current : null,
+      fatalErrorFamily: fatalFamilyRef.current,
+    }),
+    [],
+  )
 
   useEffect(() => {
     // New stream target (a new video) — reset per-session counters. A
@@ -66,6 +90,15 @@ export function usePlaybackStats(
     ttfbAtRef.current = null
     prevBufRef.current = null
     mbpsRef.current = null
+    playStartRef.current = null
+    ttffRef.current = null
+    watchedMsRef.current = 0
+    stallStartRef.current = null
+    rebufferMsRef.current = 0
+    mbpsSumRef.current = 0
+    mbpsCountRef.current = 0
+    fatalFamilyRef.current = null
+    lastTickRef.current = null
 
     // Listeners are bound lazily to whichever <video> is currently mounted: the
     // element can appear *after* this effect runs (PlayerPage sets `video`
@@ -79,22 +112,32 @@ export function usePlaybackStats(
       // Count genuine rebuffers, not seek-induced waiting.
       if (boundEl && boundEl.currentTime > 0 && !boundEl.seeking) {
         rebufferRef.current += 1
+        stallStartRef.current = performance.now()
       }
     }
     const onResume = () => {
       stalledRef.current = false
+      if (stallStartRef.current != null) {
+        rebufferMsRef.current += performance.now() - stallStartRef.current
+        stallStartRef.current = null
+      }
+    }
+    const onPlay = () => {
+      if (playStartRef.current == null) playStartRef.current = performance.now()
     }
     const bind = (el: HTMLVideoElement) => {
       boundEl = el
       el.addEventListener('waiting', onWaiting)
       el.addEventListener('playing', onResume)
       el.addEventListener('canplay', onResume)
+      el.addEventListener('play', onPlay)
     }
     const unbind = () => {
       if (!boundEl) return
       boundEl.removeEventListener('waiting', onWaiting)
       boundEl.removeEventListener('playing', onResume)
       boundEl.removeEventListener('canplay', onResume)
+      boundEl.removeEventListener('play', onPlay)
       boundEl = null
     }
 
@@ -147,6 +190,8 @@ export function usePlaybackStats(
             mbpsRef.current == null
               ? inst
               : MBPS_EWMA_ALPHA * inst + (1 - MBPS_EWMA_ALPHA) * mbpsRef.current
+          mbpsSumRef.current += inst
+          mbpsCountRef.current += 1
         }
       }
 
@@ -162,6 +207,21 @@ export function usePlaybackStats(
         readyState: el.readyState,
         currentTime: el.currentTime,
       })
+
+      // Watched wall-clock: accumulate time spent actually playing.
+      if (lastTickRef.current != null && phase === 'playing') {
+        watchedMsRef.current += now - lastTickRef.current
+      }
+      lastTickRef.current = now
+
+      // TTFF: first advancing frame after a play intent, recorded once.
+      if (ttffRef.current == null && playStartRef.current != null && el.currentTime > 0) {
+        ttffRef.current = now - playStartRef.current
+      }
+
+      // Fatal end state (hard MediaError), sticky once seen.
+      const fatal = fatalFamilyOf(phase)
+      if (fatal) fatalFamilyRef.current = fatal
 
       setStats({
         phase,
@@ -183,5 +243,5 @@ export function usePlaybackStats(
     }
   }, [videoRef, streamPath, avgBitrateBps])
 
-  return stats
+  return { stats, getSessionSummary }
 }
