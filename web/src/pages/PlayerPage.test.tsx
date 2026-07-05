@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import PlayerPage from './PlayerPage'
 import * as videosApi from '../api/videos'
 import * as recommendationsApi from '../api/recommendations'
@@ -259,7 +259,22 @@ describe('PlayerPage telemetry', () => {
     } as never)
   })
 
+  afterEach(() => {
+    // Restore real timers even if the test fails before reaching the end, so
+    // fake timers never leak into other tests in this file.
+    vi.useRealTimers()
+  })
+
   it('sends a telemetry beacon on unmount after some playback', async () => {
+    // Fake timers (with real-time syncing via shouldAdvanceTime) so the
+    // usePlaybackStats 500ms publish tick can be advanced deterministically
+    // instead of racing a fixed wall-clock wait against the real interval.
+    // shouldAdvanceTime keeps the mocked clock progressing with real time so
+    // the awaited data load below (getVideo/getStreamToken + findByText's
+    // DOM-driven wait) still resolves normally — only the publish tick is
+    // forced explicitly, below.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
     const { unmount } = renderPlayer()
     // Let the video load and the stats hook mount.
     await screen.findByText('T')
@@ -270,12 +285,14 @@ describe('PlayerPage telemetry', () => {
     fireEvent.play(videoEl)
     fireEvent.playing(videoEl)
 
-    // usePlaybackStats only computes ttff/watchedMs on its ~500ms publish tick
-    // (real setInterval, not on the play/playing events themselves — see
-    // src/hooks/usePlaybackStats.ts). Let one real tick land so getSessionSummary()
-    // has non-null data by the time unmount() triggers sendTelemetry.
+    // usePlaybackStats only computes ttff/watchedMs on its 500ms publish tick
+    // (setInterval, not on the play/playing events themselves — see
+    // src/hooks/usePlaybackStats.ts). Advancing the FAKE clock past one tick
+    // synchronously fires the pending interval callback right now, setting
+    // ttffRef deterministically — no dependency on the real event loop
+    // reaching it within a fixed real-time margin (the previous flaky wait).
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 600))
+      await vi.advanceTimersByTimeAsync(600)
     })
 
     unmount()
