@@ -159,4 +159,29 @@ describe('PlayerPage play_mode', () => {
     await screen.findByText('今日推薦')
     expect(vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length).toBeGreaterThan(before)
   })
+
+  it('refetches recommendations when re-navigating to the SAME video id (location.key changes, id does not)', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+
+    // A tiny harness that navigates to the SAME :id at runtime, which still pushes
+    // a new history entry (new location.key) even though useParams().id stays 'v1'.
+    function Nav() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/watch/v1')}>go v1 again</button>
+    }
+    render(
+      <MemoryRouter initialEntries={['/watch/v1']}>
+        <Nav />
+        <Routes>
+          <Route path="/watch/:id" element={<PlayerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('今日推薦')
+    const before = vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length
+    await userEvent.click(screen.getByText('go v1 again'))
+    await screen.findByText('今日推薦')
+    expect(vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length).toBeGreaterThan(before)
+  })
 })
