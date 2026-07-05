@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { ADMIN_NAV, isNavItemActive, adminPageTitle } from './adminNav'
 
 describe('ADMIN_NAV', () => {
-  it('has 6 items in design order with analytics disabled', () => {
+  it('has 6 items in design order, all enabled', () => {
     expect(ADMIN_NAV.map((n) => n.key)).toEqual([
       'library', 'recommendations', 'tags', 'media-sources', 'users', 'analytics',
     ])
     expect(ADMIN_NAV.find((n) => n.key === 'dashboard')).toBeUndefined()
-    expect(ADMIN_NAV.find((n) => n.key === 'analytics')!.enabled).toBe(false)
+    expect(ADMIN_NAV.find((n) => n.key === 'analytics')!.enabled).toBe(true)
     expect(ADMIN_NAV.find((n) => n.key === 'library')!.enabled).toBe(true)
   })
 })

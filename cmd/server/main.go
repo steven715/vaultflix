@@ -128,6 +128,8 @@ func main() {
 	favoriteRepo := repository.NewFavoriteRepository(pool)
 	recRepo := repository.NewRecommendationRepository(pool)
 	mediaSourceRepo := repository.NewMediaSourceRepository(pool)
+	watchSessionRepo := repository.NewWatchSessionRepository(pool)
+	analyticsRepo := repository.NewAnalyticsRepository(pool)
 
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket, service.NewInMemoryURLCache())
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
@@ -140,6 +142,8 @@ func main() {
 
 	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
+	watchSessionService := service.NewWatchSessionService(watchSessionRepo)
+	analyticsService := service.NewAnalyticsService(analyticsRepo)
 
 	// Enrichment: scraper clients, service, and handler
 	actressRepo := repository.NewActressRepository(pool)
@@ -174,7 +178,9 @@ func main() {
 	recHandler := handler.NewRecommendationHandler(recService)
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
+	watchSessionHandler := handler.NewWatchSessionHandler(watchSessionService)
 	backfillHandler := handler.NewBackfillHandler(backfillService)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 
 	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceRepo)
 	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
@@ -227,6 +233,9 @@ func main() {
 		api.GET("/watch-history", historyHandler.List)
 		api.DELETE("/watch-history", historyHandler.ClearHistory)
 
+		// Watch session heartbeat (accumulated real watch time)
+		api.POST("/watch-sessions/heartbeat", watchSessionHandler.Heartbeat)
+
 		// Favorite endpoints
 		api.GET("/favorites", favoriteHandler.List)
 		api.POST("/favorites", favoriteHandler.Add)
@@ -257,6 +266,9 @@ func main() {
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
 		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
+
+		// Analytics (admin only, enforced by Casbin)
+		api.GET("/admin/analytics", analyticsHandler.Get)
 
 		// Enrichment endpoints
 		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)
