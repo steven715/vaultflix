@@ -89,4 +89,29 @@ describe('PlayerPage play_mode', () => {
     // Must land on the library, not back on the previous player page (v0).
     expect(await screen.findByText('片庫首頁')).toBeInTheDocument()
   })
+
+  it('shows at most 5 up-next videos, excluding the current one', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      id: i === 0 ? 'v1' : `u${i}`, // v1 is the current video → must be excluded
+      title: `Up ${i}`,
+      tags: [],
+      resolution: '1920x1080',
+      duration_seconds: 10,
+      thumbnail_url: '',
+    }))
+    vi.mocked(videosApi.listVideos).mockResolvedValue({
+      data: many,
+      total: 6,
+      page: 1,
+      page_size: 6,
+    } as never)
+
+    renderPlayer()
+
+    // Current video v1 excluded; the remaining 5 (u1..u5) all render.
+    expect(await screen.findByText('Up 5')).toBeInTheDocument()
+    expect(screen.getByText('Up 1')).toBeInTheDocument()
+    expect(screen.queryByText('Up 0')).not.toBeInTheDocument() // v1 excluded
+  })
 })

@@ -111,14 +111,15 @@ export default function PlayerPage() {
     }
   }, [id, flushHeartbeat])
 
-  // Up-next column: a handful of other videos, excluding the current one.
+  // Up-next column: 5 other videos, excluding the current one. Fetch 6 so that
+  // even when the current video is among the newest 5, we still fill 5 rows.
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    listVideos({ page: 1, page_size: 12, sort_by: 'created_at', sort_order: 'desc' })
+    listVideos({ page: 1, page_size: 6, sort_by: 'created_at', sort_order: 'desc' })
       .then((res) => {
         if (cancelled) return
-        setUpNext(res.data.filter((v) => v.id !== id).slice(0, 8))
+        setUpNext(res.data.filter((v) => v.id !== id).slice(0, 5))
       })
       .catch((err) => console.warn('failed to load up-next', err))
     return () => {
