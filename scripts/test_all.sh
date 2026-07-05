@@ -6,13 +6,13 @@
 #   bash scripts/test_all.sh              # 跑全部
 #   bash scripts/test_all.sh auth tags    # 只跑指定的
 #
-# 可用的 test suites: auth, import, videos, tags, enrich, hls, analytics
+# 可用的 test suites: auth, import, videos, tags, enrich, hls, analytics, telemetry
 # =============================================================================
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-ALL_SUITES="auth import videos tags enrich hls analytics"
+ALL_SUITES="auth import videos tags enrich hls analytics telemetry"
 SUITES="${*:-$ALL_SUITES}"
 
 TOTAL_PASS=0
