@@ -1,19 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
 import { getVideo, getStreamToken, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import { postHeartbeat } from '../api/watchSession'
 import { getTodayRecommendations } from '../api/recommendations'
+import { sendPlaybackTelemetryBeacon } from '../api/telemetry'
 import type { VideoDetail, VideoWithTags, RecommendationItem } from '../types'
 import { formatDuration, formatFileSize, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
 import AppShell, { Container } from '../components/AppShell'
 import UpNextList from '../components/UpNextList'
 import RecommendationList from '../components/RecommendationList'
+import NetworkHud from '../components/NetworkHud'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 import { clampDelta } from '../lib/heartbeat'
+import { usePlaybackStats } from '../hooks/usePlaybackStats'
 
 const PROGRESS_THROTTLE_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 15_000
@@ -39,11 +42,31 @@ export default function PlayerPage() {
   const lastReportTimeRef = useRef(0)
   const lastReportSecondsRef = useRef(-1)
   const videoIDRef = useRef<string>('')
+  const playModeRef = useRef<string>('')
+  const telemetrySentRef = useRef(false)
 
   // Heartbeat (accumulated real watch time) — session regenerates per open.
   const sessionIdRef = useRef<string>('')
   const lastSampleSecondsRef = useRef(0) // last currentTime we measured a delta from
   const pendingDeltaRef = useRef(0) // play-seconds accumulated since last flush
+
+  // Playback telemetry: stream inputs feed usePlaybackStats (bitrate-based
+  // throughput estimate + TTFB matching), which must be mounted unconditionally
+  // at the top level regardless of the loading/error early returns below.
+  const avgBitrateBps =
+    video && video.duration_seconds > 0
+      ? (video.file_size_bytes * 8) / video.duration_seconds
+      : null
+  const streamPath = video
+    ? video.play_mode === 'remux'
+      ? `/api/videos/${video.id}/hls`
+      : video.stream_url
+    : null
+  const { stats, getSessionSummary } = usePlaybackStats(videoRef, streamPath, avgBitrateBps)
+
+  const [searchParams] = useSearchParams()
+  const hudVisible =
+    searchParams.get('hud') === '1' || localStorage.getItem('vaultflix-hud') === '1'
 
   // Flush the accumulated heartbeat delta. Defined before the effects below
   // (rather than near handleTimeUpdate) because the fetchVideo effect's
@@ -73,6 +96,31 @@ export default function PlayerPage() {
     postHeartbeat(payload).catch((err) => console.warn('failed to send heartbeat', err))
   }, [])
 
+  // Emit the session's terminal quality summary once, on unmount / page leave.
+  // Guarded so a session that never played sends nothing; the server upserts on
+  // session_id, so a duplicate is harmless. Uses only refs (no setState here).
+  const sendTelemetry = useCallback(() => {
+    if (telemetrySentRef.current) return
+    const vid = videoIDRef.current
+    const sid = sessionIdRef.current
+    const mode = playModeRef.current
+    if (!vid || !sid || !mode) return
+    const s = getSessionSummary()
+    if (s.ttffMs == null && s.watchedMs <= 0) return
+    telemetrySentRef.current = true
+    sendPlaybackTelemetryBeacon({
+      session_id: sid,
+      video_id: vid,
+      play_mode: mode,
+      ttff_ms: s.ttffMs,
+      watched_ms: s.watchedMs,
+      rebuffer_count: s.rebufferCount,
+      rebuffer_ms: s.rebufferMs,
+      avg_downlink_mbps: s.avgDownlinkMbps,
+      fatal_error_family: s.fatalErrorFamily,
+    })
+  }, [getSessionSummary])
+
   useEffect(() => {
     let cancelled = false
     if (!id) return
@@ -89,6 +137,8 @@ export default function PlayerPage() {
         setError('')
         retryCountRef.current = 0
         videoIDRef.current = data.id
+        playModeRef.current = data.play_mode
+        telemetrySentRef.current = false
         sessionIdRef.current = crypto.randomUUID()
         lastSampleSecondsRef.current = 0
         pendingDeltaRef.current = 0
@@ -112,8 +162,9 @@ export default function PlayerPage() {
       // Send final progress on unmount
       sendProgressBeacon()
       flushHeartbeat(true)
+      sendTelemetry()
     }
-  }, [id, flushHeartbeat])
+  }, [id, flushHeartbeat, sendTelemetry])
 
   // Up-next column: 5 random other videos, excluding the current one. A random
   // sample (sort_by: 'random') rather than "newest", so the list differs on each
@@ -429,6 +480,7 @@ export default function PlayerPage() {
                   onLoadedMetadata={handleLoadedMetadata}
                   onVolumeChange={handleVolumeChange}
                 />
+                {hudVisible && <NetworkHud stats={stats} />}
               </div>
             )}
 

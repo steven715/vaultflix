@@ -1,13 +1,15 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import PlayerPage from './PlayerPage'
 import * as videosApi from '../api/videos'
 import * as recommendationsApi from '../api/recommendations'
+import * as telemetryApi from '../api/telemetry'
 
 vi.mock('../api/videos')
 vi.mock('../api/recommendations')
+vi.mock('../api/telemetry')
 
 // Mock contexts used by AppShell/PlayerPage
 vi.mock('../contexts/ToastContext', () => ({
@@ -242,5 +244,42 @@ describe('PlayerPage play_mode', () => {
     await userEvent.click(screen.getByText('go v1 again'))
     await screen.findByText('今日推薦')
     expect(vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('PlayerPage telemetry', () => {
+  beforeEach(() => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({
+      ...base,
+      play_mode: 'direct',
+    } as never)
+  })
+
+  it('sends a telemetry beacon on unmount after some playback', async () => {
+    const { unmount } = renderPlayer()
+    // Let the video load and the stats hook mount.
+    await screen.findByText('T')
+
+    const videoEl = document.querySelector('video') as HTMLVideoElement
+    // Simulate first frame + playing so the session has measurable data.
+    Object.defineProperty(videoEl, 'currentTime', { value: 5, configurable: true })
+    fireEvent.play(videoEl)
+    fireEvent.playing(videoEl)
+
+    // usePlaybackStats only computes ttff/watchedMs on its ~500ms publish tick
+    // (real setInterval, not on the play/playing events themselves — see
+    // src/hooks/usePlaybackStats.ts). Let one real tick land so getSessionSummary()
+    // has non-null data by the time unmount() triggers sendTelemetry.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+    })
+
+    unmount()
+
+    expect(telemetryApi.sendPlaybackTelemetryBeacon).toHaveBeenCalledTimes(1)
+    const payload = vi.mocked(telemetryApi.sendPlaybackTelemetryBeacon).mock.calls[0][0]
+    expect(payload.video_id).toBe('v1')
+    expect(payload.play_mode).toBe('direct')
+    expect(typeof payload.session_id).toBe('string')
   })
 })
