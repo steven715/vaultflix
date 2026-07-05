@@ -1,25 +1,5 @@
 # Vaultflix Roadmap
 
-## 待優化項目
-
-### 後端
-
-- [ ] **匯入 handler 加入 context timeout** — 目前直接使用 `c.Request.Context()`，沒有明確 timeout 保護
-- [ ] **推薦服務批次產生 URL** — Recommendation 仍逐一呼叫；雖然 1.6 加了 cache 緩解 N+1 成本，但 batch query 還沒做
-- [ ] **優化 GetRandomUnwatched 查詢** — 目前用 `LEFT JOIN + OR` 條件，大量觀看記錄時效能差，應改用 `NOT EXISTS` 子查詢
-- [ ] **MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 失敗只 log 不中斷，長期會累積孤兒檔案，需記錄失敗項供後續清理
-- [ ] **新增 `video_tags.tag_id` 索引** — 按標籤篩選影片時缺少索引，影響 GROUP BY 效能
-- [ ] **新增 `favorites.user_id` 索引** — 查詢使用者收藏清單缺少獨立索引
-
-### 前端
-
-- [ ] **載入骨架屏** — 影片網格載入時只顯示文字「載入中...」，缺少 skeleton placeholder，造成版面跳動
-- [ ] **Header 搜尋列 RWD** — 搜尋框在手機寬度下擠壓變形，需改為可收合的搜尋抽屜
-- [ ] **TagSidebar 手機適配** — 固定寬度 `w-56` 在小平板造成水平溢出，需可收合或隱藏
-- [ ] **影片資訊區塊 RWD** — metadata（時長、解析度等）在手機上換行不可控，需改為垂直堆疊
-
----
-
 ### 🎯 進行中（優先）
 
 - [ ] **自動標籤（AI 影片分析）** — 透過 AI 分析影片檔名（JAV 番號、女優名）與內容，自動建議標籤分類。**目前最高優先**。
@@ -33,7 +13,7 @@
 - [ ] **行動端支援** — React Native 或獨立 APP，搭配現有 API
 - [ ] **多使用者** — 開放註冊、使用者偏好設定、個人化推薦
 - [ ] **API Gateway** — 引入 Traefik 做 rate limiting、SSL termination、反向代理
-- [ ] **孤兒檔案清理排程** — 定期比對 MinIO 與 DB，清理不一致的孤兒物件
+- [ ] **孤兒檔案清理排程 / MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 刪除為 best-effort（`internal/service/video_service.go` 三個刪除失敗只 log、仍回 nil），孤兒物件會靜默累積。需定期比對 MinIO 與 DB 清理不一致物件。**觸發條件**：實際觀察到孤兒物件累積，或 MinIO 刪除失敗重複發生。
 
 ---
 

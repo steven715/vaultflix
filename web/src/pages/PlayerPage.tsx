@@ -256,6 +256,16 @@ export default function PlayerPage() {
     lastSampleSecondsRef.current = el.currentTime
   }
 
+  // A seek (scrubber drag / skip) is not playback. Resync the heartbeat baseline
+  // to the seek target so the next timeupdate measures from there — the jump
+  // contributes zero. Without this, a forward seek adds up to MAX_HEARTBEAT_DELTA
+  // phantom seconds (clampDelta only caps the inflation, it doesn't remove it).
+  function handleSeeking() {
+    const el = videoRef.current
+    if (!el) return
+    lastSampleSecondsRef.current = el.currentTime
+  }
+
   // Flush the accumulated heartbeat delta on a fixed cadence.
   useEffect(() => {
     const timer = setInterval(() => flushHeartbeat(false), HEARTBEAT_INTERVAL_MS)
@@ -414,6 +424,7 @@ export default function PlayerPage() {
                   className="aspect-video w-full"
                   onError={handleVideoError}
                   onTimeUpdate={handleTimeUpdate}
+                  onSeeking={handleSeeking}
                   onPause={handlePause}
                   onLoadedMetadata={handleLoadedMetadata}
                   onVolumeChange={handleVolumeChange}

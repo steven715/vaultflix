@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
@@ -74,6 +74,54 @@ describe('PlayerPage play_mode', () => {
     } as never)
     renderPlayer()
     expect(await screen.findByText(/尚未支援|Phase 2|無法播放/)).toBeInTheDocument()
+  })
+
+  it('does not count a forward seek as watch time (heartbeat delta excludes the jump)', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({
+      ...base,
+      play_mode: 'direct',
+      duration_seconds: 6000,
+    } as never)
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }))
+
+    const { container, unmount } = renderPlayer()
+    await screen.findByText('T')
+    const el = container.querySelector('video') as HTMLVideoElement
+    expect(el).toBeTruthy()
+
+    // Stub currentTime so we can drive playback/seek positions.
+    let ct = 0
+    Object.defineProperty(el, 'currentTime', {
+      get: () => ct,
+      set: (v: number) => {
+        ct = v
+      },
+      configurable: true,
+    })
+
+    // Play 0 → 10s (10 real seconds of watch time), then scrub forward to 5000s.
+    fireEvent.loadedMetadata(el)
+    ct = 10
+    fireEvent.timeUpdate(el)
+    ct = 5000
+    fireEvent.seeking(el)
+    fireEvent.timeUpdate(el)
+
+    // Unmount flushes the accumulated heartbeat delta via the beacon path.
+    unmount()
+
+    const hb = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/watch-sessions/heartbeat'),
+    )
+    expect(hb).toBeTruthy()
+    const body = JSON.parse((hb![1] as RequestInit).body as string)
+    // Only the 10 real seconds count; the 4990s forward jump contributes 0.
+    // Without the onSeeking resync this would be 10 + min(4990, 22) = 32.
+    expect(body.played_delta).toBe(10)
+
+    fetchSpy.mockRestore()
   })
 
   it('returns to the library (not the previous player page) when clicking 返回片庫', async () => {
