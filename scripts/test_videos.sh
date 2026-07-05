@@ -71,6 +71,22 @@ RESP=$(curl -s "${API_BASE}/api/videos?sort_by=title&sort_order=asc&page_size=5"
 CODE_CHECK=$(echo "$RESP" | jq -r '.page // empty')
 assert_not_empty "sort_by=title&sort_order=asc 回應正常" "$CODE_CHECK"
 
+# sort_by=random（播放頁接著看用）：回 200 且有資料，長度不超過 page_size
+RESP=$(curl -s "${API_BASE}/api/videos?sort_by=random&page_size=6" \
+    -H "Authorization: Bearer ${VIEWER_TOKEN}")
+RANDOM_PAGE=$(echo "$RESP" | jq -r '.page // empty')
+RANDOM_LEN=$(echo "$RESP" | jq '.data | length')
+assert_not_empty "sort_by=random 回應正常" "$RANDOM_PAGE"
+assert_gte "sort_by=random 有資料" 1 "$RANDOM_LEN"
+_TOTAL=$((_TOTAL + 1))
+if [ "$RANDOM_LEN" -le 6 ]; then
+    green "  [PASS] sort_by=random data length <= page_size"
+    _PASS=$((_PASS + 1))
+else
+    red "  [FAIL] sort_by=random data length ($RANDOM_LEN) > page_size (6)"
+    _FAIL=$((_FAIL + 1))
+fi
+
 # ---------------------------------------------------------------------------
 echo ""
 bold "[4] GET /api/videos — 無效參數驗證"
