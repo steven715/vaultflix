@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,7 @@ type telemetryRequest struct {
 	SessionID        string   `json:"session_id" binding:"required"`
 	VideoID          string   `json:"video_id" binding:"required"`
 	PlayMode         string   `json:"play_mode" binding:"required"`
-	TTFFMs           *int     `json:"ttff_ms"`
+	TTFFMs           *float64 `json:"ttff_ms"`
 	WatchedMs        int      `json:"watched_ms"`
 	RebufferCount    int      `json:"rebuffer_count"`
 	RebufferMs       int      `json:"rebuffer_ms"`
@@ -51,13 +52,19 @@ func (h *PlaybackTelemetryHandler) Record(c *gin.Context) {
 		return
 	}
 
+	var ttff *int
+	if req.TTFFMs != nil {
+		v := int(math.Round(*req.TTFFMs))
+		ttff = &v
+	}
+
 	err := h.service.Record(c.Request.Context(), model.PlaybackTelemetryInput{
 		SessionID:        req.SessionID,
 		UserID:           userID,
 		VideoID:          req.VideoID,
 		PlayMode:         req.PlayMode,
 		RemoteIP:         c.ClientIP(),
-		TTFFMs:           req.TTFFMs,
+		TTFFMs:           ttff,
 		WatchedMs:        req.WatchedMs,
 		RebufferCount:    req.RebufferCount,
 		RebufferMs:       req.RebufferMs,

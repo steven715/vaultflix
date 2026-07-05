@@ -42,6 +42,28 @@ func TestTelemetryRecord_Success(t *testing.T) {
 	}
 }
 
+func TestTelemetryRecord_FractionalTTFFRounds(t *testing.T) {
+	var captured model.PlaybackTelemetryInput
+	repo := &mock.PlaybackTelemetryRepository{
+		InsertFunc: func(_ context.Context, in model.PlaybackTelemetryInput) error {
+			captured = in
+			return nil
+		},
+	}
+	r := setupTelemetryRouter(repo)
+	body := `{"session_id":"s1","video_id":"v1","play_mode":"direct","ttff_ms":1234.5,"watched_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/playback/telemetry", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d (%s)", w.Code, w.Body.String())
+	}
+	if captured.TTFFMs == nil || *captured.TTFFMs != 1235 {
+		t.Fatalf("want TTFFMs rounded to 1235, got %+v", captured.TTFFMs)
+	}
+}
+
 func TestTelemetryRecord_MissingFields(t *testing.T) {
 	r := setupTelemetryRouter(&mock.PlaybackTelemetryRepository{})
 	req := httptest.NewRequest(http.MethodPost, "/api/playback/telemetry", bytes.NewBufferString(`{"session_id":"s1"}`))

@@ -47,6 +47,14 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE}/api/playback/
 assert_eq "重送回 204" "204" "$CODE"
 
 echo ""
+bold "[2b] 小數 ttff_ms（如 812.7）四捨五入後仍回 204"
+# 用 remux（非 direct）避免污染下面 [5] 對 direct 分組的 DELTA 斷言。
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE}/api/playback/telemetry" \
+    -H "Authorization: Bearer ${VIEWER_TOKEN}" -H "Content-Type: application/json" \
+    -d "{\"session_id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"video_id\":\"${VIDEO_ID}\",\"play_mode\":\"remux\",\"ttff_ms\":812.7,\"watched_ms\":1000}")
+assert_eq "小數 ttff_ms 回 204" "204" "$CODE"
+
+echo ""
 bold "[3] 非法 play_mode 回 400"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE}/api/playback/telemetry" \
     -H "Authorization: Bearer ${VIEWER_TOKEN}" -H "Content-Type: application/json" \

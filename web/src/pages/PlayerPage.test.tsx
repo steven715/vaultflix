@@ -51,6 +51,10 @@ function renderPlayer() {
   )
 }
 
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
 describe('PlayerPage play_mode', () => {
   beforeEach(() => {
     vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })

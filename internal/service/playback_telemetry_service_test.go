@@ -95,15 +95,19 @@ func TestRecord_ClampsNegatives(t *testing.T) {
 	}
 	svc := NewPlaybackTelemetryService(repo)
 	neg := -50
+	negMbps := -3.5
 	err := svc.Record(context.Background(), model.PlaybackTelemetryInput{
 		SessionID: "s1", UserID: "u1", VideoID: "v1", PlayMode: "direct", RemoteIP: "10.0.0.1",
-		WatchedMs: -10, RebufferCount: -1, RebufferMs: -5, TTFFMs: &neg,
+		WatchedMs: -10, RebufferCount: -1, RebufferMs: -5, TTFFMs: &neg, AvgDownlinkMbps: &negMbps,
 	})
 	if err != nil {
 		t.Fatalf("Record returned error: %v", err)
 	}
 	if captured.WatchedMs != 0 || captured.RebufferCount != 0 || captured.RebufferMs != 0 || *captured.TTFFMs != 0 {
 		t.Fatalf("negatives not clamped: %+v", captured)
+	}
+	if captured.AvgDownlinkMbps == nil || *captured.AvgDownlinkMbps != 0 {
+		t.Fatalf("AvgDownlinkMbps not clamped: %+v", captured.AvgDownlinkMbps)
 	}
 }
 

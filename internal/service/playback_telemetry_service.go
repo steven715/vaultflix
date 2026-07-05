@@ -9,11 +9,15 @@ import (
 	"github.com/steven/vaultflix/internal/repository"
 )
 
-// validPlayModes is the closed set the ingest endpoint accepts.
-var validPlayModes = map[string]bool{
-	string(model.PlayModeDirect):    true,
-	string(model.PlayModeRemux):     true,
-	string(model.PlayModeTranscode): true,
+// isValidPlayMode reports whether m is one of the closed set the ingest
+// endpoint accepts.
+func isValidPlayMode(m string) bool {
+	switch model.PlayMode(m) {
+	case model.PlayModeDirect, model.PlayModeRemux, model.PlayModeTranscode:
+		return true
+	default:
+		return false
+	}
 }
 
 type PlaybackTelemetryService struct {
@@ -31,7 +35,7 @@ func (s *PlaybackTelemetryService) Record(ctx context.Context, in model.Playback
 	if in.SessionID == "" || in.UserID == "" || in.VideoID == "" {
 		return fmt.Errorf("telemetry requires session/user/video: %w", model.ErrInvalidInput)
 	}
-	if !validPlayModes[in.PlayMode] {
+	if !isValidPlayMode(in.PlayMode) {
 		return fmt.Errorf("invalid play_mode %q: %w", in.PlayMode, model.ErrInvalidInput)
 	}
 	in.NetworkScope = classifyNetworkScope(in.RemoteIP)

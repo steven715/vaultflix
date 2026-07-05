@@ -70,7 +70,7 @@ export function usePlaybackStats(
 
   const getSessionSummary = useCallback(
     (): SessionSummary => ({
-      ttffMs: ttffRef.current,
+      ttffMs: ttffRef.current == null ? null : Math.round(ttffRef.current),
       watchedMs: Math.round(watchedMsRef.current),
       rebufferCount: rebufferRef.current,
       rebufferMs: Math.round(rebufferMsRef.current),

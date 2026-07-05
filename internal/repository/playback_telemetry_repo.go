@@ -47,7 +47,7 @@ const queryInsertTelemetry = `
 
 // queryAggregateTelemetry returns per-play_mode metrics over the trailing
 // window. percentile_cont skips NULL ttff_ms rows; casts to float8 keep the
-// scan targets *float64. $2 = ” disables the scope filter.
+// scan targets *float64. An empty $2 disables the scope filter.
 const queryAggregateTelemetry = `
     SELECT play_mode,
            COUNT(*) AS sessions,
