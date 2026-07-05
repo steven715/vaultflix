@@ -92,7 +92,9 @@ describe('PlayerPage play_mode', () => {
 
   it('shows at most 5 up-next videos, excluding the current one', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
-    const many = Array.from({ length: 6 }, (_, i) => ({
+    // 7 items: item 0 is v1 (current, will be excluded), items 1–6 are u1..u6 (candidates).
+    // After filtering v1, 6 candidates remain; slice(0, 5) must drop the 6th.
+    const many = Array.from({ length: 7 }, (_, i) => ({
       id: i === 0 ? 'v1' : `u${i}`, // v1 is the current video → must be excluded
       title: `Up ${i}`,
       tags: [],
@@ -102,7 +104,7 @@ describe('PlayerPage play_mode', () => {
     }))
     vi.mocked(videosApi.listVideos).mockResolvedValue({
       data: many,
-      total: 6,
+      total: 7,
       page: 1,
       page_size: 6,
     } as never)
@@ -110,8 +112,10 @@ describe('PlayerPage play_mode', () => {
     renderPlayer()
 
     // Current video v1 excluded; the remaining 5 (u1..u5) all render.
+    // The 6th candidate (u6) must NOT render, proving the 5-cap.
     expect(await screen.findByText('Up 5')).toBeInTheDocument()
     expect(screen.getByText('Up 1')).toBeInTheDocument()
     expect(screen.queryByText('Up 0')).not.toBeInTheDocument() // v1 excluded
+    expect(screen.queryByText('Up 6')).not.toBeInTheDocument() // 6th candidate trimmed by slice(0, 5)
   })
 })
