@@ -115,12 +115,14 @@ export default function PlayerPage() {
     }
   }, [id, flushHeartbeat])
 
-  // Up-next column: 5 other videos, excluding the current one. Fetch 6 so that
-  // even when the current video is among the newest 5, we still fill 5 rows.
+  // Up-next column: 5 random other videos, excluding the current one. A random
+  // sample (sort_by: 'random') rather than "newest", so the list differs on each
+  // video you open instead of always showing the same latest few. Fetch 6 so that
+  // excluding the current one (if it lands in the sample) still fills 5 rows.
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    listVideos({ page: 1, page_size: 6, sort_by: 'created_at', sort_order: 'desc' })
+    listVideos({ page: 1, page_size: 6, sort_by: 'random' })
       .then((res) => {
         if (cancelled) return
         setUpNext(res.data.filter((v) => v.id !== id).slice(0, 5))
@@ -475,16 +477,16 @@ export default function PlayerPage() {
             </div>
           </div>
 
-          {/* Up next + recommendations */}
+          {/* Recommendations (top) + up next (below) */}
           <aside className="w-full shrink-0 lg:w-[380px]">
-            <h2 className="mb-3 font-display text-lg font-bold text-cream">接著看</h2>
-            <UpNextList items={upNext} />
             {recommendations.length > 0 && (
-              <div className="mt-8">
+              <div className="mb-8">
                 <h2 className="mb-3 font-display text-lg font-bold text-cream">今日推薦</h2>
                 <RecommendationList items={recommendations} />
               </div>
             )}
+            <h2 className="mb-3 font-display text-lg font-bold text-cream">接著看</h2>
+            <UpNextList items={upNext} />
           </aside>
         </div>
       </Container>

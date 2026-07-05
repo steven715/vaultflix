@@ -126,14 +126,25 @@ describe('PlayerPage play_mode', () => {
     expect(screen.getByText('Up 1')).toBeInTheDocument()
     expect(screen.queryByText('Up 0')).not.toBeInTheDocument() // v1 excluded
     expect(screen.queryByText('Up 6')).not.toBeInTheDocument() // 6th candidate trimmed by slice(0, 5)
+
+    // Up-next must request a RANDOM sample (not "newest") so the list differs on
+    // each video, and page_size 6 so 5 remain after excluding the current video.
+    expect(videosApi.listVideos).toHaveBeenCalledWith(
+      expect.objectContaining({ page_size: 6, sort_by: 'random' }),
+    )
   })
 
-  it('renders the 今日推薦 block with recommendation items', async () => {
+  it('renders the 今日推薦 block above 接著看 with recommendation items', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
     renderPlayer()
-    expect(await screen.findByText('今日推薦')).toBeInTheDocument()
+    const recHeading = await screen.findByText('今日推薦')
+    expect(recHeading).toBeInTheDocument()
     expect(await screen.findByText('Rec One')).toBeInTheDocument()
     expect(screen.getByText('Rec Five')).toBeInTheDocument()
+
+    // 今日推薦 must come before 接著看 in document order.
+    const upNextHeading = screen.getByText('接著看')
+    expect(recHeading.compareDocumentPosition(upNextHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('refetches recommendations on navigation to another video (new location.key)', async () => {
