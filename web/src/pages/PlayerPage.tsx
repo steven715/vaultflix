@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import Hls from 'hls.js'
 import { getVideo, getStreamToken, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import { postHeartbeat } from '../api/watchSession'
-import type { VideoDetail, VideoWithTags } from '../types'
+import { getTodayRecommendations } from '../api/recommendations'
+import type { VideoDetail, VideoWithTags, RecommendationItem } from '../types'
 import { formatDuration, formatFileSize, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
 import AppShell, { Container } from '../components/AppShell'
 import UpNextList from '../components/UpNextList'
+import RecommendationList from '../components/RecommendationList'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 import { clampDelta } from '../lib/heartbeat'
 
@@ -19,6 +21,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
   const [streamToken, setStreamToken] = useState('')
@@ -26,6 +29,7 @@ export default function PlayerPage() {
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
   const [upNext, setUpNext] = useState<VideoWithTags[]>([])
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
   // Playback position to restore after a stream-token refresh reload.
@@ -126,6 +130,21 @@ export default function PlayerPage() {
       cancelled = true
     }
   }, [id])
+
+  // Today's recommendations (same source as the home page). Refetch on every
+  // navigation — location.key changes even when navigating to the same :id, so
+  // clicking another up-next item (or re-opening the same video) reloads these.
+  useEffect(() => {
+    let cancelled = false
+    getTodayRecommendations(5)
+      .then((items) => {
+        if (!cancelled) setRecommendations(items.slice(0, 5))
+      })
+      .catch((err) => console.warn('failed to load recommendations', err))
+    return () => {
+      cancelled = true
+    }
+  }, [location.key])
 
   // Reload the media element whenever the stream token changes (initial load
   // and post-expiry refresh). Only for direct mode; remux is handled below.
@@ -456,10 +475,16 @@ export default function PlayerPage() {
             </div>
           </div>
 
-          {/* Up next */}
+          {/* Up next + recommendations */}
           <aside className="w-full shrink-0 lg:w-[380px]">
             <h2 className="mb-3 font-display text-lg font-bold text-cream">接著看</h2>
             <UpNextList items={upNext} />
+            {recommendations.length > 0 && (
+              <div className="mt-8">
+                <h2 className="mb-3 font-display text-lg font-bold text-cream">今日推薦</h2>
+                <RecommendationList items={recommendations} />
+              </div>
+            )}
           </aside>
         </div>
       </Container>

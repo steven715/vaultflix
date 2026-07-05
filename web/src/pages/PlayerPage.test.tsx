@@ -1,11 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import PlayerPage from './PlayerPage'
 import * as videosApi from '../api/videos'
+import * as recommendationsApi from '../api/recommendations'
 
 vi.mock('../api/videos')
+vi.mock('../api/recommendations')
 
 // Mock contexts used by AppShell/PlayerPage
 vi.mock('../contexts/ToastContext', () => ({
@@ -56,6 +58,13 @@ describe('PlayerPage play_mode', () => {
       page: 1,
       page_size: 12,
     } as never)
+    vi.mocked(recommendationsApi.getTodayRecommendations).mockResolvedValue([
+      { id: 'r1', video_id: 'rv1', title: 'Rec One', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 1, is_fallback: false },
+      { id: 'r2', video_id: 'rv2', title: 'Rec Two', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 2, is_fallback: false },
+      { id: 'r3', video_id: 'rv3', title: 'Rec Three', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 3, is_fallback: false },
+      { id: 'r4', video_id: 'rv4', title: 'Rec Four', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 4, is_fallback: false },
+      { id: 'r5', video_id: 'rv5', title: 'Rec Five', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 5, is_fallback: false },
+    ] as never)
   })
 
   it('shows a notice for transcode videos instead of a player', async () => {
@@ -117,5 +126,37 @@ describe('PlayerPage play_mode', () => {
     expect(screen.getByText('Up 1')).toBeInTheDocument()
     expect(screen.queryByText('Up 0')).not.toBeInTheDocument() // v1 excluded
     expect(screen.queryByText('Up 6')).not.toBeInTheDocument() // 6th candidate trimmed by slice(0, 5)
+  })
+
+  it('renders the 今日推薦 block with recommendation items', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+    renderPlayer()
+    expect(await screen.findByText('今日推薦')).toBeInTheDocument()
+    expect(await screen.findByText('Rec One')).toBeInTheDocument()
+    expect(screen.getByText('Rec Five')).toBeInTheDocument()
+  })
+
+  it('refetches recommendations on navigation to another video (new location.key)', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+
+    // A tiny harness that lets the test navigate to a new :id at runtime.
+    function Nav() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/watch/v2')}>go v2</button>
+    }
+    render(
+      <MemoryRouter initialEntries={['/watch/v1']}>
+        <Nav />
+        <Routes>
+          <Route path="/watch/:id" element={<PlayerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('今日推薦')
+    const before = vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length
+    await userEvent.click(screen.getByText('go v2'))
+    await screen.findByText('今日推薦')
+    expect(vi.mocked(recommendationsApi.getTodayRecommendations).mock.calls.length).toBeGreaterThan(before)
   })
 })
