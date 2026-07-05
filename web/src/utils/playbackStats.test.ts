@@ -6,6 +6,7 @@ import {
   classifyPhase,
   estimateDownlinkMbps,
   familyOf,
+  fatalFamilyOf,
   type PlaybackPhase,
   type PlaybackSignals,
   type StatsFamily,
@@ -155,5 +156,22 @@ describe('classifyPhase + familyOf', () => {
     const phase = classifyPhase({ ...base, errorCode: 3, paused: true, stalled: true })
     expect(phase).toBe('decode-error')
     expect(familyOf(phase)).toBe('codec')
+  })
+})
+
+describe('fatalFamilyOf', () => {
+  const cases: { phase: PlaybackPhase; want: 'starved' | 'codec' | null }[] = [
+    { phase: 'network-error', want: 'starved' },
+    { phase: 'decode-error', want: 'codec' },
+    { phase: 'unsupported', want: 'codec' },
+    { phase: 'buffering', want: null }, // transient, not a fatal end state
+    { phase: 'playing', want: null },
+    { phase: 'paused', want: null },
+    { phase: 'idle', want: null },
+  ]
+  cases.forEach(({ phase, want }) => {
+    it(`maps ${phase} -> ${want}`, () => {
+      expect(fatalFamilyOf(phase)).toBe(want)
+    })
   })
 })
