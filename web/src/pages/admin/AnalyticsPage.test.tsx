@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import AnalyticsPage from './AnalyticsPage'
 import * as api from '../../api/analytics'
@@ -29,5 +29,22 @@ describe('AnalyticsPage', () => {
     vi.spyOn(api, 'getAnalytics').mockResolvedValue(empty)
     render(<MemoryRouter><AnalyticsPage /></MemoryRouter>)
     await waitFor(() => expect(screen.getAllByText(/尚無觀看資料/).length).toBeGreaterThan(0))
+  })
+
+  it('renders the trend when only views exist (hours round to 0) and toggles the metric', async () => {
+    const viewsOnly: api.AnalyticsSummary = {
+      ...empty,
+      total_views: 5,
+      daily_trend: empty.daily_trend.map((p, i) => (i === 29 ? { ...p, views: 5, watch_hours: 0 } : p)),
+    }
+    vi.spyOn(api, 'getAnalytics').mockResolvedValue(viewsOnly)
+    render(<MemoryRouter><AnalyticsPage /></MemoryRouter>)
+    // Default metric is watch_hours, but the chart must NOT show the empty state
+    // because there are real views (hours just round to 0).
+    await waitFor(() => expect(screen.getAllByText('近 30 天觀看時長').length).toBeGreaterThan(0))
+    expect(screen.queryByText(/尚無觀看資料/)).toBeNull()
+    // Toggling to 觀看次數 relabels the trend.
+    fireEvent.click(screen.getByRole('button', { name: '觀看次數' }))
+    expect(screen.getAllByText('近 30 天觀看次數').length).toBeGreaterThan(0)
   })
 })

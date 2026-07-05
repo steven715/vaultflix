@@ -17,7 +17,11 @@ export default function AreaChart({
   const [hover, setHover] = useState<number | null>(null)
   const values = points.map((p) => p[valueKey])
   const max = niceMax(Math.max(0, ...values))
-  const hasData = values.some((v) => v > 0)
+  // Show the chart whenever there's ANY activity in the window, regardless of
+  // the metric on screen. watch_hours rounds to 0.0 for short views, so keying
+  // the empty state off the current metric alone would hide a window that has
+  // real views (and contradict the KPI tiles).
+  const hasData = points.some((p) => p.views > 0 || p.watch_hours > 0)
 
   if (!hasData) {
     return <EmptyChart label={label} />

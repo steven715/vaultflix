@@ -6,8 +6,15 @@ import BarChart from '../../components/admin/charts/BarChart'
 
 const RANGES = [7, 30, 90] as const
 
+type TrendMetric = 'watch_hours' | 'views'
+const TREND_METRICS: { key: TrendMetric; label: string }[] = [
+  { key: 'watch_hours', label: '觀看時長' },
+  { key: 'views', label: '觀看次數' },
+]
+
 export default function AnalyticsPage() {
   const [days, setDays] = useState<number>(30)
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>('watch_hours')
   const [data, setData] = useState<AnalyticsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -71,13 +78,42 @@ export default function AnalyticsPage() {
           </div>
 
           <section style={panelStyle}>
-            <AreaChart points={data.daily_trend} valueKey="watch_hours" label={`近 ${data.range_days} 天觀看時長`} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8 }}>
+              {TREND_METRICS.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setTrendMetric(m.key)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--color-border)',
+                    background: trendMetric === m.key ? 'var(--color-accent)' : 'transparent',
+                    color: trendMetric === m.key ? 'var(--color-accent-ink)' : 'var(--color-muted)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <AreaChart
+              points={data.daily_trend}
+              valueKey={trendMetric}
+              label={`近 ${data.range_days} 天${trendMetric === 'watch_hours' ? '觀看時長' : '觀看次數'}`}
+            />
           </section>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
             <section style={panelStyle}>
               <h2 style={panelTitle}>熱門影片</h2>
-              <BarChart rows={data.top_videos.map((v) => ({ label: v.title, value: v.watch_hours, sub: `${v.watch_hours} 小時` }))} />
+              <BarChart
+                rows={data.top_videos.map((v) => ({
+                  label: v.title,
+                  value: v.views,
+                  sub: `${v.views} 次 · ${v.watch_hours} 小時`,
+                }))}
+              />
             </section>
             <section style={panelStyle}>
               <h2 style={panelTitle}>熱門標籤</h2>
