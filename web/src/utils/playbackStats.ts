@@ -140,3 +140,29 @@ export function familyOf(phase: PlaybackPhase): StatsFamily {
       return 'ok'
   }
 }
+
+// SessionSummary is the terminal, session-cumulative playback quality report
+// emitted once when a viewing ends. null means "not measured this session".
+export interface SessionSummary {
+  ttffMs: number | null
+  watchedMs: number
+  rebufferCount: number
+  rebufferMs: number
+  avgDownlinkMbps: number | null
+  fatalErrorFamily: 'starved' | 'codec' | null
+}
+
+// fatalFamilyOf maps a phase to the fatal error family it represents, or null
+// when the phase is not a fatal end state. Unlike familyOf, transient
+// `buffering` is NOT fatal (it recovers) — only the hard MediaError phases are.
+export function fatalFamilyOf(phase: PlaybackPhase): 'starved' | 'codec' | null {
+  switch (phase) {
+    case 'network-error':
+      return 'starved'
+    case 'decode-error':
+    case 'unsupported':
+      return 'codec'
+    default:
+      return null
+  }
+}
