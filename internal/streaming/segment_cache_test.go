@@ -204,6 +204,46 @@ func TestSweep_RemovesIdleVideos(t *testing.T) {
 	}
 }
 
+func TestSweep_SkipsInflightVideo(t *testing.T) {
+	started := make(chan struct{})
+	gate := make(chan struct{})
+	gen := &fakeGenerator{size: 10, gateInput: "/busy2.avi", started: started, gate: gate}
+	c := newTestCache(t, gen, 0) // idleTimeout = time.Minute
+
+	ctx := context.Background()
+
+	// "busy" 先完成一段(建立 videoCacheState,lastAccess 較舊)。
+	if _, err := c.EnsureSegment(ctx, "busy", "/in.avi", 0, seg0); err != nil {
+		t.Fatal(err)
+	}
+
+	// "busy" 的第二段用會被 gate 卡住的 inputPath,模擬「已有紀錄的
+	// 影片正在產生新分段」時 Sweep 掃過。
+	busyErrCh := make(chan error, 1)
+	go func() {
+		_, err := c.EnsureSegment(ctx, "busy", "/busy2.avi", 1, model.SegmentBoundary{Start: 100, Duration: 6})
+		busyErrCh <- err
+	}()
+	<-started // 確定已進入 in-flight(inflight map 已登記)
+
+	c.Sweep(time.Now().Add(2 * time.Minute))
+	if _, err := os.Stat(filepath.Join(c.cacheDir, sanitizeKey("busy"))); err != nil {
+		t.Errorf("busy video dir should survive sweep while in-flight: %v", err)
+	}
+
+	close(gate) // 放行 "busy" 的第二段
+
+	if err := <-busyErrCh; err != nil {
+		t.Fatalf("in-flight busy segment should complete without error, got: %v", err)
+	}
+
+	// 產生完成後,不再 in-flight,下一次 sweep 應正常清掉閒置目錄。
+	c.Sweep(time.Now().Add(2 * time.Minute))
+	if _, err := os.Stat(filepath.Join(c.cacheDir, sanitizeKey("busy"))); !os.IsNotExist(err) {
+		t.Error("busy video dir should be swept after generation completes")
+	}
+}
+
 func TestNewSegmentCache_WipesLeftovers(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "stale"), 0o755); err != nil {

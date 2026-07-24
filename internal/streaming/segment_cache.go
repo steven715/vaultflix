@@ -195,6 +195,10 @@ func (c *SegmentCache) Sweep(now time.Time) {
 		if now.Sub(st.lastAccess) <= c.idleTimeout {
 			continue
 		}
+		// 正在產生分段的影片不掃,避免 RemoveAll 掉寫入中的目錄。
+		if c.hasInflightLocked(id) {
+			continue
+		}
 		if err := os.RemoveAll(st.dir); err != nil {
 			slog.Error("failed to remove idle cache dir", "dir", st.dir, "error", err)
 		}

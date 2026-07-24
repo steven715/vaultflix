@@ -122,10 +122,14 @@ func (s *KeyframeService) RunBackfill(ctx context.Context) (int, int, error) {
 	}
 	processed, failed := 0, 0
 	for _, v := range videos {
+		if ctx.Err() != nil {
+			break
+		}
 		container := strings.TrimPrefix(filepath.Ext(v.OriginalFilename), ".")
 		if ClassifyPlayMode(container, v.VideoCodec, v.AudioCodec) != model.PlayModeRemux {
 			continue
 		}
+		// ListKeyframeCandidates 的 SQL 已保證 source_id/file_path 非 NULL,故可安全解參考。
 		source, err := s.sourceRepo.FindByID(ctx, *v.SourceID)
 		if err != nil {
 			slog.Warn("keyframe backfill: source lookup failed", "video_id", v.ID, "error", err)
