@@ -220,7 +220,39 @@ export default function PlayerPage() {
     const el = videoRef.current
     const url = `/api/videos/${videoID}/hls/index.m3u8?token=${streamToken}`
 
-    // Safari 原生支援 HLS。注意:首播 503(stream_not_ready)在此分支不會走
+    // hls.js(MSE)優先於原生 HLS。現代 Chrome 對
+    // canPlayType('application/vnd.apple.mpegurl') 會回「maybe」,但它內建的
+    // HLS/mpegts 解析在我們的 VOD 串流上會卡住(只 buffer 到約 8.2s 就不再推進,
+    // seek 到任何位置後 readyState 永遠停在 1)——已用獨立 hls.js 1.6.16 實例
+    // 對同一份 manifest 驗證過可正常 seek/播放,故 MSE 可用時一律用 hls.js,
+    // 不能只憑 canPlayType 判斷「原生可播」。
+    if (Hls.isSupported()) {
+      const hls = new Hls()
+      let retryTimer: number | undefined
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        const action = classifyHlsError(data, preparingRetryRef.current)
+        if (action === 'retry-preparing') {
+          preparingRetryRef.current += 1
+          setPreparing(true)
+          retryTimer = window.setTimeout(() => hls.loadSource(url), PREPARING_RETRY_DELAY_MS)
+        } else if (action === 'fatal') {
+          setPreparing(false)
+          setError(preparingRetryRef.current > 0 ? '首次播放準備逾時,請稍後重試' : '串流載入失敗')
+        }
+      })
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        preparingRetryRef.current = 0
+        setPreparing(false)
+      })
+      hls.loadSource(url)
+      hls.attachMedia(el)
+      return () => {
+        if (retryTimer) window.clearTimeout(retryTimer)
+        hls.destroy()
+      }
+    }
+    // MSE 不可用時的原生 HLS fallback(真正的 Safari/iOS,沒有 hls.js 可用的
+    // MediaSource 支援)。注意:首播 503(stream_not_ready)在此分支不會走
     // classifyHlsError 的輪詢邏輯,而是直接觸發 <video> 既有的 onError 處理路徑
     // (見 handleVideoError)——使用者環境為 Chrome/PWA,故此限制暫不處理。
     if (el.canPlayType('application/vnd.apple.mpegurl')) {
@@ -230,33 +262,7 @@ export default function PlayerPage() {
         el.load()
       }
     }
-    if (!Hls.isSupported()) {
-      setError('此瀏覽器不支援串流播放')
-      return
-    }
-    const hls = new Hls()
-    let retryTimer: number | undefined
-    hls.on(Hls.Events.ERROR, (_evt, data) => {
-      const action = classifyHlsError(data, preparingRetryRef.current)
-      if (action === 'retry-preparing') {
-        preparingRetryRef.current += 1
-        setPreparing(true)
-        retryTimer = window.setTimeout(() => hls.loadSource(url), PREPARING_RETRY_DELAY_MS)
-      } else if (action === 'fatal') {
-        setPreparing(false)
-        setError(preparingRetryRef.current > 0 ? '首次播放準備逾時,請稍後重試' : '串流載入失敗')
-      }
-    })
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      preparingRetryRef.current = 0
-      setPreparing(false)
-    })
-    hls.loadSource(url)
-    hls.attachMedia(el)
-    return () => {
-      if (retryTimer) window.clearTimeout(retryTimer)
-      hls.destroy()
-    }
+    setError('此瀏覽器不支援串流播放')
   }, [video?.id, video?.play_mode, streamToken])
 
   // Keyboard shortcuts: space toggles play/pause, arrows seek ±5s.
