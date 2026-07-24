@@ -178,6 +178,8 @@ func main() {
 	keyframeIndexRepo := repository.NewKeyframeIndexRepository(pool)
 	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceRepo)
 	hlsHandler := handler.NewHLSHandler(videoService, keyframeService, segmentCache)
+	keyframeBackfillHandler := handler.NewKeyframeBackfillHandler(keyframeService)
+	importService.SetKeyframeProber(keyframeService)
 
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
@@ -280,6 +282,7 @@ func main() {
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
 		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
+		api.POST("/admin/videos/backfill-keyframes", keyframeBackfillHandler.Run)
 
 		// Analytics (admin only, enforced by Casbin)
 		api.GET("/admin/analytics", analyticsHandler.Get)

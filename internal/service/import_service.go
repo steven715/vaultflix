@@ -43,7 +43,8 @@ type ImportService struct {
 	importMu   sync.Mutex
 	// jobMu serialises every read/write of a stored ImportJob's fields against
 	// the background runImport goroutine, so GetJob/GetActiveJob never race it.
-	jobMu sync.Mutex
+	jobMu     sync.Mutex
+	keyframes keyframeProber // optional;nil 時不觸發
 }
 
 func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient, notifier websocket.Notifier) *ImportService {
@@ -52,6 +53,16 @@ func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient
 		minioSvc:  minioSvc,
 		notifier:  notifier,
 	}
+}
+
+// keyframeProber 觸發影片的非同步 keyframe 探測(由 *KeyframeService 實作)。
+type keyframeProber interface {
+	TriggerProbe(videoID, absPath string)
+}
+
+// SetKeyframeProber 注入 keyframe prober(比照 VideoService.SetUserServices 的後注入模式)。
+func (s *ImportService) SetKeyframeProber(p keyframeProber) {
+	s.keyframes = p
 }
 
 // StartAsync builds a job and launches a background import, returning job info immediately.
@@ -280,6 +291,13 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
 	}
 
+	if s.keyframes != nil {
+		ext := strings.TrimPrefix(filepath.Ext(filename), ".")
+		if shouldProbeKeyframes(ext, metadata.videoCodec, metadata.audioCodec) {
+			s.keyframes.TriggerProbe(videoID, filePath)
+		}
+	}
+
 	slog.Info("video imported",
 		"video_id", videoID,
 		"file", filename,
@@ -461,6 +479,12 @@ func mimeTypeFor(ext, videoCodec, audioCodec string) string {
 		return "video/mp4"
 	}
 	return extensionToMIME(ext)
+}
+
+// shouldProbeKeyframes 回傳 true 代表此影片會走 remux 播放模式,需要非同步觸發
+// keyframe 邊界表探測(供 HLS VOD-on-the-fly 使用)。
+func shouldProbeKeyframes(ext, videoCodec, audioCodec string) bool {
+	return ClassifyPlayMode(ext, videoCodec, audioCodec) == model.PlayModeRemux
 }
 
 func (s *ImportService) generateThumbnail(ctx context.Context, filePath string, durationSeconds int) (string, error) {
