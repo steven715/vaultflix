@@ -8,7 +8,7 @@ import (
 )
 
 const queryListKeyframeCandidates = `
-	SELECT v.id, v.original_filename, v.source_id, v.file_path, v.video_codec, v.audio_codec
+	SELECT v.id, v.original_filename, v.source_id, v.file_path, COALESCE(v.video_codec, ''), COALESCE(v.audio_codec, '')
 	FROM videos v
 	LEFT JOIN video_keyframe_index k ON k.video_id = v.id
 	WHERE k.video_id IS NULL
