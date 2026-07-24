@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,7 +111,9 @@ func (c *SegmentCache) generate(ctx context.Context, videoID, inputPath, dir, pa
 	genCtx, cancel := context.WithTimeout(ctx, segmentGenTimeout)
 	defer cancel()
 	if err := c.gen.Generate(genCtx, inputPath, tmp, seg.Start, seg.Duration); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := os.Remove(tmp); rmErr != nil && !os.IsNotExist(rmErr) {
+			slog.Warn("failed to remove tmp segment", "path", tmp, "error", rmErr)
+		}
 		return "", fmt.Errorf("failed to generate segment: %w", err)
 	}
 	info, err := os.Stat(tmp)
@@ -134,7 +137,8 @@ func (c *SegmentCache) generate(ctx context.Context, videoID, inputPath, dir, pa
 	return path, nil
 }
 
-// evictLocked 在總量超過 maxBytes 時踢除最久未存取的整片目錄(跳過 current)。
+// evictLocked 在總量超過 maxBytes 時踢除最久未存取的整片目錄
+// (跳過 current,以及任何仍有分段產生中的影片,避免刪掉正在寫入的目錄)。
 // 呼叫端須持有 c.mu。
 func (c *SegmentCache) evictLocked(current string) {
 	if c.maxBytes <= 0 {
@@ -144,7 +148,7 @@ func (c *SegmentCache) evictLocked(current string) {
 		victim := ""
 		var oldest time.Time
 		for id, st := range c.videos {
-			if id == current {
+			if id == current || c.hasInflightLocked(id) {
 				continue
 			}
 			if victim == "" || st.lastAccess.Before(oldest) {
@@ -161,6 +165,18 @@ func (c *SegmentCache) evictLocked(current string) {
 		delete(c.videos, victim)
 		slog.Info("segment cache evicted video", "video_id", victim, "freed_bytes", st.sizeBytes)
 	}
+}
+
+// hasInflightLocked 回報 videoID 是否有任一分段正在產生中。
+// 呼叫端須持有 c.mu(inflight 只在持有 c.mu 時被修改)。
+func (c *SegmentCache) hasInflightLocked(videoID string) bool {
+	prefix := videoID + "/"
+	for key := range c.inflight {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *SegmentCache) totalLocked() int64 {

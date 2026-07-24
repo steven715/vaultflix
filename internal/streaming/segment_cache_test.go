@@ -13,15 +13,35 @@ import (
 )
 
 // fakeGenerator 寫入固定大小的假分段,並計數呼叫次數。
+// gateInput/started/gate 讓測試能對特定 inputPath 的呼叫做確定性同步:
+// 呼叫一開始(尚未寫檔前)關閉 started 通知測試已進入 in-flight 狀態,
+// 接著阻塞在 gate 直到測試關閉它才繼續 —— 用來製造「其他影片的
+// eviction 掃描發生時,這個呼叫仍在 in-flight」的可重現時序。
 type fakeGenerator struct {
 	calls atomic.Int64
 	size  int
 	delay time.Duration
 	fail  bool
+
+	gateInput string
+	started   chan struct{}
+	gate      chan struct{}
 }
 
 func (g *fakeGenerator) Generate(ctx context.Context, inputPath, outPath string, start, duration float64) error {
 	g.calls.Add(1)
+	if g.gateInput != "" && inputPath == g.gateInput {
+		if g.started != nil {
+			close(g.started)
+		}
+		if g.gate != nil {
+			select {
+			case <-g.gate:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
 	if g.delay > 0 {
 		select {
 		case <-time.After(g.delay):
@@ -127,6 +147,47 @@ func TestEnsureSegment_LRUEviction(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(c.cacheDir, "newer")); err != nil {
 		t.Error("newer video dir should survive eviction")
+	}
+}
+
+func TestEnsureSegment_EvictionSkipsInflightVideo(t *testing.T) {
+	started := make(chan struct{})
+	gate := make(chan struct{})
+	gen := &fakeGenerator{size: 100, gateInput: "/busy2.avi", started: started, gate: gate}
+	c := newTestCache(t, gen, 150) // 容量只夠 1 段多一點
+
+	ctx := context.Background()
+
+	// "busy" 先完成一段(建立 videoCacheState,lastAccess 較舊)。
+	if _, err := c.EnsureSegment(ctx, "busy", "/in.avi", 0, seg0); err != nil {
+		t.Fatal(err)
+	}
+
+	// "busy" 的第二段用會被 gate 卡住的 inputPath,在背景跑,
+	// 模擬「已有紀錄的影片正在產生新分段」。
+	busyErrCh := make(chan error, 1)
+	go func() {
+		_, err := c.EnsureSegment(ctx, "busy", "/busy2.avi", 1, model.SegmentBoundary{Start: 100, Duration: 6})
+		busyErrCh <- err
+	}()
+	<-started // 確定已進入 in-flight(inflight map 已登記)
+	time.Sleep(2 * time.Millisecond)
+
+	// 兩段快速的 "other" 寫入把總量推過上限,觸發 eviction 掃描。
+	if _, err := c.EnsureSegment(ctx, "other", "/other.avi", 0, seg0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.EnsureSegment(ctx, "other", "/other.avi", 1, model.SegmentBoundary{Start: 6, Duration: 6}); err != nil {
+		t.Fatal(err)
+	}
+
+	close(gate) // 放行 "busy" 的第二段
+
+	if err := <-busyErrCh; err != nil {
+		t.Fatalf("in-flight busy segment should survive eviction scan, got error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(c.cacheDir, sanitizeKey("busy"), SegmentName(1))); err != nil {
+		t.Errorf("busy segment 1 file should exist: %v", err)
 	}
 }
 
