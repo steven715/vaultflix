@@ -139,6 +139,8 @@ export default function PlayerPage() {
         setFavorited(data.is_favorited)
         setError('')
         retryCountRef.current = 0
+        preparingRetryRef.current = 0
+        setPreparing(false)
         videoIDRef.current = data.id
         playModeRef.current = data.play_mode
         telemetrySentRef.current = false
