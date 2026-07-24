@@ -221,3 +221,17 @@ func (c *SegmentCache) StartSweeper(ctx context.Context) {
 		}
 	}()
 }
+
+// sanitizeKey 把 videoID 變成安全的單層目錄名(避免路徑穿越)。
+func sanitizeKey(key string) string {
+	out := make([]rune, 0, len(key))
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			out = append(out, r)
+		default:
+			out = append(out, '_')
+		}
+	}
+	return string(out)
+}

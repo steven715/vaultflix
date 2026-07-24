@@ -167,10 +167,17 @@ func main() {
 	// Inject user-interaction services into video service for enriching detail responses
 	videoService.SetUserServices(favoriteService, historyService)
 
-	transcoder := streaming.NewFFmpegTranscoder()
-	streamManager := streaming.NewManager(transcoder, cfg.TranscodeCacheDir, 60*time.Second)
-	streamManager.StartSweeper(ctx)
-	hlsHandler := handler.NewHLSHandler(videoService, streamManager)
+	segmentGen := streaming.NewFFmpegSegmentGenerator()
+	segmentCache, err := streaming.NewSegmentCache(segmentGen, cfg.TranscodeCacheDir, 60*time.Second, cfg.TranscodeCacheMaxBytes)
+	if err != nil {
+		slog.Error("failed to init segment cache", "error", err)
+		os.Exit(1)
+	}
+	segmentCache.StartSweeper(ctx)
+
+	keyframeIndexRepo := repository.NewKeyframeIndexRepository(pool)
+	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceRepo)
+	hlsHandler := handler.NewHLSHandler(videoService, keyframeService, segmentCache)
 
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
