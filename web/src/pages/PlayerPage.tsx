@@ -16,6 +16,7 @@ import RecommendationList from '../components/RecommendationList'
 import NetworkHud from '../components/NetworkHud'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 import { clampDelta } from '../lib/heartbeat'
+import { classifyHlsError, PREPARING_RETRY_DELAY_MS } from '../lib/hlsError'
 import { usePlaybackStats } from '../hooks/usePlaybackStats'
 
 const PROGRESS_THROTTLE_MS = 10_000
@@ -33,6 +34,8 @@ export default function PlayerPage() {
   const [favorited, setFavorited] = useState(false)
   const [upNext, setUpNext] = useState<VideoWithTags[]>([])
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
+  const [preparing, setPreparing] = useState(false)
+  const preparingRetryRef = useRef(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const retryCountRef = useRef(0)
   // Playback position to restore after a stream-token refresh reload.
@@ -215,7 +218,9 @@ export default function PlayerPage() {
     const el = videoRef.current
     const url = `/api/videos/${videoID}/hls/index.m3u8?token=${streamToken}`
 
-    // Safari 原生支援 HLS。
+    // Safari 原生支援 HLS。注意:首播 503(stream_not_ready)在此分支不會走
+    // classifyHlsError 的輪詢邏輯,而是直接觸發 <video> 既有的 onError 處理路徑
+    // (見 handleVideoError)——使用者環境為 Chrome/PWA,故此限制暫不處理。
     if (el.canPlayType('application/vnd.apple.mpegurl')) {
       el.src = url
       return () => {
@@ -228,9 +233,26 @@ export default function PlayerPage() {
       return
     }
     const hls = new Hls()
+    let retryTimer: number | undefined
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      const action = classifyHlsError(data, preparingRetryRef.current)
+      if (action === 'retry-preparing') {
+        preparingRetryRef.current += 1
+        setPreparing(true)
+        retryTimer = window.setTimeout(() => hls.loadSource(url), PREPARING_RETRY_DELAY_MS)
+      } else if (action === 'fatal') {
+        setPreparing(false)
+        setError(preparingRetryRef.current > 0 ? '首次播放準備逾時,請稍後重試' : '串流載入失敗')
+      }
+    })
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      preparingRetryRef.current = 0
+      setPreparing(false)
+    })
     hls.loadSource(url)
     hls.attachMedia(el)
     return () => {
+      if (retryTimer) window.clearTimeout(retryTimer)
       hls.destroy()
     }
   }, [video?.id, video?.play_mode, streamToken])
@@ -481,6 +503,11 @@ export default function PlayerPage() {
                   onVolumeChange={handleVolumeChange}
                 />
                 {hudVisible && <NetworkHud stats={stats} />}
+                {preparing && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-center text-sm text-muted">
+                    <div className="px-6">首次播放準備中，索引建立後將自動開始…</div>
+                  </div>
+                )}
               </div>
             )}
 
