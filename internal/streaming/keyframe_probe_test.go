@@ -6,10 +6,29 @@ import (
 )
 
 func TestParseKeyframeProbe_MixedOutput(t *testing.T) {
-	out := "packet,0.000000,K__\n" +
-		"packet,0.033000,___\n" +
-		"packet,N/A,K__\n" + // 無 pts 的 keyframe packet 跳過
-		"packet,8.341000,K__\n" +
+	out := "packet,0.000000,0.000000,K__\n" +
+		"packet,0.033000,0.033000,___\n" +
+		"packet,N/A,N/A,K__\n" + // pts 與 dts 皆無的 keyframe packet 跳過
+		"packet,8.341000,8.341000,K__\n" +
+		"format,120.500000\n"
+	kf, total, err := parseKeyframeProbe(out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kf) != 2 || kf[0] != 0 || kf[1] != 8.341 {
+		t.Errorf("kf = %v, want [0 8.341]", kf)
+	}
+	if total != 120.5 {
+		t.Errorf("total = %v, want 120.5", total)
+	}
+}
+
+// 舊式 AVI muxer 只寫 dts 不寫 pts(pts_time=N/A):必須 fallback 用 dts,
+// 否則整片 keyframe 全被跳過(實庫 5 部 avi/h264/mp3 因此探測失敗)。
+func TestParseKeyframeProbe_DTSFallbackWhenNoPTS(t *testing.T) {
+	out := "packet,N/A,0.000000,K__\n" +
+		"packet,N/A,0.033367,___\n" +
+		"packet,N/A,8.341000,K__\n" +
 		"format,120.500000\n"
 	kf, total, err := parseKeyframeProbe(out)
 	if err != nil {
@@ -30,7 +49,7 @@ func TestParseKeyframeProbe_NoKeyframes(t *testing.T) {
 }
 
 func TestParseKeyframeProbe_NoDuration(t *testing.T) {
-	if _, _, err := parseKeyframeProbe("packet,0.000000,K__\nformat,N/A\n"); err == nil {
+	if _, _, err := parseKeyframeProbe("packet,0.000000,0.000000,K__\nformat,N/A\n"); err == nil {
 		t.Error("expected error for output without duration")
 	}
 }
