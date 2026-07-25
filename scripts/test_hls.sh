@@ -6,8 +6,11 @@
 #   2. 取得 stream token
 #   3. GET /api/videos/:id/hls/seg00000.ts（無 token）→ 401
 #   4. GET /api/videos/:id/hls/index.m3u8?token= → 200 且 body 含 #EXTM3U
-#   5. 確認 playlist 的 segment 行含有 token= 參數
-#   6. 從 playlist 取出含 token 的 segment URI，GET → 200
+#   5. 輪詢直到 playlist 200（容忍首播 lazy 探測）+ VOD/ENDLIST 完整清單
+#   6. 確認 playlist 的 segment 行含有 token= 參數
+#   7. 從 playlist 取出含 token 的 segment URI，GET → 200
+#   8. 跳抓 playlist 最後一段（on-demand 中/末段產生，模擬 seek）→ 200
+#   9. GET seg99999.ts（超出範圍）→ 404
 # 前置條件: 先跑 test_import.sh（sample_h264.mkv 在 /mnt/host/videos）
 # =============================================================================
 
@@ -103,36 +106,35 @@ NO_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
 assert_eq "無 token 請求 segment 回 401" "401" "$NO_TOKEN_CODE"
 
 # =====================================================================
-# [5] GET HLS playlist — 200 + body 含 #EXTM3U
+# [5] GET HLS playlist — 首播觸發探測後應在時限內回 200 完整 VOD 清單
 # =====================================================================
 echo ""
-bold "[5] GET /api/videos/:id/hls/index.m3u8 — 200 + #EXTM3U"
+bold "[5] GET /api/videos/:id/hls/index.m3u8 — 200 + 完整 VOD 清單"
 
-PLAYLIST_CODE=$(curl -s -o /tmp/hls_playlist.m3u8 -w "%{http_code}" \
-    "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${STREAM_TOKEN}")
-assert_eq "HLS playlist 回 200" "200" "$PLAYLIST_CODE"
-
-PLAYLIST_BODY=$(cat /tmp/hls_playlist.m3u8)
-assert_contains "playlist 包含 #EXTM3U" "$PLAYLIST_BODY" "#EXTM3U"
-
-# =====================================================================
-# [6] 確認 playlist 的 segment 行含有 token= 參數
-#     輪詢直到 playlist 包含至少一個 segment 行
-# =====================================================================
-echo ""
-bold "[6] 確認 playlist segment 行含有 token= 參數"
-
-FIRST_SEG_URI=""
-for i in $(seq 1 20); do
-    PLAYLIST_NOW=$(curl -s \
-        "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${STREAM_TOKEN}" 2>/dev/null || echo "")
-    # segment URI 行：含 token= 的 seg*.ts 行
-    FIRST_SEG_URI=$(echo "$PLAYLIST_NOW" | grep -E '^seg[0-9]{5}\.ts\?token=' | head -1 || echo "")
-    if [ -n "$FIRST_SEG_URI" ]; then
+PLAYLIST_CODE=""
+for i in $(seq 1 60); do
+    PLAYLIST_CODE=$(curl -s -o /tmp/hls_playlist.m3u8 -w "%{http_code}" \
+        "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${STREAM_TOKEN}")
+    if [ "$PLAYLIST_CODE" = "200" ]; then
         break
     fi
     sleep 0.5
 done
+assert_eq "HLS playlist 回 200(容忍首播 lazy 探測)" "200" "$PLAYLIST_CODE"
+
+PLAYLIST_BODY=$(cat /tmp/hls_playlist.m3u8)
+assert_contains "playlist 包含 #EXTM3U" "$PLAYLIST_BODY" "#EXTM3U"
+assert_contains "playlist 為 VOD 類型" "$PLAYLIST_BODY" "#EXT-X-PLAYLIST-TYPE:VOD"
+assert_contains "playlist 包含 ENDLIST(進度條前提)" "$PLAYLIST_BODY" "#EXT-X-ENDLIST"
+
+# =====================================================================
+# [6] 確認 playlist 的 segment 行含有 token= 參數
+#     manifest 已完整(200 即代表完成),直接從已存檔的 playlist 檔案取值
+# =====================================================================
+echo ""
+bold "[6] 確認 playlist segment 行含有 token= 參數"
+
+FIRST_SEG_URI=$(grep -E '^seg[0-9]{5}\.ts\?token=' /tmp/hls_playlist.m3u8 | head -1 || echo "")
 
 assert_not_empty "playlist 含有帶 token= 的 segment 行" "$FIRST_SEG_URI"
 
@@ -150,6 +152,30 @@ FIRST_SEG_QUERY=$(echo "$FIRST_SEG_URI" | cut -d'?' -f2-)
 SEG_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     "${API_BASE}/api/videos/${MKV_ID}/hls/${FIRST_SEG_NAME}?${FIRST_SEG_QUERY}")
 assert_eq "第一個 segment (${FIRST_SEG_NAME}) 帶 token 回 200" "200" "$SEG_CODE"
+
+# =====================================================================
+# [8] 跳抓最後一段(未線性播放前直接 seek)→ 200
+# =====================================================================
+echo ""
+bold "[8] GET 最後一段(on-demand 產生)→ 200"
+
+LAST_SEG_URI=$(grep -E '^seg[0-9]{5}\.ts\?token=' /tmp/hls_playlist.m3u8 | tail -1)
+LAST_SEG_NAME=$(echo "$LAST_SEG_URI" | cut -d'?' -f1)
+LAST_SEG_QUERY=$(echo "$LAST_SEG_URI" | cut -d'?' -f2-)
+
+LAST_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${API_BASE}/api/videos/${MKV_ID}/hls/${LAST_SEG_NAME}?${LAST_SEG_QUERY}")
+assert_eq "最後一段 (${LAST_SEG_NAME}) 回 200" "200" "$LAST_CODE"
+
+# =====================================================================
+# [9] 超出邊界表的 segment → 404
+# =====================================================================
+echo ""
+bold "[9] GET seg99999.ts(超出範圍)→ 404"
+
+OOR_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${API_BASE}/api/videos/${MKV_ID}/hls/seg99999.ts?token=${STREAM_TOKEN}")
+assert_eq "超出範圍 segment 回 404" "404" "$OOR_CODE"
 
 # ---------------------------------------------------------------------------
 print_summary "HLS remux 播放鏈"

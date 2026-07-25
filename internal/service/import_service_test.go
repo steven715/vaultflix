@@ -340,6 +340,26 @@ func TestParseProbeOutput(t *testing.T) {
 	}
 }
 
+// TestImportKeyframeHook_TriggersOnlyForRemux 驗證 shouldProbeKeyframes 只在
+// ClassifyPlayMode 判定為 PlayModeRemux 時回傳 true(對應 import hook 是否觸發
+// keyframe 探測的條件邏輯)。
+func TestImportKeyframeHook_TriggersOnlyForRemux(t *testing.T) {
+	tests := []struct {
+		ext, vc, ac string
+		want        bool
+	}{
+		{"avi", "h264", "aac", true},
+		{"mkv", "h264", "mp3", true},
+		{"mp4", "h264", "aac", false},
+		{"wmv", "wmv3", "wmav2", false},
+	}
+	for _, tc := range tests {
+		if got := shouldProbeKeyframes(tc.ext, tc.vc, tc.ac); got != tc.want {
+			t.Errorf("shouldProbeKeyframes(%s,%s,%s) = %v, want %v", tc.ext, tc.vc, tc.ac, got, tc.want)
+		}
+	}
+}
+
 // TestSeedEnrichment_CreateCapture verifies that a Video passed through
 // seedEnrichment before Create carries the expected Code and EnrichmentStatus.
 // This mirrors the exact call sequence in processOneFile.

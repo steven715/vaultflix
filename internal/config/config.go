@@ -58,6 +58,11 @@ type Config struct {
 	// HLS transcode cache directory. A writable directory where FFmpeg writes
 	// per-video HLS segments. Mounted as a named Docker volume in production.
 	TranscodeCacheDir string
+
+	// TranscodeCacheMaxBytes bounds the on-demand segment cache size; the
+	// least-recently-accessed video dir is evicted when the total exceeds it.
+	// <=0 disables the cap (idle sweep still applies).
+	TranscodeCacheMaxBytes int64
 }
 
 func (c *Config) DatabaseDSN() string {
@@ -103,7 +108,8 @@ func Load() (*Config, error) {
 		EnrichUserAgent:    getEnv("ENRICH_USER_AGENT", "Vaultflix/1.0"),
 		EnrichJavBusCookie: getEnv("ENRICH_JAVBUS_COOKIE", "age=verified; existmag=all"),
 
-		TranscodeCacheDir: getEnv("TRANSCODE_CACHE_DIR", "/var/cache/vaultflix/transcode"),
+		TranscodeCacheDir:      getEnv("TRANSCODE_CACHE_DIR", "/var/cache/vaultflix/transcode"),
+		TranscodeCacheMaxBytes: getEnvInt64("TRANSCODE_CACHE_MAX_BYTES", 20*1024*1024*1024),
 	}
 
 	if err := cfg.validateSecrets(); err != nil {
@@ -161,6 +167,15 @@ func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
 		}
 	}
 	return fallback

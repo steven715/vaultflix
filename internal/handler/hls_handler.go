@@ -3,34 +3,50 @@ package handler
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/steven/vaultflix/internal/model"
-	"github.com/steven/vaultflix/internal/service"
 	"github.com/steven/vaultflix/internal/streaming"
 )
 
-var segmentNameRe = regexp.MustCompile(`^seg\d{5}\.ts$`)
+var segmentNameRe = regexp.MustCompile(`^seg(\d{5})\.ts$`)
 
-// HLSHandler 服務即時 remux 的 HLS playlist 與分段。
-type HLSHandler struct {
-	videoService *service.VideoService
-	manager      *streaming.Manager
+// diskPathResolver 解析影片在容器內的絕對路徑（由 *service.VideoService 實作）。
+type diskPathResolver interface {
+	ResolveDiskPath(ctx context.Context, videoID string) (string, error)
 }
 
-// NewHLSHandler 建立 HLSHandler，注入 video service 與 streaming manager。
-func NewHLSHandler(videoSvc *service.VideoService, mgr *streaming.Manager) *HLSHandler {
-	return &HLSHandler{videoService: videoSvc, manager: mgr}
+// keyframeProvider 提供邊界表查詢與非同步探測（由 *service.KeyframeService 實作）。
+type keyframeProvider interface {
+	// GetSegments 無邊界表時回 model.ErrNotFound。
+	GetSegments(ctx context.Context, videoID string) ([]model.SegmentBoundary, error)
+	TriggerProbe(videoID, absPath string)
+}
+
+// segmentEnsurer 確保分段存在並回傳檔案路徑（由 *streaming.SegmentCache 實作）。
+type segmentEnsurer interface {
+	EnsureSegment(ctx context.Context, videoID, inputPath string, idx int, seg model.SegmentBoundary) (string, error)
+}
+
+// HLSHandler 服務 VOD-on-the-fly 的 HLS manifest 與 on-demand 分段。
+type HLSHandler struct {
+	videoService diskPathResolver
+	keyframes    keyframeProvider
+	segments     segmentEnsurer
+}
+
+// NewHLSHandler 建立 HLSHandler。
+func NewHLSHandler(videoSvc diskPathResolver, kf keyframeProvider, segs segmentEnsurer) *HLSHandler {
+	return &HLSHandler{videoService: videoSvc, keyframes: kf, segments: segs}
 }
 
 // rewritePlaylistTokens rewrites segment URIs in an m3u8 playlist to append
@@ -61,12 +77,12 @@ func rewritePlaylistTokens(raw []byte, token string) []byte {
 	return buf.Bytes()
 }
 
-// Playlist 啟動/取得 HLS session 並回傳 playlist 檔案（segment URI 已內嵌 token）。
+// Playlist 由邊界表組出完整 VOD manifest（segment URI 內嵌 token）。
+// 無邊界表時回 503 stream_not_ready 並觸發背景探測（首播 lazy fallback）。
 // GET /api/videos/:id/hls/index.m3u8
 func (h *HLSHandler) Playlist(c *gin.Context) {
 	ctx := c.Request.Context()
 	videoID := c.Param("id")
-	userID := c.GetString("user_id")
 	token := c.Query("token")
 
 	inputPath, err := h.videoService.ResolveDiskPath(ctx, videoID)
@@ -75,85 +91,96 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 		return
 	}
 
-	sess, err := h.manager.EnsureSession(ctx, videoID, userID, inputPath)
-	if err != nil {
-		slog.Error("failed to ensure hls session", "error", err, "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to start stream",
-		})
-		return
-	}
-
-	playlistPath := filepath.Join(sess.Dir, streaming.PlaylistName)
-	// ffmpeg 漸進寫入 playlist；初次請求時檔案可能尚未出現，短暫輪詢等待。
-	if !waitForFile(playlistPath, 10*time.Second) {
+	segs, err := h.keyframes.GetSegments(ctx, videoID)
+	if errors.Is(err, model.ErrNotFound) {
+		h.keyframes.TriggerProbe(videoID, inputPath)
 		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{
 			Error:   "stream_not_ready",
-			Message: "stream is starting, please retry",
+			Message: "preparing stream for first playback, please retry",
 		})
 		return
 	}
-
-	raw, err := os.ReadFile(playlistPath)
 	if err != nil {
-		slog.Error("failed to read playlist", "error", err, "video_id", videoID)
+		slog.Error("failed to load keyframe index", "error", err, "video_id", videoID)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "internal_error",
-			Message: "failed to read playlist",
+			Message: "failed to load stream index",
 		})
 		return
 	}
 
-	rewritten := rewritePlaylistTokens(raw, token)
+	manifest := streaming.BuildVODManifest(segs)
 	c.Header("Cache-Control", "no-cache")
-	c.Data(http.StatusOK, "application/vnd.apple.mpegurl", rewritten)
+	c.Data(http.StatusOK, "application/vnd.apple.mpegurl", rewritePlaylistTokens(manifest, token))
 }
 
-// Segment 回傳指定 .ts 分段檔案。
+// Segment 確保並回傳指定分段（on-demand 產生 + 快取）。
 // GET /api/videos/:id/hls/:segment
 func (h *HLSHandler) Segment(c *gin.Context) {
+	ctx := c.Request.Context()
 	videoID := c.Param("id")
-	userID := c.GetString("user_id")
-	seg := c.Param("segment")
+	segName := c.Param("segment")
 
-	if !segmentNameRe.MatchString(seg) {
+	m := segmentNameRe.FindStringSubmatch(segName)
+	if m == nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
 			Message: "invalid segment name",
 		})
 		return
 	}
-
-	dir, ok := h.manager.SessionDir(videoID, userID)
-	if !ok {
-		c.JSON(http.StatusNotFound, model.ErrorResponse{
-			Error:   "not_found",
-			Message: "no active stream session",
-		})
-		return
-	}
-	h.manager.Touch(videoID, userID)
-
-	segPath := filepath.Join(dir, seg)
-	// 二重防護：即使 regex 通過，確認解析後路徑仍在 session 目錄內。
-	if filepath.Dir(segPath) != filepath.Clean(dir) {
+	idx, err := strconv.Atoi(m[1])
+	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
-			Message: "invalid segment path",
+			Message: "invalid segment index",
 		})
 		return
 	}
-	if _, err := os.Stat(segPath); err != nil {
+
+	inputPath, err := h.videoService.ResolveDiskPath(ctx, videoID)
+	if err != nil {
+		h.writePathError(c, videoID, err)
+		return
+	}
+
+	segs, err := h.keyframes.GetSegments(ctx, videoID)
+	if errors.Is(err, model.ErrNotFound) {
 		c.JSON(http.StatusNotFound, model.ErrorResponse{
 			Error:   "not_found",
-			Message: "segment not found",
+			Message: "no stream index for video",
+		})
+		return
+	}
+	if err != nil {
+		slog.Error("failed to load keyframe index", "error", err, "video_id", videoID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load stream index",
+		})
+		return
+	}
+	if idx >= len(segs) {
+		c.JSON(http.StatusNotFound, model.ErrorResponse{
+			Error:   "not_found",
+			Message: "segment out of range",
+		})
+		return
+	}
+
+	path, err := h.segments.EnsureSegment(ctx, videoID, inputPath, idx, segs[idx])
+	if err != nil {
+		slog.Error("failed to ensure segment", "error", err, "video_id", videoID, "segment", segName)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to generate segment",
 		})
 		return
 	}
 
 	c.Header("Content-Type", "video/mp2t")
-	c.File(segPath)
+	c.Header("Cache-Control", "no-cache")
+	c.File(path)
 }
 
 // writePathError maps ResolveDiskPath errors to HTTP responses.
@@ -169,16 +196,4 @@ func (h *HLSHandler) writePathError(c *gin.Context, videoID string, err error) {
 		slog.Error("failed to resolve disk path", "error", err, "video_id", videoID)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to access video"})
 	}
-}
-
-// waitForFile polls until path exists or timeout expires.
-func waitForFile(path string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return true
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
 }

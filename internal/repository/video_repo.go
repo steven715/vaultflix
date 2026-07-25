@@ -51,6 +51,9 @@ type VideoRepository interface {
 	// ListMissingCodecs returns videos whose video_codec is NULL or empty and
 	// whose source_id and file_path are non-null, up to limit rows.
 	ListMissingCodecs(ctx context.Context, limit int) ([]model.Video, error)
+	// ListKeyframeCandidates returns videos with known codecs but no keyframe
+	// index yet (remux filtering happens in the service layer).
+	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
 var allowedSortColumns = map[string]string{

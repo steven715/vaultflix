@@ -23,6 +23,7 @@ type VideoRepository struct {
 	SeedCodeFunc                func(ctx context.Context, id, code, status string) error
 	UpdateCodecsFunc            func(ctx context.Context, id, videoCodec, audioCodec string) error
 	ListMissingCodecsFunc       func(ctx context.Context, limit int) ([]model.Video, error)
+	ListKeyframeCandidatesFunc  func(ctx context.Context, limit int) ([]model.Video, error)
 }
 
 func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
@@ -128,4 +129,11 @@ func (m *VideoRepository) ListMissingCodecs(ctx context.Context, limit int) ([]m
 		return nil, fmt.Errorf("mock: ListMissingCodecsFunc not set")
 	}
 	return m.ListMissingCodecsFunc(ctx, limit)
+}
+
+func (m *VideoRepository) ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error) {
+	if m.ListKeyframeCandidatesFunc == nil {
+		return nil, fmt.Errorf("mock: ListKeyframeCandidatesFunc not set")
+	}
+	return m.ListKeyframeCandidatesFunc(ctx, limit)
 }
