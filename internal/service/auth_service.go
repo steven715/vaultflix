@@ -121,3 +121,27 @@ func (s *AuthService) GenerateStreamToken(userID, username, role, videoID string
 
 	return tokenString, s.streamExpMins * 60, nil
 }
+
+// ResetPassword replaces the stored password hash for username with a fresh
+// bcrypt hash of newPassword. It is the recovery path for a lost admin
+// password: initDefaultAdmin only seeds an account when the users table is
+// empty, so on an existing database no config change can reach that account.
+//
+// Returns model.ErrNotFound (wrapped) when no user with that username exists.
+func (s *AuthService) ResetPassword(ctx context.Context, username, newPassword string) error {
+	user, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to look up user %s: %w", username, err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	if err := s.userRepo.UpdatePassword(ctx, user.ID, string(hash)); err != nil {
+		return fmt.Errorf("failed to update password for %s: %w", username, err)
+	}
+
+	return nil
+}

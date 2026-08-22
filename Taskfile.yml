@@ -143,3 +143,15 @@ tasks:
     desc: "Tail api logs"
     cmds:
       - "{{.COMPOSE_DEV}} logs -f vaultflix-api"
+
+  reset-admin-password:
+    desc: "Reset the admin password to ADMIN_DEFAULT_PASSWORD from .env (dev stack)"
+    preconditions:
+      - sh: test -f docker-compose.media.yml
+        msg: |
+          docker-compose.media.yml not found. It holds this machine's video disk
+          mounts and is gitignored on purpose. Create it with:
+            cp docker-compose.media.yml.example docker-compose.media.yml
+          then edit it to point at your own disks.
+    cmds:
+      - "{{.COMPOSE_DEV}} run --rm --no-deps vaultflix-api go run ./cmd/server -reset-admin-password"

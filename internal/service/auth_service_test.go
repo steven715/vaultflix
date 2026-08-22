@@ -168,3 +168,77 @@ func TestRegister_AlreadyExists(t *testing.T) {
 		t.Fatalf("expected ErrUsernameAlreadyExists, got %v", err)
 	}
 }
+
+func TestResetPassword_Success(t *testing.T) {
+	oldHash, _ := bcrypt.GenerateFromPassword([]byte("forgotten"), bcrypt.DefaultCost)
+
+	var gotID, gotHash string
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return &model.User{
+				ID:           "u1",
+				Username:     username,
+				PasswordHash: string(oldHash),
+				Role:         "admin",
+			}, nil
+		},
+		UpdatePasswordFunc: func(ctx context.Context, id string, passwordHash string) error {
+			gotID, gotHash = id, passwordHash
+			return nil
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24, 60)
+	if err := svc.ResetPassword(context.Background(), "admin", "brand-new-password"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if gotID != "u1" {
+		t.Errorf("expected password update on user u1, got %q", gotID)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(gotHash), []byte("brand-new-password")); err != nil {
+		t.Errorf("stored hash does not match the new password: %v", err)
+	}
+	if gotHash == string(oldHash) {
+		t.Error("expected the stored hash to be replaced, got the old one")
+	}
+}
+
+func TestResetPassword_UnknownUser(t *testing.T) {
+	updateCalled := false
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return nil, model.ErrNotFound
+		},
+		UpdatePasswordFunc: func(ctx context.Context, id string, passwordHash string) error {
+			updateCalled = true
+			return nil
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24, 60)
+	err := svc.ResetPassword(context.Background(), "nobody", "irrelevant")
+
+	if !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+	if updateCalled {
+		t.Error("expected no password update when the user does not exist")
+	}
+}
+
+func TestResetPassword_UpdateFails(t *testing.T) {
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return &model.User{ID: "u1", Username: username, Role: "admin"}, nil
+		},
+		UpdatePasswordFunc: func(ctx context.Context, id string, passwordHash string) error {
+			return errors.New("db is down")
+		},
+	}
+
+	svc := NewAuthService(repo, "test-secret", 24, 60)
+	if err := svc.ResetPassword(context.Background(), "admin", "new"); err == nil {
+		t.Fatal("expected an error when the repository update fails")
+	}
+}
