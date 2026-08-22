@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
@@ -30,6 +31,10 @@ import (
 var version = "dev"
 
 func main() {
+	resetAdminPassword := flag.Bool("reset-admin-password", false,
+		"reset the admin account's password to ADMIN_DEFAULT_PASSWORD, then exit")
+	flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	slog.Info("starting vaultflix", "version", version)
@@ -53,6 +58,12 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("connected to postgresql")
+
+	// Maintenance mode: needs the DB only, so short-circuit before MinIO/casbin.
+	if *resetAdminPassword {
+		runAdminPasswordReset(context.Background(), pool, cfg)
+		return
+	}
 
 	// Connect to MinIO
 	minioClient, err := minio.New(cfg.MinIOEndpoint, &minio.Options{

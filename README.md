@@ -90,34 +90,56 @@ Edit `.env` and set your passwords and secrets. The defaults work for local deve
 
 ### 2. Configure disk mounts
 
-Edit `docker-compose.yml` and mount your video disk(s) as read-only volumes. Mount the **same** paths into **both** `vaultflix-api` (import + auth) and `vaultflix-nginx` (X-Accel byte serving) — if nginx is missing a mount it cannot serve those files:
+Video disks differ per machine, so they live in `docker-compose.media.yml` — a
+gitignored per-machine file, alongside `.env`. Never edit the tracked compose
+files for this:
 
-```yaml
-  vaultflix-api:
-    volumes:
-      # ...
-      - D:/:/mnt/host/D:ro    # Mount D: drive
-      - E:/:/mnt/host/E:ro    # Mount E: drive (optional)
-
-  vaultflix-nginx:
-    volumes:
-      - D:/:/mnt/host/D:ro    # must mirror vaultflix-api
-      - E:/:/mnt/host/E:ro
+```bash
+cp docker-compose.media.yml.example docker-compose.media.yml
 ```
 
-Each mounted disk will be accessible under `/mnt/host/<drive>/` inside the container. To enable the nginx offload, set `VIDEO_XACCEL_PREFIX=/internal-video/` (production / behind nginx); leave it empty for `npm run dev`, which proxies straight to the API without nginx.
+Then edit the anchor to point at your own disks:
+
+```yaml
+x-media-mounts: &media-mounts
+  - D:/:/mnt/host/D:ro    # Mount D: drive
+  - E:/:/mnt/host/E:ro    # Mount E: drive (optional)
+
+services:
+  vaultflix-api:
+    volumes: *media-mounts
+  vaultflix-nginx:
+    volumes: *media-mounts
+```
+
+The YAML anchor feeds the identical list to **both** `vaultflix-api` (import +
+auth) and `vaultflix-nginx` (X-Accel byte serving) — nginx cannot serve files it
+has no mount for, and the anchor makes it impossible for the two to drift apart.
+
+Each mounted disk is reachable at `/mnt/host/<drive>/` inside the container; the
+target path must stay under `/mnt/host/` to pass the `AllowedMountPrefix` path
+validation. To enable the nginx offload, set `VIDEO_XACCEL_PREFIX=/internal-video/`
+(production / behind nginx); leave it empty for `npm run dev`, which proxies
+straight to the API without nginx.
+
+Integration tests deliberately ignore this file and mount `.ci/fixtures` instead,
+so they run identically on any host.
 
 ### 3. Start all services
 
 ```bash
-docker compose up -d
+task up
 ```
+
+Use `task up` rather than a bare `docker compose up -d`: it layers in your
+`docker-compose.media.yml` (a bare `docker compose` command would start the stack
+with no video mounts at all) and fails with a clear message if you skipped step 2.
 
 This automatically:
 - Starts PostgreSQL and MinIO
 - Creates MinIO buckets (`vaultflix-videos`, `vaultflix-thumbnails`)
 - Runs database migrations
-- Starts the Go API server (compiles on first run, may take ~30s)
+- Builds the dev API image (golang toolchain + ffmpeg baked into a layer) and starts the Go API server
 - Builds and starts the React frontend via Nginx
 
 ### 4. Log in
@@ -185,7 +207,10 @@ vaultflix/
 │   │   └── types/          # TypeScript type definitions
 │   ├── Dockerfile          # Multi-stage build: Node -> Nginx
 │   └── nginx.conf          # Reverse proxy + SPA routing config
-├── docker-compose.yml
+├── Dockerfile              # Prod API image (multi-stage, compiled binary)
+├── Dockerfile.dev          # Dev API image (go toolchain + ffmpeg baked in)
+├── docker-compose.yml      # Base stack
+├── docker-compose.media.yml.example  # Per-machine video mounts (copy, don't edit the base)
 ├── CLAUDE.md               # Development conventions and coding standards
 └── VAULTFLIX_PROJECT_PLAN.md
 ```
@@ -310,6 +335,78 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | GET | `/api/ws` | WebSocket connection (import progress, notifications) | Any |
 
 For full request/response details, see the handler source code in [`internal/handler/`](internal/handler/).
+
+## Troubleshooting
+
+### `migrate` exits 1 with `password authentication failed for user "vaultflix"`
+
+The `vaultflix-postgres-data` volume already exists from an earlier run.
+`POSTGRES_PASSWORD` is only applied when the volume is **first initialised** — on
+an existing volume, changing `DB_PASSWORD` in `.env` has no effect on the role
+that is actually stored in the database, so the two drift apart.
+
+Fix without losing data — reset the role to match `.env`:
+
+```bash
+docker compose exec postgres psql -U vaultflix -d vaultflix \
+  -c "ALTER ROLE vaultflix WITH PASSWORD '<the DB_PASSWORD from .env>';"
+```
+
+Or start clean (**destroys the database**): `docker compose down -v`.
+
+### The browser shows the default "Welcome to nginx!" page
+
+The `vaultflix-nginx` image is stale or was built before the SPA existed. The
+frontend is baked into the image (there is no shared volume), so rebuild it:
+
+```bash
+docker compose build vaultflix-nginx && docker compose up -d vaultflix-nginx
+```
+
+If the page is merely *outdated* rather than missing, it is the PWA service
+worker cache — hard-reload the browser.
+
+### Cannot log in as admin / forgot the admin password
+
+The admin account is **not** created by a migration. It is seeded at API startup
+by `initDefaultAdmin` (`cmd/server/main.go`), and only while the `users` table is
+still empty:
+
+```
+{"level":"INFO","msg":"users table not empty, skipping admin init","user_count":1}
+```
+
+That log line means an account already exists, so changing `ADMIN_DEFAULT_PASSWORD`
+in `.env` will not reach it — by design, so an env var can never silently take
+over an existing account.
+
+To recover, set the password you want in `.env`, then run the reset flag:
+
+```bash
+task reset-admin-password
+```
+
+Under the hood (prod stack, or if you prefer the raw command):
+
+```bash
+# dev  — source is bind-mounted, so run it straight from source
+docker compose run --rm --no-deps vaultflix-api go run ./cmd/server -reset-admin-password
+# prod — the image ENTRYPOINT is the compiled binary, so pass the flag as an arg
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  run --rm --no-deps vaultflix-api -reset-admin-password
+```
+
+It resets only the account named by `ADMIN_DEFAULT_USERNAME` and exits; it never
+runs as part of a normal boot.
+
+### Startup feels slow
+
+A cold start compiles the Go source inside the container and populates the
+`go_modules` / `go_build_cache` volumes — expect a few minutes the very first
+time, then ~1s on subsequent starts. If **every** start is slow, check that the
+API image is actually built from `Dockerfile.dev` (`task up` passes `--build`);
+ffmpeg is baked into that layer, and installing it at container start instead
+costs ~13s per start.
 
 ## Roadmap
 

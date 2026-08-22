@@ -363,18 +363,34 @@ docker compose up -d vaultflix-nginx
 
 ### 磁碟層級掛載策略
 
-影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟：
+影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟。
+
+**磁碟配置是「因機器而異」的設定，不進被 git 追蹤的檔案。** 它住在 gitignore 的 `docker-compose.media.yml`（範本：`docker-compose.media.yml.example`），與 `.env` 同一類。tracked 的 `docker-compose.yml` / `docker-compose.prod.yml` 一行影片掛載都不該有。
 
 ```yaml
-volumes:
+# docker-compose.media.yml — 用 YAML anchor 一次餵給 api 與 nginx
+x-media-mounts: &media-mounts
   - D:/:/mnt/host/D:ro
   - E:/:/mnt/host/E:ro
+
+services:
+  vaultflix-api:
+    volumes: *media-mounts
+  vaultflix-nginx:
+    volumes: *media-mounts
 ```
 
 - 掛載點統一在 `/mnt/host/<磁碟代號>/` 下
 - 使用 `:ro`（read-only）防止容器內程式修改原始檔案
 - Media source 的 `mount_path` 必須在 `/mnt/host/` 前綴下
-- 新增磁碟時只需在 `docker-compose.yml` 加一行 volume mount + 在 Admin UI 新增 media source
+- api 與 nginx 必須拿到**完全相同**的掛載（nginx 少一個就無法做 X-Accel byte serving）。用 anchor 而不是抄兩份，讓兩者不可能 drift
+- 新增磁碟只需在 `docker-compose.media.yml` 的 anchor 加一行 + 在 Admin UI 新增 media source
+- `task up` / `task deploy` 會自動把這個檔案疊在最後；整合測試**刻意不疊**，改掛 `.ci/fixtures`，維持 host OS 無關
+
+**compose 疊加順序有兩個陷阱**（改 compose 檔時務必記得）：
+
+1. `docker-compose.media.yml` 必須是**最後**一個 `-f`。prod 對 api 的 `volumes:` 用了 `!override`，媒體掛載疊在它後面才會 merge 進去，疊在前面會被清掉
+2. prod override 的 `build:` 必須明確寫 `dockerfile: Dockerfile`。compose 會 merge `build` map，base 指定了 `dockerfile: Dockerfile.dev`，沒有明確覆寫的話 prod 會拿 dev 的 toolchain image 去發版
 
 ---
 
@@ -572,6 +588,8 @@ import (
 | `task build` / `task build:api` | build SHA-tagged image | Docker |
 | `task push:api` | 推 API image 到 GHCR | Docker |
 | `task deploy` | 本機部署（prod compose，build 不可變 nginx image） | Docker |
+| `task up` / `task down` / `task logs` | 起/停/看 dev stack（自動疊 `docker-compose.media.yml`） | Docker |
+| `task reset-admin-password` | 把 admin 密碼重設為 `.env` 的 `ADMIN_DEFAULT_PASSWORD` | Docker |
 
 ### 各場景 done-condition
 

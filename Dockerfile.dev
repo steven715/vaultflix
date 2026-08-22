@@ -1,0 +1,16 @@
+# Dev-only image for the hot-reload API container.
+#
+# The dev stack runs `go run` against the bind-mounted source, so this image
+# carries only the runtime tools the app shells out to (ffmpeg/ffprobe for
+# metadata + preview generation) plus curl for the compose healthcheck.
+#
+# These used to be installed by the service's `command:` on every container
+# start — 115 packages / ~140 MiB re-fetched each time, ~13s per start. Baking
+# them into a layer makes it a one-off build cost instead.
+#
+# Production uses the multi-stage ./Dockerfile (compiled binary, no toolchain).
+FROM golang:1.25-alpine
+
+RUN apk add --no-cache ffmpeg curl
+
+WORKDIR /app

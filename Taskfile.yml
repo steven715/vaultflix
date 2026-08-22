@@ -11,7 +11,12 @@ vars:
   # nor pollutes the dev DB. Its `down -v` only removes the isolated project's
   # volumes, so it can never wipe the dev `vaultflix-postgres-data`.
   COMPOSE_TEST: docker compose -p vaultflix-inttest -f docker-compose.yml -f docker-compose.test.yml
-  COMPOSE_PROD: docker compose -f docker-compose.yml -f docker-compose.prod.yml
+  # docker-compose.media.yml is per-machine and gitignored (video disk mounts).
+  # It goes LAST so its mounts merge into prod's `volumes: !override` list
+  # instead of being erased by it. Integration tests deliberately exclude it —
+  # they mount .ci/fixtures instead, so they stay host-OS independent.
+  COMPOSE_PROD: docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.media.yml
+  COMPOSE_DEV: docker compose -f docker-compose.yml -f docker-compose.media.yml
 
 tasks:
   default:
@@ -106,21 +111,47 @@ tasks:
 
   deploy:
     desc: "Deploy to local machine (prod compose). nginx image bundles the web SPA"
+    preconditions:
+      - sh: test -f docker-compose.media.yml
+        msg: |
+          docker-compose.media.yml not found. It holds this machine's video disk
+          mounts and is gitignored on purpose. Create it with:
+            cp docker-compose.media.yml.example docker-compose.media.yml
+          then edit it to point at your own disks.
     cmds:
       - "{{.COMPOSE_PROD}} build vaultflix-api vaultflix-nginx"
       - "{{.COMPOSE_PROD}} up -d"
 
   up:
     desc: "Start dev stack"
+    preconditions:
+      - sh: test -f docker-compose.media.yml
+        msg: |
+          docker-compose.media.yml not found. It holds this machine's video disk
+          mounts and is gitignored on purpose. Create it with:
+            cp docker-compose.media.yml.example docker-compose.media.yml
+          then edit it to point at your own disks.
     cmds:
-      - docker compose up -d
+      - "{{.COMPOSE_DEV}} up -d --build"
 
   down:
     desc: "Stop dev stack"
     cmds:
-      - docker compose down
+      - "{{.COMPOSE_DEV}} down"
 
   logs:
     desc: "Tail api logs"
     cmds:
-      - docker compose logs -f vaultflix-api
+      - "{{.COMPOSE_DEV}} logs -f vaultflix-api"
+
+  reset-admin-password:
+    desc: "Reset the admin password to ADMIN_DEFAULT_PASSWORD from .env (dev stack)"
+    preconditions:
+      - sh: test -f docker-compose.media.yml
+        msg: |
+          docker-compose.media.yml not found. It holds this machine's video disk
+          mounts and is gitignored on purpose. Create it with:
+            cp docker-compose.media.yml.example docker-compose.media.yml
+          then edit it to point at your own disks.
+    cmds:
+      - "{{.COMPOSE_DEV}} run --rm --no-deps vaultflix-api go run ./cmd/server -reset-admin-password"

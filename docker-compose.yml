@@ -63,9 +63,13 @@ services:
       ]
 
   vaultflix-api:
-    image: golang:1.25-alpine
+    # Dev image: golang toolchain + ffmpeg/curl baked into a layer (see
+    # Dockerfile.dev). Prod overrides this with the compiled-binary image.
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     working_dir: /app
-    command: sh -c "apk add --no-cache curl ffmpeg && go mod tidy && go run ./cmd/server"
+    command: sh -c "go mod tidy && go run ./cmd/server"
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,9 +90,9 @@ services:
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
       - vaultflix-transcode-cache:/var/cache/vaultflix/transcode
-      # 影片來源目錄：掛載到 /mnt/host/ 下，符合 AllowedMountPrefix 安全驗證
-      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
-      - /mnt/g/下載:/mnt/host/G/下載:ro
+      # 影片來源目錄是「因機器而異」的設定，住在 gitignore 的
+      # docker-compose.media.yml（見 docker-compose.media.yml.example）。
+      # 它用 YAML anchor 一次餵給 api 與 nginx，不必兩邊手動同步。
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
@@ -106,12 +110,9 @@ services:
         condition: service_healthy
     ports:
       - "3000:80"
-    volumes:
-      # X-Accel offload: nginx reads video bytes off disk directly, so it needs
-      # the SAME read-only mounts as vaultflix-api. Must stay in sync with the
-      # api volumes above; adding a drive means editing both places.
-      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
-      - /mnt/g/下載:/mnt/host/G/下載:ro
+    # X-Accel offload: nginx reads video bytes off disk directly, so it needs
+    # the SAME read-only mounts as vaultflix-api. Both are supplied together by
+    # docker-compose.media.yml, so they can no longer drift apart.
     healthcheck:
       # Pin IPv4: nginx.conf only `listen 80` (IPv4); `localhost` resolves to
       # ::1 first in the container and would fail with connection refused.
