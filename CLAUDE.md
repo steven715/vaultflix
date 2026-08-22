@@ -300,6 +300,36 @@ const fetchData = useCallback(async () => { ... }, [id])
 useEffect(() => { fetchData() }, [fetchData])
 ```
 
+### 假時鐘測試：前置條件要用 tick 逼出來，不要靠真實時間燒過去
+
+`vi.useFakeTimers({ shouldAdvanceTime: true })` 讓假時鐘跟著真實時間前進，方便 awaited 的資料載入正常解析。代價是：**任何「靠這段等待剛好燒掉 N 毫秒」才成立的前置條件都是 flaky**，會隨機器快慢、CI 負載翻面 —— 同一份 tree 可以一次綠一次紅。
+
+實際踩過的地雷：`usePlaybackStats` 是在 500ms 的 publish tick **裡面**才綁 `<video>` 的 listener（`streamPath` 比 `<video>` 早一個 render 變 non-null，effect 當下那次 `publish()` 看到的 `videoRef.current` 還是 null，而 effect 不會因為元素掛上而重跑）。測試若在任何 tick 跑之前就 `fireEvent.play()`，`onPlay` 根本還沒註冊 → `playStartRef` 是 null → ttff 算不出來 → unmount 的 telemetry beacon 被 `ttffMs == null && watchedMs <= 0` 這道 guard 擋掉 → 斷言整串垮。
+
+規則：**要讓事件被聽到，先逼出綁定的那個 tick，再 fire 事件，再逼一次 tick 讓 hook 計算。**
+
+```tsx
+// ✅ 正確：每個 tick 都是明確逼出來的
+await act(async () => { await vi.advanceTimersByTimeAsync(600) })  // tick 1：hook 綁上 listener
+fireEvent.play(videoEl)                                            // 這下才聽得到
+await act(async () => { await vi.advanceTimersByTimeAsync(600) })  // tick 2：hook 算 ttff
+
+// ❌ 錯誤：假設 awaited 的載入「會順便」讓 interval 跑過一輪
+await screen.findByText('T')
+fireEvent.play(videoEl)        // 機器夠快 → 一個 tick 都還沒跑 → 事件掉了
+await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+```
+
+判斷標準：把這個測試放到一台快 10 倍的機器上，結論還成立嗎？只要答案取決於「那段 await 花了多久」，就是 flaky。
+
+### 測試紅燈先分辨 flaky 再分辨壞掉
+
+CI 紅不代表「這次改動弄壞了什麼」—— `task verify` 是整包 gate，任何既有或隨機的失敗都會在下一個推 code 的人頭上炸開。判斷順序：
+
+1. 這次改動有沒有碰到相關檔案？（`git diff --stat <上次綠的 commit> HEAD -- <路徑>`）
+2. 沒碰到的話，比對 **tree hash**：`git rev-parse <A>^{tree}` vs `<B>^{tree}`。同 tree 不同結果 = flaky，不是壞掉
+3. 本機重跑多次取得失敗率，別用單次結果下結論
+
 ### 同路徑重新導航的 refetch
 
 點擊指向「目前所在路徑」的連結（如已在首頁時再點 logo / 首頁）不會改變 URL 參數，靠 `[query]`、`[searchParams]` 之類的依賴**不會觸發 refetch**，畫面看起來「卡住不更新」。需要「每次導航都重抓」的資料（如首頁輪播推薦、續看清單），依賴 `useLocation().key` —— React Router 每次導航（即使目標與現況相同）都會 push 新 entry 並產生新的 `location.key`。

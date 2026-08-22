@@ -266,13 +266,13 @@ describe('PlayerPage telemetry', () => {
   })
 
   it('sends a telemetry beacon on unmount after some playback', async () => {
-    // Fake timers (with real-time syncing via shouldAdvanceTime) so the
-    // usePlaybackStats 500ms publish tick can be advanced deterministically
-    // instead of racing a fixed wall-clock wait against the real interval.
-    // shouldAdvanceTime keeps the mocked clock progressing with real time so
-    // the awaited data load below (getVideo/getStreamToken + findByText's
-    // DOM-driven wait) still resolves normally — only the publish tick is
-    // forced explicitly, below.
+    // Fake timers so the usePlaybackStats publish tick is driven explicitly
+    // rather than raced against the real interval. shouldAdvanceTime keeps the
+    // mocked clock progressing with real time so the awaited data load below
+    // (getVideo/getStreamToken + findByText's DOM-driven wait) still resolves.
+    //
+    // Correctness must NOT depend on how much wall-clock that load happens to
+    // burn: every tick this test relies on is forced explicitly below.
     vi.useFakeTimers({ shouldAdvanceTime: true })
 
     const { unmount } = renderPlayer()
@@ -282,15 +282,27 @@ describe('PlayerPage telemetry', () => {
     const videoEl = document.querySelector('video') as HTMLVideoElement
     // Simulate first frame + playing so the session has measurable data.
     Object.defineProperty(videoEl, 'currentTime', { value: 5, configurable: true })
+
+    // usePlaybackStats binds its <video> listeners INSIDE the publish tick, not
+    // in the effect body: streamPath turns non-null one render before the
+    // element mounts, so the effect's own immediate publish() still sees a null
+    // videoRef and binds nothing (see src/hooks/usePlaybackStats.ts).
+    //
+    // So a tick has to run before `play` fires, or onPlay is never called,
+    // playStartRef stays null, the tick below records no ttff, and the unmount
+    // beacon is suppressed by its `ttffMs == null && watchedMs <= 0` guard.
+    // Leaving this to whether the awaited load above happened to burn 500ms of
+    // wall clock is what made this test flaky — force the tick instead.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600)
+    })
+
     fireEvent.play(videoEl)
     fireEvent.playing(videoEl)
 
-    // usePlaybackStats only computes ttff/watchedMs on its 500ms publish tick
-    // (setInterval, not on the play/playing events themselves — see
-    // src/hooks/usePlaybackStats.ts). Advancing the FAKE clock past one tick
-    // synchronously fires the pending interval callback right now, setting
-    // ttffRef deterministically — no dependency on the real event loop
-    // reaching it within a fixed real-time margin (the previous flaky wait).
+    // Second tick: playStartRef is set and currentTime > 0, so this is the tick
+    // that actually records ttff (the hook computes it on the interval, never
+    // on the play/playing events themselves).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(600)
     })
