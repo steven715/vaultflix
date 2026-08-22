@@ -6,6 +6,10 @@ services:
     image: ghcr.io/steven715/vaultflix-api:${VAULTFLIX_TAG:-latest}
     build:
       context: .
+      # MUST be explicit: compose merges the `build` map with the base file's,
+      # so without this prod would inherit base's `dockerfile: Dockerfile.dev`
+      # and ship the dev toolchain image instead of the compiled binary.
+      dockerfile: Dockerfile
       args:
         GIT_SHA: ${VAULTFLIX_TAG:-dev}
     # Remove base's dev-only settings; use the image's ENTRYPOINT
@@ -16,14 +20,15 @@ services:
     # to the API without nginx — keeps the empty default and streams directly.
     environment:
       VIDEO_XACCEL_PREFIX: /internal-video/
-    # Replace base's volumes (drop .:/app and go caches, keep only read-only video mounts)
+    # Replace base's volumes: drop .:/app and the go caches (prod runs the
+    # compiled binary, not `go run`). The read-only video mounts are appended
+    # afterwards by docker-compose.media.yml, which `task deploy` passes as a
+    # later -f — later files merge into this list rather than being erased by
+    # the !override above.
     volumes: !override
       - vaultflix-transcode-cache:/var/cache/vaultflix/transcode
-      - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
-      - /mnt/g/下載:/mnt/host/G/下載:ro
-  # vaultflix-nginx needs no volumes override here: compose merges the base
-  # file's nginx video mounts into this layer, so the X-Accel offload target
-  # is already present in prod.
+  # vaultflix-nginx needs no overrides here: it keeps the base image build and
+  # gets its video mounts from docker-compose.media.yml, same as the api.
 
 volumes:
   vaultflix-transcode-cache:

@@ -16,6 +16,9 @@ web/dist/
 
 # Docker & Environment
 .env
+# Per-machine compose layers (disk mounts etc.) — see *.example
+docker-compose.media.yml
+docker-compose.override.yml
 
 # IDE
 .idea/

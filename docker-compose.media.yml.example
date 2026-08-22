@@ -1,0 +1,26 @@
+# Per-machine video source mounts — THE ONLY per-machine file besides .env.
+#
+# Setup:  cp docker-compose.media.yml.example docker-compose.media.yml
+# then edit the anchor below to point at your own disks.
+#
+# docker-compose.media.yml is gitignored: disk layout differs per machine, so it
+# must not live in a tracked file. `task up` / `task deploy` include it
+# automatically (integration tests deliberately do NOT — they use the repo
+# fixture in .ci/fixtures instead).
+#
+# Rules:
+#   - target path MUST be under /mnt/host/ (AllowedMountPrefix path validation)
+#   - always :ro — the app never writes to your media
+#   - the anchor feeds api AND nginx from one list; nginx needs identical mounts
+#     for the X-Accel offload, and this makes drift between them impossible
+
+x-media-mounts: &media-mounts
+  - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
+  - /mnt/g/下載:/mnt/host/G/下載:ro
+
+services:
+  vaultflix-api:
+    volumes: *media-mounts
+
+  vaultflix-nginx:
+    volumes: *media-mounts
