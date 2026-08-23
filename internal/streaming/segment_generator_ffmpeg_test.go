@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/steven/vaultflix/internal/model"
 )
 
 func requireFFmpeg(t *testing.T) {
@@ -37,6 +39,8 @@ func requireFFmpeg(t *testing.T) {
 // makeMKVFixture 產生 30s 的測試 mkv(x264 + aac,GOP 2s)。
 // bframes > 0 時輸出含 B-frames(video_delay > 0),觸發 ffmpeg CLI 的 input seek
 // dts heuristic(落點提早);bframes = 0 模擬落點精準的來源(如部分 AVI/MP4)。
+// 參數配方與 scripts/gen_fixtures.sh(整合測試 fixture 的重生腳本)保持一致:
+// B-frames 是這隻 bug 的觸發條件,fixture 若失去 -bf 就測不到落點偏移。
 func makeMKVFixture(t *testing.T, bframes int) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), fmt.Sprintf("fixture_bf%d.mkv", bframes))
@@ -99,7 +103,6 @@ func probeVideoPackets(t *testing.T, path string) (first, last float64, keyframe
 //   - 所有封包(含 keyframe)都落在區間內,不得包含前一個 GOP 或下一段的首 keyframe
 func TestGenerate_ContentMatchesBoundary(t *testing.T) {
 	requireFFmpeg(t)
-	const tol = 0.05 // mpegts 90kHz 轉換與 ffprobe 輸出的 ms 級容差
 
 	tests := []struct {
 		name    string
@@ -127,33 +130,41 @@ func TestGenerate_ContentMatchesBoundary(t *testing.T) {
 				if err := gen.Generate(context.Background(), input, outPath, seg.Start, seg.Duration); err != nil {
 					t.Fatalf("Generate segment %d failed: %v", i, err)
 				}
-				first, last, kfs := probeVideoPackets(t, outPath)
-				end := seg.Start + seg.Duration
-
-				// 段 0 的 Start 被 GroupSegments 強制為 0,但檔案首個 keyframe
-				// 可能因 reorder delay 晚於 0 —— 內容最早只能從那裡開始。
-				// 段 0 另有 mpegts avoid_negative_ts 平移:首 keyframe 的 dts 為負
-				// (pts 0 - reorder delay),muxer 把整段時間軸前移該量(數個 frame,
-				// 與修法前的生產行為相同),故容差放寬到 0.25s。
-				wantFirst, wantTol := math.Max(seg.Start, kf[0]), tol
-				if i == 0 {
-					wantTol = 0.25
-				}
-				if math.Abs(first-wantFirst) > wantTol {
-					t.Errorf("segment %d: first video pts = %.6f, manifest declares start %.6f", i, first, wantFirst)
-				}
-				if len(kfs) == 0 || math.Abs(kfs[0]-first) > tol {
-					t.Errorf("segment %d: does not start with a keyframe (first pts %.6f, keyframes %v)", i, first, kfs)
-				}
-				if last >= end+tol {
-					t.Errorf("segment %d: last video pts = %.6f exceeds declared end %.6f", i, last, end)
-				}
-				for _, k := range kfs {
-					if k < seg.Start-tol || k >= end-tol {
-						t.Errorf("segment %d: keyframe %.6f outside declared range [%.6f, %.6f)", i, k, seg.Start, end)
-					}
-				}
+				assertSegmentAligned(t, outPath, i, seg, kf[0])
 			}
 		})
+	}
+}
+
+// assertSegmentAligned 驗證單一分段檔的內容與 manifest 宣告的 [Start, Start+Duration)
+// 對齊:首封包是 Start 處的 keyframe、所有封包與 keyframe 不越界。
+func assertSegmentAligned(t *testing.T, outPath string, i int, seg model.SegmentBoundary, firstKF float64) {
+	t.Helper()
+	const tol = 0.05 // mpegts 90kHz 轉換與 ffprobe 輸出的 ms 級容差
+	first, last, kfs := probeVideoPackets(t, outPath)
+	end := seg.Start + seg.Duration
+
+	// 段 0 的 Start 被 GroupSegments 強制為 0,但檔案首個 keyframe
+	// 可能因 reorder delay 晚於 0 —— 內容最早只能從那裡開始。
+	// 段 0 另有 mpegts avoid_negative_ts 平移:首 keyframe 的 dts 為負
+	// (pts 0 - reorder delay),muxer 把整段時間軸前移該量(數個 frame,
+	// 與修法前的生產行為相同),故容差放寬到 0.25s。
+	wantFirst, wantTol := math.Max(seg.Start, firstKF), tol
+	if i == 0 {
+		wantTol = 0.25
+	}
+	if math.Abs(first-wantFirst) > wantTol {
+		t.Errorf("segment %d: first video pts = %.6f, manifest declares start %.6f", i, first, wantFirst)
+	}
+	if len(kfs) == 0 || math.Abs(kfs[0]-first) > tol {
+		t.Errorf("segment %d: does not start with a keyframe (first pts %.6f, keyframes %v)", i, first, kfs)
+	}
+	if last >= end+tol {
+		t.Errorf("segment %d: last video pts = %.6f exceeds declared end %.6f", i, last, end)
+	}
+	for _, k := range kfs {
+		if k < seg.Start-tol || k >= end-tol {
+			t.Errorf("segment %d: keyframe %.6f outside declared range [%.6f, %.6f)", i, k, seg.Start, end)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -21,12 +22,21 @@ const (
 	// readMargin 是 -to 超讀的秒數:確保下一段的首 keyframe 被讀到並觸發切檔,
 	// 讓目標區間的尾邊界精準(超讀的內容落在被丟棄的尾分片)。
 	readMargin = 0.5
-	// boundaryTol 是 CSV 分片時間與 keyframe pts 的比對容差(秒)。
+	// boundaryTol 是 CSV 分片時間與 keyframe pts 的比對容差(秒),
+	// 涵蓋 ffprobe 六位小數輸出與 mpegts 90kHz 轉換的捨入誤差。
 	boundaryTol = 0.002
+	// maxStartDrift 是首個選中分片與 start 允許的最大偏差(秒)。超過代表落點晚於
+	// 預期(來源缺對應 keyframe 或 demuxer 行為異常),與 boundaryTol 刻意分開:
+	// boundaryTol 是「同一個 keyframe 的時間值誤差」,這裡是「落在別的 keyframe」的判準。
+	maxStartDrift = 0.1
 	// continuityTol 是相鄰分片 end→start 允許的最大空隙(秒)。CSV 的 end_time 是
-	// 分片末封包的 pts,與下一分片起點差距約一個 frame;超過此值代表清單有列損壞
-	// 或分片缺洞,寧可回錯誤也不要送出缺內容的分段。
-	continuityTol = 0.5
+	// 分片末封包的 pts,與下一分片起點天然差一個 frame interval —— 低 fps 內容
+	// (如 1fps 的簡報/監控片)可達 1s,故容差取 2s:仍能攔下整個 GOP 消失的缺洞
+	// (清單列損壞),不誤殺慢速 frame rate 的正常內容。
+	continuityTol = 2.0
+	// segmentListName 是 segment muxer 輸出的 CSV 清單檔名(buildSegmentArgs 與
+	// Generate 共用,單一定義避免兩處字面值漂移)。
+	segmentListName = "list.csv"
 )
 
 // SegmentGenerator 產生單一 mpegts 分段檔。
@@ -62,7 +72,7 @@ func buildSegmentArgs(inputPath, partsDir string, start, duration float64) []str
 		"-f", "segment",
 		"-segment_format", "mpegts",
 		"-segment_time", "0",
-		"-segment_list", filepath.Join(partsDir, "list.csv"),
+		"-segment_list", filepath.Join(partsDir, segmentListName),
 		"-segment_list_type", "csv",
 		"-y", filepath.Join(partsDir, "part%05d.ts"),
 	}
@@ -79,7 +89,11 @@ func (g *FFmpegSegmentGenerator) Generate(ctx context.Context, inputPath, outPat
 	if err := os.MkdirAll(partsDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create parts dir: %w", err)
 	}
-	defer os.RemoveAll(partsDir)
+	defer func() {
+		if err := os.RemoveAll(partsDir); err != nil {
+			slog.Warn("failed to remove parts dir", "path", partsDir, "error", err)
+		}
+	}()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", buildSegmentArgs(inputPath, partsDir, start, duration)...)
 	out, err := cmd.CombinedOutput()
@@ -87,7 +101,11 @@ func (g *FFmpegSegmentGenerator) Generate(ctx context.Context, inputPath, outPat
 		return fmt.Errorf("ffmpeg segment generate failed (start=%s): %w: %s",
 			formatSeconds(start), err, tail(string(out), 500))
 	}
-	parts, err := selectParts(filepath.Join(partsDir, "list.csv"), start, start+duration)
+	list, err := os.ReadFile(filepath.Join(partsDir, segmentListName))
+	if err != nil {
+		return fmt.Errorf("failed to read segment list (start=%s): %w", formatSeconds(start), err)
+	}
+	parts, err := selectPartsFromList(parseSegmentList(string(list)), start, start+duration)
 	if err != nil {
 		return fmt.Errorf("failed to select parts (start=%s): %w", formatSeconds(start), err)
 	}
@@ -104,7 +122,9 @@ type segmentPart struct {
 }
 
 // parseSegmentList 解析 segment muxer 的 CSV 清單(每行 filename,start_time,end_time)。
-// 無法解析的列直接略過(缺洞由 selectPartsFromList 的連續性驗證攔下)。
+// 無法解析的列直接略過;因此消失的「中段」分片由 selectPartsFromList 的連續性驗證
+// 攔下,消失的「末段」分片則無從偵測(fail-open)—— 該情境需要 ffmpeg 輸出損壞的
+// 清單,實務上未觀測過,且尾端硬驗證會誤殺 duration metadata 偏大的舊檔末段。
 func parseSegmentList(data string) []segmentPart {
 	var parts []segmentPart
 	for _, line := range strings.Split(data, "\n") {
@@ -122,62 +142,63 @@ func parseSegmentList(data string) []segmentPart {
 	return parts
 }
 
-// selectParts 讀取 CSV 清單並挑出內容落在 [start, end) 的分片檔名。
-func selectParts(listPath string, start, end float64) ([]string, error) {
-	data, err := os.ReadFile(listPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read segment list: %w", err)
-	}
-	return selectPartsFromList(parseSegmentList(string(data)), start, end)
-}
-
 // selectPartsFromList 挑出 start_time 落在 [start, end) 的分片。-copyts 下
 // start_time 為來源絕對 pts;例外是第一列恆為 0.000000(muxer 以 0 起算,非實際
-// 落點)—— 但 seekBackoff 保證 start > 0 時第一列必是要丟棄的提早落點內容,
-// 不會被選中;start == 0 時 0 即正確值。
-// 切段後驗證:首個分片必須就在 start 上(落點晚於預期即報錯),且相鄰分片必須
-// 連續(清單列損壞造成的缺洞即報錯)—— 寧可回錯誤也不要送出錯位或缺內容的分段。
+// 落點)—— seekBackoff 保證 start > 0 時第一列必是要丟棄的提早落點內容,不會被
+// 選中;start == 0 時 0 即正確值。已知限制(fail-loud):影片首個 keyframe 晚於
+// seekBackoff 的檔案(內容延遲 6s+ 才開始,GroupSegments 仍強制段 0 從 0 起算)
+// 會在此回錯誤 —— 該檔類的 remux 在修法前也是壞的(時間軸整段錯位)。
+// 選取下界放寬到 maxStartDrift(與驗收一致):目標分片的時間值若有小幅提早抖動
+// 仍被選中,再由後方檢查統一把關;上界維持 boundaryTol,避免把下一段起點吃進來。
+// 切段後驗證:首個分片必須就在 start 上(落點晚於預期即報錯),相鄰分片必須連續
+// (清單列損壞造成的中段缺洞即報錯)—— 寧可回錯誤也不要送出錯位或缺內容的分段。
 func selectPartsFromList(all []segmentPart, start, end float64) ([]string, error) {
-	var sel []segmentPart
+	var names []string
+	var prev segmentPart
 	for _, p := range all {
-		if p.start >= start-boundaryTol && p.start < end-boundaryTol {
-			sel = append(sel, p)
+		if p.start < start-maxStartDrift || p.start >= end-boundaryTol {
+			continue
 		}
-	}
-	if len(sel) == 0 {
-		return nil, fmt.Errorf("no parts cover segment start %s", formatSeconds(start))
-	}
-	if math.Abs(sel[0].start-start) > 0.1 {
-		return nil, fmt.Errorf("segment content starts at %s, expected %s",
-			formatSeconds(sel[0].start), formatSeconds(start))
-	}
-	names := make([]string, len(sel))
-	for i, p := range sel {
-		if i > 0 && p.start-sel[i-1].end > continuityTol {
+		if len(names) == 0 && p.start-start > maxStartDrift {
+			return nil, fmt.Errorf("segment content starts at %s, expected %s",
+				formatSeconds(p.start), formatSeconds(start))
+		}
+		if len(names) > 0 && p.start-prev.end > continuityTol {
 			return nil, fmt.Errorf("gap between parts %s (ends %s) and %s (starts %s)",
-				sel[i-1].name, formatSeconds(sel[i-1].end), p.name, formatSeconds(p.start))
+				prev.name, formatSeconds(prev.end), p.name, formatSeconds(p.start))
 		}
-		names[i] = p.name
+		names = append(names, p.name)
+		prev = p
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no parts cover segment start %s", formatSeconds(start))
 	}
 	return names, nil
 }
 
 // concatParts 依序把 mpegts 分片以位元組串接寫入 outPath(mpegts 支援直接串接)。
+// 單一分片(GOP ≥ 段目標長度的常見情形)直接 rename,免二次讀寫。
 func concatParts(partsDir string, parts []string, outPath string) error {
+	if len(parts) == 1 {
+		if err := os.Rename(filepath.Join(partsDir, parts[0]), outPath); err == nil {
+			return nil
+		}
+		// rename 失敗(同目錄下理論上不會)退回複製路徑
+	}
 	out, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("failed to create output: %w", err)
 	}
+	// 錯誤路徑靠 defer 收(重複 Close 是無害的 ErrClosed);寫入完成與否看下方顯式 Close。
+	defer out.Close()
 	for _, name := range parts {
 		f, err := os.Open(filepath.Join(partsDir, name))
 		if err != nil {
-			out.Close()
 			return fmt.Errorf("failed to open part %s: %w", name, err)
 		}
 		_, err = io.Copy(out, f)
 		f.Close()
 		if err != nil {
-			out.Close()
 			return fmt.Errorf("failed to append part %s: %w", name, err)
 		}
 	}

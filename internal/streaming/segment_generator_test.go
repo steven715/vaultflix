@@ -53,7 +53,7 @@ func TestBuildSegmentArgs_SeekClampedAtZero(t *testing.T) {
 
 // selectPartsFromList 是切段對齊的核心純邏輯,獨立於 ffmpeg 測試
 // (ffmpeg 相依測試在無 ffmpeg 的 host 上會 skip,這裡保證 verify gate 有覆蓋)。
-func TestSelectPartsFromList(t *testing.T) {
+func TestSelectPartsFromList_Boundaries(t *testing.T) {
 	// 模擬 -ss 11(=12-seekBackoff)落點提早後的典型清單:
 	// 第一列恆為 0.000000(muxer quirk,實際內容是提早落點的丟棄段)
 	midList := []segmentPart{
@@ -106,10 +106,36 @@ func TestSelectPartsFromList(t *testing.T) {
 				{name: "part0.ts", start: 0, end: 11.999},
 				{name: "part1.ts", start: 12.0, end: 13.999},
 				// part2 列損壞被 parseSegmentList 略過 → part1 與 part3 之間缺洞
-				{name: "part3.ts", start: 16.0, end: 17.999},
+				{name: "part3.ts", start: 17.0, end: 17.999},
 			},
 			start: 12.0, end: 18.0,
 			wantErr: "gap between parts",
+		},
+		{
+			// CSV end_time 是末封包 pts,低 fps 內容相鄰分片天然差一個 frame
+			// interval(1fps → 1s)—— 不得誤判為缺洞
+			name: "low fps frame-interval gaps tolerated",
+			list: []segmentPart{
+				{name: "part0.ts", start: 0, end: 11.0},
+				{name: "part1.ts", start: 12.0, end: 15.0},
+				{name: "part2.ts", start: 16.0, end: 17.0},
+				{name: "part3.ts", start: 18.0, end: 20.0},
+			},
+			start: 12.0, end: 18.0,
+			want: []string{"part1.ts", "part2.ts"},
+		},
+		{
+			// 目標分片時間值小幅提早抖動(< maxStartDrift)仍要選中,
+			// 不得因選取下界過緊被丟掉後再誤報「落點晚於預期」
+			name: "small early jitter on target part accepted",
+			list: []segmentPart{
+				{name: "part0.ts", start: 0, end: 11.899},
+				{name: "part1.ts", start: 11.95, end: 13.999},
+				{name: "part2.ts", start: 14.0, end: 17.999},
+				{name: "part3.ts", start: 18.0, end: 18.666},
+			},
+			start: 12.0, end: 18.0,
+			want: []string{"part1.ts", "part2.ts"},
 		},
 	}
 	for _, tc := range tests {
