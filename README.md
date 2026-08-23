@@ -21,8 +21,8 @@ React SPA (localhost:3000)
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| Frontend | React 18 + TypeScript | SPA with Vite, served via Nginx |
-| Backend | Go 1.24 + Gin | REST API, JWT auth, pre-signed URL generation |
+| Frontend | React 19 + TypeScript | SPA with Vite, baked into the Nginx image |
+| Backend | Go 1.25 + Gin | REST API, JWT auth, path safety, on-the-fly HLS transcode |
 | Database | PostgreSQL 16 | Video metadata, users, tags, watch history |
 | Object Storage | MinIO | Thumbnails & previews only (videos stay on local disk), S3-compatible |
 | Auth | JWT + bcrypt | Stateless authentication |
@@ -38,12 +38,18 @@ React SPA (localhost:3000)
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
 - **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); production offloads byte serving to nginx via `X-Accel-Redirect`, dev falls back to the API's `http.ServeFile`
+- **Adaptive Play Mode**: Every video is classified `direct` / `remux` / `transcode` from its container and codecs; files a browser cannot play natively are served as on-the-fly HLS (ffmpeg segments, disk-cached in the `vaultflix-transcode-cache` volume)
+- **Scoped Stream Tokens**: Short-lived `scope=stream` JWTs bound to one video ID and to the streaming routes only, so a token leaked through a `<video src>` URL cannot reach any other endpoint
 - **Tag System**: Categorized tags (genre, actor, studio, custom) with video-tag associations
 - **Media Source Management**: Admin UI for managing media sources (CRUD) with real-time import progress
 - **Watch History**: Track and resume video playback progress
 - **Favorites**: Bookmark videos for quick access
 - **Daily Recommendations**: Admin-curated daily video picks
 - **User Management**: Admin UI for user CRUD, enable/disable, password reset
+- **Metadata Enrichment**: Scrapes external sources by video code and stores results as suggestions for admin accept/reject, including batch jobs with cancel support
+- **Analytics**: Admin dashboard over watch sessions and playback telemetry (time-to-first-frame, stalls, watch time)
+- **Backfill Jobs**: Regenerate previews and probe codecs / keyframes across the existing library
+- **PWA**: Installable frontend with service-worker caching and an in-app update prompt
 - **WebSocket**: Real-time import progress notifications
 - **React Frontend**: Login, browse, player, and admin pages with responsive dark theme
 
@@ -70,7 +76,7 @@ and [CLAUDE.md](CLAUDE.md). For the native dev workflow you also need:
 | Tool | Why it's needed | Install (Windows) | Install (Linux / WSL) |
 |------|-----------------|-------------------|------------------------|
 | `task` (go-task) | Single entry point (`task --list`); `task verify` is the Stop-hook gate | `winget install Task.Task` | `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin` |
-| Go 1.24+ | `task verify` runs `go vet` / `gofmt` / `go test` | `winget install GoLang.Go` | official tarball into `~/.local/go` ([go.dev/dl](https://go.dev/dl)) |
+| Go 1.25+ | `task verify` runs `go vet` / `gofmt` / `go test` | `winget install GoLang.Go` | official tarball into `~/.local/go` ([go.dev/dl](https://go.dev/dl)) |
 | Node.js 20+ | `task verify` runs `tsc` + `vitest` (web) | `winget install OpenJS.NodeJS.LTS` | nvm or [nodesource](https://github.com/nodesource/distributions) |
 | `gh` (GitHub CLI) | Push branches and open PRs (`gh auth login` first) | `winget install GitHub.cli` | [cli.github.com](https://cli.github.com) (apt repo or release tarball) |
 
@@ -176,9 +182,17 @@ See [`.env.example`](.env.example) for a complete template.
 | `MINIO_USE_SSL` | | Enable HTTPS for MinIO (default: `false`) |
 | `MINIO_VIDEO_BUCKET` | | Video storage bucket name (default: `vaultflix-videos`) |
 | `MINIO_THUMBNAIL_BUCKET` | | Thumbnail storage bucket name (default: `vaultflix-thumbnails`) |
+| `MINIO_PREVIEW_BUCKET` | | Preview-clip bucket name (default: `vaultflix-previews`) |
 | `JWT_SECRET` | **Yes** | Secret key for signing JWT tokens |
 | `JWT_EXPIRY_HOURS` | | JWT token expiry in hours (default: `24`) |
 | `SERVER_PORT` | | API server port (default: `8080`) |
+| `VIDEO_XACCEL_PREFIX` | | nginx internal location for X-Accel byte serving (e.g. `/internal-video/`); empty (default) makes the API serve bytes itself via `http.ServeFile` |
+| `STREAM_TOKEN_EXPIRY_MINUTES` | | Scoped stream-token lifetime in minutes (default: `60`) |
+| `TRANSCODE_CACHE_DIR` | | HLS segment cache directory inside the container (default: `/var/cache/vaultflix/transcode`) |
+| `TRANSCODE_CACHE_MAX_BYTES` | | HLS segment cache size cap (default: 20 GiB) |
+| `ENRICH_HTTP_TIMEOUT` | | Metadata scraper HTTP timeout (default: `15s`) |
+| `ENRICH_USER_AGENT` | | User-Agent sent by the metadata scraper (default: `Vaultflix/1.0`) |
+| `ENRICH_JAVBUS_COOKIE` | | Cookie header sent by the JavBus scraper (age gate) |
 | `ADMIN_DEFAULT_USERNAME` | | Auto-created admin username (default: `admin`) |
 | `ADMIN_DEFAULT_PASSWORD` | **Yes** | Auto-created admin password |
 
@@ -186,33 +200,43 @@ See [`.env.example`](.env.example) for a complete template.
 
 ```
 vaultflix/
-├── cmd/server/             # Application entrypoint (main.go)
+├── cmd/server/             # Application entrypoint (main.go, admin_reset.go)
 ├── internal/
 │   ├── config/             # Environment-based configuration
 │   ├── handler/            # HTTP handlers (Gin)
-│   ├── middleware/         # JWT auth and Casbin RBAC middleware
+│   ├── middleware/         # JWT auth, stream-token scope, active-user, Casbin RBAC
 │   ├── model/              # Domain models and shared errors
 │   ├── repository/         # PostgreSQL data access layer
 │   ├── service/            # Business logic layer
+│   ├── streaming/          # HLS manifest, ffmpeg segment generation, segment cache
+│   ├── scraper/            # External metadata scrapers (enrichment suggestions)
+│   ├── websocket/          # Hub + Notifier interface (real-time progress)
 │   └── mock/               # Hand-written mock structs for testing
 ├── migrations/             # SQL migration files (up/down pairs)
 ├── casbin/                 # RBAC model and policy definitions
-├── scripts/                # Integration test scripts
+├── scripts/                # Integration test scripts (test_all.sh)
+├── nginx/
+│   ├── Dockerfile          # Multi-stage build: Node (builds web/) -> Nginx
+│   └── nginx.conf          # Reverse proxy, SPA routing, X-Accel internal location
 ├── web/                    # React frontend (Vite + TypeScript)
-│   ├── src/
-│   │   ├── api/            # Axios API client and service functions
-│   │   ├── components/     # Reusable UI components
-│   │   ├── contexts/       # React contexts (auth state)
-│   │   ├── pages/          # Page components (Login, Browse, Player)
-│   │   └── types/          # TypeScript type definitions
-│   ├── Dockerfile          # Multi-stage build: Node -> Nginx
-│   └── nginx.conf          # Reverse proxy + SPA routing config
+│   └── src/
+│       ├── api/            # Axios API client and service functions
+│       ├── components/     # Reusable UI components (incl. admin/)
+│       ├── contexts/       # React contexts (auth state)
+│       ├── hooks/          # Custom hooks (WebSocket, playback stats)
+│       ├── pages/          # Page components (Login, Browse, Player, admin/)
+│       └── types/          # TypeScript type definitions
+├── docs/                   # SPEC.md (what's built), ADRs, workflow docs
+├── .ci/fixtures/           # Host-independent media fixtures for integration tests
 ├── Dockerfile              # Prod API image (multi-stage, compiled binary)
 ├── Dockerfile.dev          # Dev API image (go toolchain + ffmpeg baked in)
 ├── docker-compose.yml      # Base stack
+├── docker-compose.prod.yml # Prod overrides (immutable images)
+├── docker-compose.test.yml # Integration-test overrides
 ├── docker-compose.media.yml.example  # Per-machine video mounts (copy, don't edit the base)
+├── Taskfile.yml            # Single entry point for build / test / deploy
 ├── CLAUDE.md               # Development conventions and coding standards
-└── VAULTFLIX_PROJECT_PLAN.md
+└── ROADMAP.md              # Planned features and tech-debt backlog
 ```
 
 ## Development
@@ -239,13 +263,25 @@ Vite dev server proxies `/api` requests to `localhost:8080` via the config in `v
 
 ### Running tests
 
-```bash
-# Go unit tests
-go test ./... -v
+Everything goes through `task` — the same targets run on your machine and in CI, so there is
+no "CI does it differently". See [`Taskfile.yml`](Taskfile.yml) for the full list.
 
-# Integration tests (requires running services)
-docker compose --profile test up test-runner
+```bash
+# Fast gate (native): go vet + gofmt + go test + tsc + eslint + vitest
+# This is what the Stop hook runs; it must be green before pushing.
+task verify
+
+# Integration tests (Docker): pristine stack + .ci/fixtures, runs scripts/test_all.sh
+task test-integration
+
+# Both
+task test-full
 ```
+
+`task test-integration` brings up an isolated compose project with
+[`docker-compose.test.yml`](docker-compose.test.yml) and deliberately does **not** layer in
+your `docker-compose.media.yml` — it mounts `.ci/fixtures` instead, so results do not depend
+on which disks your host happens to have.
 
 ### Database migrations
 
@@ -267,7 +303,11 @@ docker compose run --rm migrate \
 
 ## API Overview
 
-All endpoints except auth require a valid JWT in the `Authorization: Bearer <token>` header.
+All endpoints live under `/api` and require a valid JWT, except `POST /api/auth/register`,
+`POST /api/auth/login`, and `GET /health` (unauthenticated, used by the Docker healthcheck).
+The token is read from the `Authorization: Bearer <token>` header, falling back to a `?token=`
+query parameter for contexts that cannot set headers (`<video src>`, WebSocket upgrade).
+Role enforcement is Casbin, driven by [`casbin/policy.csv`](casbin/policy.csv).
 
 ### Authentication
 
@@ -276,16 +316,24 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | POST | `/api/auth/register` | Register a new account | Public |
 | POST | `/api/auth/login` | Login, returns JWT token | Public |
 | GET | `/api/me` | Get current user info | Any |
+| GET | `/api/videos/:id/stream-token` | Issue a short-lived token scoped to one video and to the streaming routes | viewer+ |
 
 ### Videos
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/videos` | List videos (paginated, searchable, filterable) | viewer+ |
-| GET | `/api/videos/:id` | Video detail with pre-signed stream URL | viewer+ |
-| POST | `/api/videos/import` | Import videos from mounted directory | admin |
+| GET | `/api/videos/:id` | Video detail: stream URL, play mode, presigned thumbnail/preview URLs | viewer+ |
+| GET | `/api/videos/:id/stream` | Stream bytes (HTTP Range; X-Accel-Redirect in production) | viewer+ |
+| GET | `/api/videos/:id/hls/index.m3u8` | HLS playlist for `remux` / `transcode` play modes | admin |
+| GET | `/api/videos/:id/hls/:segment` | HLS segment (ffmpeg-generated, disk-cached) | admin |
+| POST | `/api/videos/import` | Import videos from a mounted directory | admin |
 | PUT | `/api/videos/:id` | Update video metadata | admin |
 | DELETE | `/api/videos/:id` | Delete video (DB + MinIO) | admin |
+
+> The HLS routes are currently reachable by admin only — `casbin/policy.csv` grants `viewer`
+> the progressive `/api/videos/:id/stream` route but has no entry for the HLS pair, so a
+> viewer-role account can play `direct`-mode videos only.
 
 ### Tags
 
@@ -296,12 +344,16 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | POST | `/api/videos/:id/tags` | Add tag to video | admin |
 | DELETE | `/api/videos/:id/tags/:tagId` | Remove tag from video | admin |
 
-### Watch History
+### Watch History & Playback
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | POST | `/api/watch-history` | Save playback progress | viewer+ |
 | GET | `/api/watch-history` | List watch history | viewer+ |
+| DELETE | `/api/watch-history` | Clear watch history | viewer+ |
+| POST | `/api/watch-sessions/heartbeat` | Accumulate real watch time | viewer+ |
+| POST | `/api/playback/telemetry` | Report playback telemetry (time-to-first-frame, stalls) | viewer+ |
+| GET | `/api/admin/playback/telemetry` | Aggregated telemetry summary | admin |
 
 ### Favorites
 
@@ -310,6 +362,26 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | GET | `/api/favorites` | List favorites | viewer+ |
 | POST | `/api/favorites` | Add favorite | viewer+ |
 | DELETE | `/api/favorites/:videoId` | Remove favorite | viewer+ |
+
+### Recommendations
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/recommendations/today` | Today's curated picks | viewer+ |
+| GET | `/api/recommendations` | List picks by date | admin |
+| POST | `/api/recommendations` | Add a pick | admin |
+| PUT | `/api/recommendations/:id` | Update sort order | admin |
+| DELETE | `/api/recommendations/:id` | Remove a pick | admin |
+
+### Users
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/users` | List users | admin |
+| POST | `/api/users` | Create a user | admin |
+| PUT | `/api/users/:id/enable` | Enable / disable a user | admin |
+| PUT | `/api/users/:id/password` | Reset a user's password | admin |
+| DELETE | `/api/users/:id` | Delete a user | admin |
 
 ### Media Sources
 
@@ -328,13 +400,38 @@ All endpoints except auth require a valid JWT in the `Authorization: Bearer <tok
 | GET | `/api/import-jobs/active` | Get currently running import job | admin |
 | GET | `/api/import-jobs/:id` | Get import job by ID | admin |
 
+### Metadata Enrichment
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/videos/:id/enrich` | Scrape metadata for one video | admin |
+| GET | `/api/videos/:id/suggestions` | List pending metadata suggestions | admin |
+| POST | `/api/videos/:id/suggestions/:sid/accept` | Accept a suggestion | admin |
+| DELETE | `/api/videos/:id/suggestions/:sid` | Reject a suggestion | admin |
+| POST | `/api/enrich-jobs` | Start a batch enrichment job | admin |
+| GET | `/api/enrich-jobs/active` | Get the running batch job | admin |
+| DELETE | `/api/enrich-jobs/:jid` | Cancel a batch job | admin |
+| POST | `/api/enrich-jobs/backfill-codes` | Backfill video codes from filenames | admin |
+
+### Admin: Analytics & Backfill
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/admin/analytics` | Library and viewing analytics | admin |
+| POST | `/api/admin/videos/backfill-previews` | Start preview-clip backfill | admin |
+| GET | `/api/admin/backfill-jobs/active` | Get the running backfill job | admin |
+| POST | `/api/admin/backfill-jobs/:id/cancel` | Cancel a backfill job | admin |
+| POST | `/api/admin/videos/backfill-codecs` | Probe and store missing codec metadata | admin |
+| POST | `/api/admin/videos/backfill-keyframes` | Index keyframes for seeking | admin |
+
 ### WebSocket
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/ws` | WebSocket connection (import progress, notifications) | Any |
 
-For full request/response details, see the handler source code in [`internal/handler/`](internal/handler/).
+For full request/response details, see the handler source code in [`internal/handler/`](internal/handler/)
+and the route table in [`cmd/server/main.go`](cmd/server/main.go).
 
 ## Troubleshooting
 
@@ -414,4 +511,4 @@ See **[ROADMAP.md](ROADMAP.md)** — the single source of truth for planned feat
 
 ## License
 
-[MIT](LICENSE)
+MIT — intended license; a `LICENSE` file has not been added to the repo yet.
