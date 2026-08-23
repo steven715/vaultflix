@@ -23,6 +23,10 @@ const (
 	readMargin = 0.5
 	// boundaryTol 是 CSV 分片時間與 keyframe pts 的比對容差(秒)。
 	boundaryTol = 0.002
+	// continuityTol 是相鄰分片 end→start 允許的最大空隙(秒)。CSV 的 end_time 是
+	// 分片末封包的 pts,與下一分片起點差距約一個 frame;超過此值代表清單有列損壞
+	// 或分片缺洞,寧可回錯誤也不要送出缺內容的分段。
+	continuityTol = 0.5
 )
 
 // SegmentGenerator 產生單一 mpegts 分段檔。
@@ -93,43 +97,69 @@ func (g *FFmpegSegmentGenerator) Generate(ctx context.Context, inputPath, outPat
 	return nil
 }
 
-// selectParts 從 segment muxer 的 CSV 清單(每行 filename,start_time,end_time)
-// 挑出內容落在 [start, end) 的分片。-copyts 下 start_time 為來源絕對 pts;
-// 例外是第一列恆為 0.000000(muxer 以 0 起算,非實際落點)—— 但 seekBackoff 保證
-// start > 0 時第一列必是要丟棄的提早落點內容,不會被選中;start == 0 時 0 即正確值。
+// segmentPart 是 segment muxer CSV 清單的一列:分片檔名與其內容的絕對時間範圍。
+type segmentPart struct {
+	name       string
+	start, end float64
+}
+
+// parseSegmentList 解析 segment muxer 的 CSV 清單(每行 filename,start_time,end_time)。
+// 無法解析的列直接略過(缺洞由 selectPartsFromList 的連續性驗證攔下)。
+func parseSegmentList(data string) []segmentPart {
+	var parts []segmentPart
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Split(strings.TrimSpace(line), ",")
+		if len(fields) < 3 {
+			continue
+		}
+		start, err1 := strconv.ParseFloat(fields[1], 64)
+		end, err2 := strconv.ParseFloat(fields[2], 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		parts = append(parts, segmentPart{name: fields[0], start: start, end: end})
+	}
+	return parts
+}
+
+// selectParts 讀取 CSV 清單並挑出內容落在 [start, end) 的分片檔名。
 func selectParts(listPath string, start, end float64) ([]string, error) {
 	data, err := os.ReadFile(listPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read segment list: %w", err)
 	}
-	var parts []string
-	firstTS := math.NaN()
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Split(strings.TrimSpace(line), ",")
-		if len(fields) < 3 {
-			continue
-		}
-		ts, err := strconv.ParseFloat(fields[1], 64)
-		if err != nil {
-			continue
-		}
-		if ts >= start-boundaryTol && ts < end-boundaryTol {
-			if len(parts) == 0 {
-				firstTS = ts
-			}
-			parts = append(parts, fields[0])
+	return selectPartsFromList(parseSegmentList(string(data)), start, end)
+}
+
+// selectPartsFromList 挑出 start_time 落在 [start, end) 的分片。-copyts 下
+// start_time 為來源絕對 pts;例外是第一列恆為 0.000000(muxer 以 0 起算,非實際
+// 落點)—— 但 seekBackoff 保證 start > 0 時第一列必是要丟棄的提早落點內容,
+// 不會被選中;start == 0 時 0 即正確值。
+// 切段後驗證:首個分片必須就在 start 上(落點晚於預期即報錯),且相鄰分片必須
+// 連續(清單列損壞造成的缺洞即報錯)—— 寧可回錯誤也不要送出錯位或缺內容的分段。
+func selectPartsFromList(all []segmentPart, start, end float64) ([]string, error) {
+	var sel []segmentPart
+	for _, p := range all {
+		if p.start >= start-boundaryTol && p.start < end-boundaryTol {
+			sel = append(sel, p)
 		}
 	}
-	if len(parts) == 0 {
+	if len(sel) == 0 {
 		return nil, fmt.Errorf("no parts cover segment start %s", formatSeconds(start))
 	}
-	// 切段後驗證:首個選中分片必須就在 start 上,否則代表落點晚於預期(來源缺
-	// 對應 keyframe 或 demuxer 行為異常),寧可回錯誤也不要送出錯位內容。
-	if math.Abs(firstTS-start) > 0.1 {
+	if math.Abs(sel[0].start-start) > 0.1 {
 		return nil, fmt.Errorf("segment content starts at %s, expected %s",
-			formatSeconds(firstTS), formatSeconds(start))
+			formatSeconds(sel[0].start), formatSeconds(start))
 	}
-	return parts, nil
+	names := make([]string, len(sel))
+	for i, p := range sel {
+		if i > 0 && p.start-sel[i-1].end > continuityTol {
+			return nil, fmt.Errorf("gap between parts %s (ends %s) and %s (starts %s)",
+				sel[i-1].name, formatSeconds(sel[i-1].end), p.name, formatSeconds(p.start))
+		}
+		names[i] = p.name
+	}
+	return names, nil
 }
 
 // concatParts 依序把 mpegts 分片以位元組串接寫入 outPath(mpegts 支援直接串接)。

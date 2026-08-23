@@ -8,8 +8,10 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -21,6 +23,12 @@ func requireFFmpeg(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"ffmpeg", "ffprobe"} {
 		if _, err := exec.LookPath(bin); err != nil {
+			// 設 VAULTFLIX_REQUIRE_FFMPEG=1 的環境(test-integration 的 api 容器)
+			// 存在的意義就是「用生產 ffmpeg 跑這些測試」,缺 ffmpeg 是 gate 失效,
+			// 必須紅燈而非無聲 skip。
+			if os.Getenv("VAULTFLIX_REQUIRE_FFMPEG") == "1" {
+				t.Fatalf("%s not in PATH but VAULTFLIX_REQUIRE_FFMPEG=1", bin)
+			}
 			t.Skipf("%s not in PATH; run inside the api container or install ffmpeg locally", bin)
 		}
 	}
@@ -55,6 +63,10 @@ func probeVideoPackets(t *testing.T, path string) (first, last float64, keyframe
 		"-show_entries", "packet=pts_time,flags",
 		"-of", "csv", path).Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			t.Fatalf("ffprobe failed for %s: %v: %s", path, err, ee.Stderr)
+		}
 		t.Fatalf("ffprobe failed for %s: %v", path, err)
 	}
 	first, last = math.NaN(), math.NaN()

@@ -51,6 +51,99 @@ func TestBuildSegmentArgs_SeekClampedAtZero(t *testing.T) {
 	}
 }
 
+// selectPartsFromList 是切段對齊的核心純邏輯,獨立於 ffmpeg 測試
+// (ffmpeg 相依測試在無 ffmpeg 的 host 上會 skip,這裡保證 verify gate 有覆蓋)。
+func TestSelectPartsFromList(t *testing.T) {
+	// 模擬 -ss 11(=12-seekBackoff)落點提早後的典型清單:
+	// 第一列恆為 0.000000(muxer quirk,實際內容是提早落點的丟棄段)
+	midList := []segmentPart{
+		{name: "part0.ts", start: 0, end: 11.999},
+		{name: "part1.ts", start: 12.0, end: 13.999},
+		{name: "part2.ts", start: 14.0, end: 15.999},
+		{name: "part3.ts", start: 16.0, end: 17.999},
+		{name: "part4.ts", start: 18.0, end: 18.666},
+	}
+	tests := []struct {
+		name       string
+		list       []segmentPart
+		start, end float64
+		want       []string
+		wantErr    string
+	}{
+		{
+			name: "mid segment excludes bogus first row and next boundary",
+			list: midList, start: 12.0, end: 18.0,
+			want: []string{"part1.ts", "part2.ts", "part3.ts"},
+		},
+		{
+			name: "segment zero keeps genuine first row",
+			list: []segmentPart{
+				{name: "part0.ts", start: 0, end: 1.999},
+				{name: "part1.ts", start: 2.0, end: 3.999},
+				{name: "part2.ts", start: 6.0, end: 7.999},
+			},
+			start: 0, end: 6.0,
+			want: []string{"part0.ts", "part1.ts"},
+		},
+		{
+			name:  "no parts in range",
+			list:  []segmentPart{{name: "part0.ts", start: 0, end: 5.0}},
+			start: 12.0, end: 18.0,
+			wantErr: "no parts cover",
+		},
+		{
+			name: "late landing rejected instead of serving misaligned content",
+			list: []segmentPart{
+				{name: "part0.ts", start: 0, end: 13.999},
+				{name: "part1.ts", start: 14.0, end: 15.999},
+			},
+			start: 12.0, end: 18.0,
+			wantErr: "expected 12.000000",
+		},
+		{
+			name: "gap from corrupt row rejected",
+			list: []segmentPart{
+				{name: "part0.ts", start: 0, end: 11.999},
+				{name: "part1.ts", start: 12.0, end: 13.999},
+				// part2 列損壞被 parseSegmentList 略過 → part1 與 part3 之間缺洞
+				{name: "part3.ts", start: 16.0, end: 17.999},
+			},
+			start: 12.0, end: 18.0,
+			wantErr: "gap between parts",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := selectPartsFromList(tc.list, tc.start, tc.end)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("parts = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseSegmentList_SkipsMalformedRows(t *testing.T) {
+	parts := parseSegmentList("part0.ts,0.000000,11.999000\n" +
+		"garbage line\n" +
+		"part1.ts,not-a-number,13.999000\n" +
+		"part2.ts,14.000000,15.999000\n")
+	if len(parts) != 2 || parts[0].name != "part0.ts" || parts[1].name != "part2.ts" {
+		t.Errorf("parts = %v, want part0.ts and part2.ts only", parts)
+	}
+	if parts[1].start != 14.0 || parts[1].end != 15.999 {
+		t.Errorf("part2 range = [%v, %v], want [14, 15.999]", parts[1].start, parts[1].end)
+	}
+}
+
 func indexOf(ss []string, target string) int {
 	for i, s := range ss {
 		if s == target {
