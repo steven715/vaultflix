@@ -11,6 +11,7 @@
   - **現況（2026-07-05 核實）**：codec 回填 498/498 完成、分類器 live。分佈：direct 285(521GB) / remux 124(200GB，Phase 1 已解) / **transcode 89(143GB，本項)**。不能播主因：`mpeg4`(65)、`wmv1/2/3`(16)、`vc1`(5)、`hevc`(2) + `wmav2/wmapro/ac3` 音訊。
   - **範圍**：後端 ffmpeg arg builder（`-c:v libx264`）+ 分類器把 `transcode` 導向真轉碼；前端 hls.js 路徑 Phase 1 已鋪好，共用。硬體 i7-14700F 28 threads 軟轉即時 1080p 足夠；NVENC 視需要再評估。
   - **已排除**：預轉存檔（方案 B，+343GB×N 儲存，已否決）。
+  - **同時要補 Casbin policy（2026-08-23 發現）**：`casbin/policy.csv` 給了 `viewer` `/api/videos/:id/stream`，但沒有 `/api/videos/:id/hls/index.m3u8` 與 `/api/videos/:id/hls/:segment` 兩條。`middleware.CasbinRBAC` 用實際 URL path 過 enforce，所以 viewer 角色碰到 `remux`/`transcode` 影片會拿到 403 —— Phase 1 的 remux 其實對 viewer 還沒真的解鎖。目前單人以 admin 使用不會踩到，但 Phase 2 讓那 89 部能播之後，任何 viewer 帳號仍舊播不了，等於白做。改動極小（policy.csv 兩行），但**必須與 Phase 2 同批驗證**，並補一個 viewer 角色打 HLS 路由的測試防回歸。
   - Spec 已寫：`docs/superpowers/specs/2026-06-30-video-compat-phase1-design.md`（Phase 2 段落）。
 
 - [ ] **播放遙測 / 量化（效能優化前置 enabler）** — 把 ADR-0006 HUD 已量測的指標（stall 分類 starved/codec、buffer-edge 吞吐、TTFB RTT）從「即時顯示、關掉就沒」變成**可留存、可聚合**，建立效能 before/after baseline。

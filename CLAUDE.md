@@ -8,9 +8,9 @@ Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 
 
 ## 語言與版本
 
-- Go 1.22+
+- Go 1.25
 - PostgreSQL 16
-- React 18 + TypeScript
+- React 19 + TypeScript
 - Docker Compose V2
 
 ---
@@ -601,7 +601,7 @@ import (
 **前置工具（host 需安裝）**：
 
 - `go-task`（`task` 指令）：build/test/deploy 單一入口。Windows `winget install Task.Task` 或 `scoop install task`；Linux/WSL `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin`。確認 `task` 在 PATH 上（winget 會把 shim 放到 `%LOCALAPPDATA%\Microsoft\WinGet\Links`）。
-- `task verify` 還需要 **Go 1.24+**（`go vet`/`gofmt`/`go test`）與 **Node.js 20+**（`tsc`/`vitest`）原生安裝；整合測試需要 Docker。
+- `task verify` 還需要 **Go 1.25+**（`go vet`/`gofmt`/`go test`）與 **Node.js 20+**（`tsc`/`vitest`）原生安裝；整合測試需要 Docker。
 - `gh`（GitHub CLI）：push 分支與開 PR 用，先 `gh auth login`。Windows `winget install GitHub.cli`；Linux/WSL 見 [cli.github.com](https://cli.github.com)。
 
 > Linux/WSL 安裝到 `~/.local/bin`、`~/.local/go/bin` 的工具記得確認在 PATH 上。
