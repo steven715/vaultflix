@@ -75,6 +75,9 @@ tasks:
       # volume from a previous run so the DB is always clean — no cross-run pollution).
       - "{{.COMPOSE_TEST}} --profile test down -v --remove-orphans"
       - "{{.COMPOSE_TEST}} --profile test up -d vaultflix-api"
+      # ffmpeg-dependent Go tests (HLS segment/manifest alignment) need the container's
+      # ffmpeg — the host verify gate has none, so they skip there and must run here.
+      - "{{.COMPOSE_TEST}} --profile test exec -T vaultflix-api go test ./internal/streaming/"
       - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
       # -v removes the isolated project's ephemeral volumes only; the dev/prod
       # `vaultflix` project's named volumes are untouched.

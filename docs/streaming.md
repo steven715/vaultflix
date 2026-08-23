@@ -70,9 +70,13 @@
 播放決策由客戶端 DeviceProfile 協商：DirectPlay > DirectStream(remux) > Transcode，永遠選最便宜的可行路徑。
 值得借鑑的兩個設計：
 1. **Keyframe 對齊不信任 `ffmpeg -ss`** —— 用 `MatroskaKeyframeExtractor` 直接解析 MKV EBML/Cues
-   拿 keyframe 位置（ffprobe 只是 fallback）。本專案 2026-08 發現的 remux 斷續 bug
-   （`-ss <keyframe_pts>` 在部分 MKV 上落點提早一個 GOP，切出的段與 manifest 錯位、相鄰段大量重疊）
-   正是 Jellyfin 用這個設計繞開的坑。
+   拿 keyframe 位置（ffprobe 只是 fallback）。本專案 2026-08 的 remux 斷續 bug（已修）實證了同一課：
+   ffmpeg CLI 對含 B-frames 的輸入（`video_delay > 0`）做 input seek 時會把 `-ss` 目標自動減
+   3/23s（dts heuristic），在 mkv 上因此系統性落到前一個 keyframe，切出的段與 manifest 錯位、
+   相鄰段大量重疊。修法（`internal/streaming/segment_generator.go`）：input seek 只當粗跳
+   （刻意退 1s，落點只需 ≤ 目標），精準邊界交給 segment muxer（`-copyts` + `-segment_time 0`
+   每個 GOP 切一檔，muxer 只在 keyframe 分界），再依 CSV 清單的絕對時間挑出目標區間串接 ——
+   與 Jellyfin 同一原則：落點精準度不依賴 demuxer 的 seek 行為。
 2. **一條連續 ffmpeg + Transcoding Throttler** —— 不是 per-segment spawn；ffmpeg 領先播放進度超過
    `ThrottleDelaySeconds` 就暫停程序省 CPU，seek 未轉碼區 = 殺掉重啟。
 
