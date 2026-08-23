@@ -75,6 +75,13 @@ tasks:
       # volume from a previous run so the DB is always clean — no cross-run pollution).
       - "{{.COMPOSE_TEST}} --profile test down -v --remove-orphans"
       - "{{.COMPOSE_TEST}} --profile test up -d vaultflix-api"
+      # ffmpeg-dependent Go tests (HLS segment/manifest alignment) need the container's
+      # ffmpeg — the host verify gate has none, so they skip there and must run here.
+      # REQUIRE_FFMPEG turns a missing-ffmpeg skip into a failure: this step exists to
+      # run those tests against the production ffmpeg, so silently skipping = broken gate.
+      # -count=1: the go test cache doesn't key on the ffmpeg binary, so a cached PASS
+      # would replay without executing ffmpeg after an image/ffmpeg bump.
+      - "{{.COMPOSE_TEST}} --profile test exec -T -e VAULTFLIX_REQUIRE_FFMPEG=1 vaultflix-api go test -count=1 ./internal/streaming/"
       - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
       # -v removes the isolated project's ephemeral volumes only; the dev/prod
       # `vaultflix` project's named volumes are untouched.
