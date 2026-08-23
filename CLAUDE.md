@@ -4,6 +4,8 @@
 
 Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 Go API Server，前端為 React SPA，影片保留在本機磁碟，系統直接讀取串流；MinIO 僅存縮圖與預覽，metadata 存於 PostgreSQL。
 
+**場景前提（架構決策以此規模為準）**：Jellyfin 式個人媒體伺服器 —— 單一使用者為主、同時串流數個位數、區網優先、偶爾 ngrok 對外分享。不做 YouTube 式規模；串流走即時處理路線（保留原檔，播放時 remux/transcode）。詳見 `docs/adr/0009` 與 `docs/streaming.md`。
+
 ---
 
 ## 語言與版本
