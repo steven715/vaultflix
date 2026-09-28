@@ -22,5 +22,6 @@ Short, **immutable** notes capturing *why* a non-obvious architectural choice wa
 | [0007](0007-pwa-service-worker-cache-boundary.md) | PWA service worker never caches `/api` or `/minio`; prompt-to-update | Accepted |
 | [0008](0008-xaccel-stream-offload.md) | Offload stream bytes to nginx via X-Accel-Redirect, env-gated | Accepted (supersedes the local-disk `http.ServeFile` prod path) |
 | [0009](0009-jellyfin-scale-on-the-fly-streaming.md) | Position streaming as Jellyfin-scale on-the-fly, not YouTube-scale pre-processing | Accepted |
+| [0010](0010-performer-maker-entities-enrichment-suggestions.md) | Performers and Makers are entities, not Tags; Enrichment only produces Suggestions | Accepted |
 
-> Roadmap and current capabilities live elsewhere: see [ROADMAP.md](../../ROADMAP.md) (what's next) and [SPEC.md](../SPEC.md) (what's built).
+> Other living docs: [ROADMAP.md](../../ROADMAP.md) (what's next), [README.md](../../README.md) (what's built, how to run it), [CONTEXT.md](../../CONTEXT.md) (domain vocabulary).

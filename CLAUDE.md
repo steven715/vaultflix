@@ -6,6 +6,8 @@ Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 
 
 **場景前提（架構決策以此規模為準）**：Jellyfin 式個人媒體伺服器 —— 單一使用者為主、同時串流數個位數、區網優先、偶爾 ngrok 對外分享。不做 YouTube 式規模；串流走即時處理路線（保留原檔，播放時 remux/transcode）。詳見 `docs/adr/0009` 與 `docs/streaming.md`。
 
+**領域用語以 [`CONTEXT.md`](CONTEXT.md) 為準。** 程式碼識別字、文件、commit、PR、測試名稱提到領域概念時用術語表的主詞條，不用 `_Avoid_` 列出的別名（程式碼中尚未改名的舊識別字如 `Actress` 例外，見 ROADMAP「程式碼對齊術語表」）。
+
 ---
 
 ## 語言與版本
@@ -89,50 +91,6 @@ func (r *VideoRepo) FindByID(ctx context.Context, id string) (*Video, error)
 func (s *VideoService) GetByID(id string) (*Video, error)
 ```
 
-### URL 消費者意識
-
-產生 URL 時必須考慮**誰會消費這個 URL**：
-
-- Server-to-server 通訊（API → MinIO）使用 Docker 內部 hostname（如 `minio:9000`）
-- 前端/瀏覽器消費的 URL（presigned URL、thumbnail URL）必須使用 public-facing endpoint（如 `localhost:9000`）
-- Config 中明確區分這兩種 endpoint，命名反映用途：`MINIO_ENDPOINT`（內部）vs `MINIO_PUBLIC_ENDPOINT`（外部）
-- 產生 presigned URL 時，使用以 public endpoint 初始化的獨立 client，確保簽名與 hostname 一致
-
-```go
-// ✅ 正確：兩個 client 各司其職
-internalClient, _ := minio.New(cfg.MinIOEndpoint, opts)       // 上傳、刪除
-presignClient, _ := minio.New(cfg.MinIOPublicEndpoint, opts)   // 產生 presigned URL
-
-// ❌ 錯誤：用內部 client 產生 URL 再替換 host（簽名會不匹配）
-url := internalClient.PresignedGetObject(...)
-url.Host = publicEndpoint // 簽名基於 minio:9000，瀏覽器送 localhost:9000 → 驗證失敗
-```
-
-### 執行期可調性原則
-
-業務行為參數（如掃描路徑、數量限制、過期時間）應優先從 API 請求參數傳入，環境變數只作為 fallback 預設值。
-
-**判斷標準**：「改這個值需要重啟服務嗎？」如果不應該，就不該只存在於環境變數。基礎設施連線資訊（DB DSN、MinIO endpoint）例外，因為連線本身需要重建。
-
-```go
-// ✅ 正確：業務參數從 request 傳入，執行期可調
-type importRequest struct {
-    SourceDir string `json:"source_dir" binding:"required"`
-}
-func (h *VideoHandler) Import(c *gin.Context) {
-    var req importRequest
-    // ...
-    result, err := h.importService.Run(ctx, req.SourceDir)
-}
-
-// ❌ 錯誤：業務參數寫死在環境變數，改路徑要重啟服務
-type ImportService struct {
-    sourceDir string // 從 env var 讀入，啟動後不可變
-}
-```
-
-- 基礎設施參數（DB、MinIO、JWT secret）→ 環境變數，啟動時載入
-- 業務行為參數（匯入路徑、分頁大小、URL 有效期）→ API 請求參數，執行期可調
 
 ### Log 規範
 
@@ -280,294 +238,22 @@ function handleVideoError() {
 }
 ```
 
-### useEffect 非同步操作
-
-- `useEffect` 中執行 async 操作時，必須用 cleanup flag 防止 unmount 後的狀態更新
-- 依賴陣列只放真正的觸發條件（如 route param `id`），不放 `useCallback` 包裝的函式引用
-
-```tsx
-// ✅ 正確：cleanup flag + 直接依賴 id
-useEffect(() => {
-  let cancelled = false
-  const fetchData = async () => {
-    const data = await getData(id)
-    if (!cancelled) setData(data)
-  }
-  fetchData()
-  return () => { cancelled = true }
-}, [id])
-
-// ❌ 錯誤：依賴 useCallback 函式引用，可能因 closure 不穩定導致重複執行
-const fetchData = useCallback(async () => { ... }, [id])
-useEffect(() => { fetchData() }, [fetchData])
-```
-
-### 假時鐘測試：前置條件要用 tick 逼出來，不要靠真實時間燒過去
-
-`vi.useFakeTimers({ shouldAdvanceTime: true })` 讓假時鐘跟著真實時間前進，方便 awaited 的資料載入正常解析。代價是：**任何「靠這段等待剛好燒掉 N 毫秒」才成立的前置條件都是 flaky**，會隨機器快慢、CI 負載翻面 —— 同一份 tree 可以一次綠一次紅。
-
-實際踩過的地雷：`usePlaybackStats` 是在 500ms 的 publish tick **裡面**才綁 `<video>` 的 listener（`streamPath` 比 `<video>` 早一個 render 變 non-null，effect 當下那次 `publish()` 看到的 `videoRef.current` 還是 null，而 effect 不會因為元素掛上而重跑）。測試若在任何 tick 跑之前就 `fireEvent.play()`，`onPlay` 根本還沒註冊 → `playStartRef` 是 null → ttff 算不出來 → unmount 的 telemetry beacon 被 `ttffMs == null && watchedMs <= 0` 這道 guard 擋掉 → 斷言整串垮。
-
-規則：**要讓事件被聽到，先逼出綁定的那個 tick，再 fire 事件，再逼一次 tick 讓 hook 計算。**
-
-```tsx
-// ✅ 正確：每個 tick 都是明確逼出來的
-await act(async () => { await vi.advanceTimersByTimeAsync(600) })  // tick 1：hook 綁上 listener
-fireEvent.play(videoEl)                                            // 這下才聽得到
-await act(async () => { await vi.advanceTimersByTimeAsync(600) })  // tick 2：hook 算 ttff
-
-// ❌ 錯誤：假設 awaited 的載入「會順便」讓 interval 跑過一輪
-await screen.findByText('T')
-fireEvent.play(videoEl)        // 機器夠快 → 一個 tick 都還沒跑 → 事件掉了
-await act(async () => { await vi.advanceTimersByTimeAsync(600) })
-```
-
-判斷標準：把這個測試放到一台快 10 倍的機器上，結論還成立嗎？只要答案取決於「那段 await 花了多久」，就是 flaky。
-
-### 測試紅燈先分辨 flaky 再分辨壞掉
-
-CI 紅不代表「這次改動弄壞了什麼」—— `task verify` 是整包 gate，任何既有或隨機的失敗都會在下一個推 code 的人頭上炸開。判斷順序：
-
-1. 這次改動有沒有碰到相關檔案？（`git diff --stat <上次綠的 commit> HEAD -- <路徑>`）
-2. 沒碰到的話，比對 **tree hash**：`git rev-parse <A>^{tree}` vs `<B>^{tree}`。同 tree 不同結果 = flaky，不是壞掉
-3. 本機重跑多次取得失敗率，別用單次結果下結論
-
-### 同路徑重新導航的 refetch
-
-點擊指向「目前所在路徑」的連結（如已在首頁時再點 logo / 首頁）不會改變 URL 參數，靠 `[query]`、`[searchParams]` 之類的依賴**不會觸發 refetch**，畫面看起來「卡住不更新」。需要「每次導航都重抓」的資料（如首頁輪播推薦、續看清單），依賴 `useLocation().key` —— React Router 每次導航（即使目標與現況相同）都會 push 新 entry 並產生新的 `location.key`。
-
-```tsx
-// ✅ 正確：同路徑再點 logo / 首頁也會 refetch
-const location = useLocation()
-useEffect(() => {
-  if (query) return
-  let cancelled = false
-  getTodayRecommendations().then((items) => !cancelled && setRecommendations(items))
-  return () => { cancelled = true }
-}, [query, location.key])
-
-// ❌ 錯誤：已在首頁時點 logo，query 沒變 → effect 不跑 → 推薦永遠不更新
-}, [query])
-```
-
-### 具名導航控制要導到目的地，不要用 `navigate(-1)`
-
-當一個按鈕/連結的文案承諾了**具體目的地**（如「返回片庫」、「回首頁」），它就必須導向那個路由（`navigate('/')`），不能用 `navigate(-1)` / `history.back()`。`navigate(-1)` 是「上一頁」而非「片庫」—— 當 back stack 裡上一頁剛好是**同類型頁面**時（如播放頁 A → 從「接著看」點進播放頁 B），按「返回片庫」會回到 A 而不是片庫，與文案不符。
-
-判斷標準：文案是否指名一個固定目的地？是 → `navigate('<目的地>')`；否（純粹語意是「上一步」的通用返回鍵）→ 才用 `navigate(-1)`。
-
-```tsx
-// ✅ 正確：文案說「返回片庫」就導到片庫
-<button onClick={() => navigate('/')}>返回片庫</button>
-
-// ❌ 錯誤：B → 返回片庫 會回到上一個播放頁 A，不是片庫
-<button onClick={() => navigate(-1)}>返回片庫</button>
-```
-
-判斷標準：這份資料是否預期「回到此頁就刷新」？是 → 加 `location.key`；否（純由 URL 參數決定、deterministic 的如分頁列表）→ 不加，避免每次導航都多打一次 API。
-
 ---
 
-## Docker 規範
+## 主題規範（動到該區域前必讀）
 
-- 使用 Docker Compose V2 語法（`services:` 頂層，無 `version:` 欄位）
-- 所有服務使用 alpine-based image（除非有特殊需求）
-- Volume 命名格式：`vaultflix-<service>-data`（如 `vaultflix-postgres-data`）
-- 環境變數透過 `.env` 檔案注入，不寫死在 `docker-compose.yml` 中
-- Health check 必須配置在每個服務上
-- 對外暴露 port 的服務（如 MinIO），`.env` 中必須同時定義 internal endpoint（Docker hostname）和 public endpoint（host-accessible），命名慣例：`<SERVICE>_ENDPOINT` / `<SERVICE>_PUBLIC_ENDPOINT`
+以下規則只在碰到特定區域時需要，不常駐於此檔。**觸發條件成立時先讀對應文件再動手。**
 
-### 前端發版流程（不可變 nginx image）
+| 觸發條件 | 必讀 |
+|---|---|
+| 動 `web/src/`（React 元件、hooks、vitest 測試） | [`docs/conventions/frontend.md`](docs/conventions/frontend.md) —— useEffect、假時鐘測試、flaky 判斷、同路徑 refetch、具名導航 |
+| 動 `internal/websocket/` 或 `web/src/hooks/useWebSocket.ts` | [`docs/conventions/websocket.md`](docs/conventions/websocket.md) —— Hub、訊息協議、重連、onclose 世代 |
+| 動 `internal/streaming/`、Play Mode、任何呼叫 ffmpeg/ffprobe 的程式 | [`docs/streaming.md`](docs/streaming.md) —— 播放路徑、規模前提、§6 FFmpeg seek 與產物測試 |
+| 動 `docker-compose*.yml`、`Dockerfile*`、`nginx/`、部署流程、影片掛載 | [`docs/conventions/docker.md`](docs/conventions/docker.md) —— 不可變 nginx image、磁碟掛載、compose 疊加陷阱 |
+| 產生給瀏覽器的 URL、新增設定參數、處理使用者可控的檔案路徑 | [`docs/conventions/backend-design.md`](docs/conventions/backend-design.md) —— URL 消費者、執行期可調性、路徑安全 |
+| 做出難以逆轉、有真實取捨的架構決策 | [`docs/adr/`](docs/adr/README.md) —— 先讀相關 ADR；新決策寫新 ADR |
 
-前端 SPA 直接 build 進 `vaultflix-nginx` image：`nginx/Dockerfile` 是多階段 build，第一階段用 `node:20-alpine` 編譯 `web/`，第二階段把產物 `COPY` 進 nginx 的 `/usr/share/nginx/html`。**沒有 `web_dist` 共享 volume、沒有獨立的 `vaultflix-web` 容器** —— 前端是不可變產物，與 Go API image 對稱。
-
-因為 build context 是 repo root（nginx Dockerfile 要讀 `web/` 與 `nginx/nginx.conf`），compose 的 nginx 服務用 `context: .` + `dockerfile: nginx/Dockerfile`，root 的 `.dockerignore` 已排除 `web/node_modules`、`web/dist`。
-
-正確流程（image 換了 `up -d` 會自動 recreate，無需手動刪 volume）：
-
-```bash
-docker compose build vaultflix-nginx
-docker compose up -d vaultflix-nginx
-# 或一次到位：task deploy
-```
-
-改完前端若瀏覽器行為沒變，第一反應是 image 沒重 build（或 PWA/瀏覽器在吃舊快取，hard reload）—— 不再有 named volume 陷阱。
-
-### 磁碟層級掛載策略
-
-影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟。
-
-**磁碟配置是「因機器而異」的設定，不進被 git 追蹤的檔案。** 它住在 gitignore 的 `docker-compose.media.yml`（範本：`docker-compose.media.yml.example`），與 `.env` 同一類。tracked 的 `docker-compose.yml` / `docker-compose.prod.yml` 一行影片掛載都不該有。
-
-```yaml
-# docker-compose.media.yml — 用 YAML anchor 一次餵給 api 與 nginx
-x-media-mounts: &media-mounts
-  - D:/:/mnt/host/D:ro
-  - E:/:/mnt/host/E:ro
-
-services:
-  vaultflix-api:
-    volumes: *media-mounts
-  vaultflix-nginx:
-    volumes: *media-mounts
-```
-
-- 掛載點統一在 `/mnt/host/<磁碟代號>/` 下
-- 使用 `:ro`（read-only）防止容器內程式修改原始檔案
-- Media source 的 `mount_path` 必須在 `/mnt/host/` 前綴下
-- api 與 nginx 必須拿到**完全相同**的掛載（nginx 少一個就無法做 X-Accel byte serving）。用 anchor 而不是抄兩份，讓兩者不可能 drift
-- 新增磁碟只需在 `docker-compose.media.yml` 的 anchor 加一行 + 在 Admin UI 新增 media source
-- `task up` / `task deploy` 會自動把這個檔案疊在最後；整合測試**刻意不疊**，改掛 `.ci/fixtures`，維持 host OS 無關
-
-**compose 疊加順序有兩個陷阱**（改 compose 檔時務必記得）：
-
-1. `docker-compose.media.yml` 必須是**最後**一個 `-f`。prod 對 api 的 `volumes:` 用了 `!override`，媒體掛載疊在它後面才會 merge 進去，疊在前面會被清掉
-2. prod override 的 `build:` 必須明確寫 `dockerfile: Dockerfile`。compose 會 merge `build` map，base 指定了 `dockerfile: Dockerfile.dev`，沒有明確覆寫的話 prod 會拿 dev 的 toolchain image 去發版
-
----
-
-## Chrome DevTools MCP（前端除錯）
-
-Claude Code 透過 Chrome DevTools Protocol 連接瀏覽器進行前端除錯（截圖、DOM 檢查、Network 監控、Console 讀取等）。
-
-### 前置需求
-
-- **Google Chrome**：安裝於預設路徑 `C:\Program Files\Google\Chrome\Application\chrome.exe`
-- **PowerShell 7+（pwsh）**：hook 使用 `shell: "powershell"`，需要 `pwsh` 指令可用。安裝方式：`winget install Microsoft.PowerShell`
-
-### 運作方式
-
-- Plugin 設定在 `.claude/settings.json` 的 `enabledPlugins` 中，clone 後自動啟用
-- `PreToolUse` hook 會在 Claude 呼叫任何 chrome-devtools 工具前，自動檢查 port 9222 並啟動 Chrome debug 模式
-- 使用獨立的 user-data-dir（`$env:USERPROFILE\.chrome-debug-profile`），不影響日常瀏覽器
-
-### 注意事項
-
-- Chrome 路徑非預設時，需在 `.claude/settings.local.json` 覆寫 hook command
-- 若 port 9222 已被佔用（如另一個 Chrome debug instance），hook 會跳過啟動
-
----
-
-## WebSocket 規範
-
-### Hub Pattern
-
-- WebSocket 連線管理集中在 `internal/websocket/` package
-- `Hub` struct 透過 channel 序列化所有 client 註冊/移除/訊息推送，避免 map 並發存取
-- 支援 per-user targeted message（`SendToUser`）和全域 broadcast
-- 同一使用者可有多個連線（多分頁）
-
-### 訊息協議
-
-```go
-type Message struct {
-    Type    string      `json:"type"`
-    Payload interface{} `json:"payload"`
-}
-```
-
-已定義的 type：
-- `import_progress` — 逐檔匯入進度
-- `import_complete` — 匯入完成（含最終 ImportJob）
-- `import_error` — 匯入致命錯誤
-- `notification` — 通用通知
-- `ping` — 心跳
-
-### Notifier Interface
-
-跨層依賴透過 `Notifier` interface 解耦，定義在 `internal/websocket/hub.go`：
-
-```go
-type Notifier interface {
-    SendToUser(userID string, msg *Message)
-    Broadcast(msg *Message)
-}
-```
-
-Service 層（如 `ImportService`）依賴此 interface，不直接依賴 `Hub` struct。
-
-### 前端重連策略
-
-- 使用 exponential backoff：初始 1s，每次 ×2，上限 30s
-- 重連次數上限 20 次，超過停止重連
-- 用 `useRef` 追蹤重連次數，避免 re-render 導致計數重置
-- 心跳間隔 50s，保持連線活躍
-
-### `onclose` 的副作用要綁 socket 世代，不要用跨世代共用布林
-
-`onclose` 是非同步事件：它觸發時，當初那條 socket 可能早已不是「目前這條」。因此 `onclose` 裡**所有**動作（reset `isConnected`、`cleanup()` 清計時器、`scheduleReconnect()`）都必須先比對 socket 實例身分，不能用單一個跨世代共用的布林 flag 來判斷「這次關閉是不是刻意的」。
-
-反例：用一個共用的 `intentionalCloseRef` 布林。token 快速變更（`tok1 → tok2`，兩者皆 truthy）時，順序是「effect cleanup 設 flag=true 並關掉舊 socket → effect body 設 flag=false 並 `connect()` 建新 socket → 稍後舊 socket 的 `onclose` 才非同步觸發」。舊 socket 的 `onclose` 讀到的 flag 已被新世代覆寫成 false，於是它誤判成非預期斷線：不只多開一條重連，還會用共用的 `cleanup()` 清掉**新** socket 剛裝好的 heartbeat、把 live 連線的 `isConnected` 壓回 false。
-
-正解是用 `wsRef.current` 與閉包捕獲的 `ws` 做三向判斷（每個「刻意關閉」路徑都已把 `wsRef.current` 設成 null 或換成新 socket，所以實例身分足以分辨世代）：
-
-```tsx
-ws.onclose = () => {
-  // wsRef.current === ws    → 這條 live socket 真的掉了 → reset + 重連
-  // wsRef.current === null  → 刻意拆除且無後繼（logout / unmount）→ reset，不重連
-  // wsRef.current === 其他   → 已被新世代取代（token 變更）→ 新 socket 自己管狀態，這裡什麼都別做
-  if (wsRef.current !== null && wsRef.current !== ws) return
-  setIsConnected(false)
-  cleanup()
-  if (wsRef.current === ws) scheduleReconnect()
-}
-```
-
-注意 `setIsConnected` 只能放在非同步的 `onclose` 裡，不能搬到 `disconnect()`：`disconnect()` 會被 effect 同步呼叫，`react-hooks` 的 `set-state-in-effect` 規則會擋（同步在 effect 內 setState 觸發 cascading render）。真正的網路斷線（`wsRef.current === ws`）仍照常走 backoff 重連。
-
----
-
-## FFmpeg 媒體處理規範
-
-### Input seek 落點不可信，邊界在輸出端裁定
-
-ffmpeg CLI 的 input seek（`-ss` 在 `-i` 前）落點**不保證**等於請求的時間：對含 B-frames 的輸入（`video_delay > 0`）它會把目標自動減 3/23s（dts heuristic），在 mkv 上因此系統性落到前一個 keyframe。這不是浮點精度問題，加 epsilon 無效。
-
-任何「切出的內容必須與宣告的時間區間一致」的功能（HLS 分段、預覽剪輯），規則是：
-
-- **input seek 只當粗跳**：刻意把 `-ss` 往前退一段（如 1s），只要求落點 ≤ 目標
-- **精準邊界交給只在 keyframe 切檔的機制**（segment muxer `-segment_time 0` + `-copyts`），從輸出端依絕對時間挑出目標區間 —— 不要用 output 端 `-ss`/`-t` 裁 `-c copy` 的流（以 dts 比對且等 keyframe，會把目標 GOP 整個丟掉）
-- 產生後驗證：選中分片的起點與目標不符時回 error，寧可 500 也不送出錯位內容
-
-### 內容對齊要測產物，不是測參數
-
-時間對齊類功能的測試必須用 ffprobe 斷言**產物內容**（首 pts、keyframe 分佈、是否越界），只斷言指令參數或 exit code 擋不住 demuxer 行為差異。fixture 必須含 B-frames（`-bf 2`）—— 無 B-frames 的合成檔觸發不了 dts heuristic，重現不了落點偏移。
-
-ffmpeg 相依的 Go 測試在 host 無 ffmpeg 時 `t.Skip`，由 `task test-integration` 在 api 容器內執行（與生產同版本 ffmpeg）補上 gate。
-
----
-
-## 路徑安全規範
-
-### 基本原則
-
-所有使用者可控的檔案路徑必須經過驗證，防止路徑穿越攻擊。
-
-### 標準 Pattern
-
-```go
-// 1. 定義允許的前綴
-const AllowedMountPrefix = "/mnt/host/"
-
-// 2. Clean + prefix 檢查
-cleaned := filepath.Clean(path)
-if !strings.HasPrefix(cleaned, strings.TrimSuffix(prefix, string(filepath.Separator))) {
-    return model.ErrPathNotAllowed
-}
-
-// 3. 拒絕 Clean 後與原始路徑不一致的輸入（含 .., //, 結尾斜線等）
-if cleaned != path {
-    return model.ErrPathNotAllowed
-}
-
-// 4. 驗證路徑存在且為目錄
-info, err := os.Stat(cleaned)
-```
-
-### Sentinel Errors
-
-- `model.ErrPathNotAllowed` — 路徑不在允許前綴內，或包含非法組件
-- `model.ErrPathNotExist` — 路徑不存在於檔案系統
+修完 bug 後把教訓寫成**正向規則**，放進上表對應的主題文件（沒有合適的就新開一份並在此表加一列），不要直接堆進本檔。
 
 ---
 
@@ -620,13 +306,7 @@ import (
 
 所有 build / test / deploy 透過 `Taskfile.yml` 的單一入口執行。agent 本機、開發者本機、CI 呼叫**同一個 target**，不存在「CI 那邊做法不一樣」。
 
-**前置工具（host 需安裝）**：
-
-- `go-task`（`task` 指令）：build/test/deploy 單一入口。Windows `winget install Task.Task` 或 `scoop install task`；Linux/WSL `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin`。確認 `task` 在 PATH 上（winget 會把 shim 放到 `%LOCALAPPDATA%\Microsoft\WinGet\Links`）。
-- `task verify` 還需要 **Go 1.25+**（`go vet`/`gofmt`/`go test`）與 **Node.js 20+**（`tsc`/`vitest`）原生安裝；整合測試需要 Docker。
-- `gh`（GitHub CLI）：push 分支與開 PR 用，先 `gh auth login`。Windows `winget install GitHub.cli`；Linux/WSL 見 [cli.github.com](https://cli.github.com)。
-
-> Linux/WSL 安裝到 `~/.local/bin`、`~/.local/go/bin` 的工具記得確認在 PATH 上。
+前置工具（`task`、Go 1.25+、Node.js 20+、Docker、`gh`）的安裝方式見 README 的 Prerequisites。`task verify` 需要原生 Go 與 Node；整合測試需要 Docker。
 
 ### 入口指令清單
 
@@ -645,18 +325,10 @@ import (
 
 ### 各場景 done-condition
 
-對接「對話場景紀律」表，三種場景的 done 條件一致：
-
 - **Bug Fix / Feature / Refactor done** = `task verify` 綠 + 相關範圍的 `task test-integration`（或 `task test-full`）綠 + PR 的 CI 綠。
 - 純前端改動：至少 `task test-fast`（含 vitest）綠。
 - 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
 - Stop hook 會在收工前強制 `task verify`；別繞過它，紅燈就修到綠。
-
-### lint 現況（重要）
-
-前端既有 ESLint 債（`react-hooks@7` 的 react-compiler 規則，11 個 error）已清完。`npm run lint` 現已納入 `task test-fast`，因此 `task verify` 與 Stop hook 都會跑前端 eslint（zero errors / zero warnings），CI 也透過 `verify` job blocking。原本 CI 那個 non-blocking 的獨立 `lint` job 已移除（與 `verify` 重複）。
-
-往後前端 lint 紅燈一律當 gate 處理，比照 typecheck / vitest，紅就修到綠，不再累積債。
 
 ### 不可變產物與部署
 
@@ -699,20 +371,24 @@ type 可選值：
 
 ---
 
-## 對話場景紀律
+## Chrome DevTools MCP（瀏覽器除錯）
 
-每個對話聚焦一個場景，不混用：
+repo 根目錄的 `.mcp.json` 註冊了 `chrome-devtools-mcp`（版本固定，升級時改 `.mcp.json`）。首次開啟專案時 Claude Code 會詢問是否啟用。
 
-| 場景 | 目的 | 入口 |
-|------|------|------|
-| **Bug Fix** | 重現 → 定位 → 修復 → 驗證 → 提煉規範到 CLAUDE.md | 使用者回報 bug 或瀏覽器測試發現問題 |
-| **Feature** | 需求 → 設計（Spec）→ 計畫（Plan）→ 實作 → 驗證 | 使用者提出新功能 |
-| **Refactor** | 現狀分析 → 方案 → 實作 → 驗證 | 使用者要求重構或 code review 指出結構問題 |
+- 它會自行以獨立 profile 啟動 Chrome，不影響日常瀏覽器；不需要手動開 debug port 或 hook
+- 前置：Google Chrome 與 Node.js（`npx`）已安裝
+- 用途：重現前端 bug、驗證 UI 改動（截圖、DOM、Network、Console、performance trace、網路節流）
+- 串流問題（首播延遲、外網卡頓）優先用 Network 面板 + 節流重現，再對照 Playback Telemetry
+- 限制：只有 Chromium。Safari 專屬問題（如原生 HLS）無法用它重現
 
-- 對話開始時確認場景類型，全程在該場景內工作
-- 如果使用者在對話中途切換場景（例如修 bug 途中開始做新功能），**主動提醒**：「這看起來是另一個場景，建議開新對話處理，這樣 context 更乾淨、review 也更精準」
-- 三種場景的後段流程共用：驗證 → Code Review → PR → Merge
-- 完整的開發流程步驟見 `/dev-workflow` skill
+---
+
+## 開發流程
+
+- 一個 PR 只做一個場景（Bug Fix / Feature / Refactor 擇一）。同一個對話可以處理多件事，但要拆成不同 branch / PR，不混在同一個 diff
+- Feature 設計用 `/grill-with-docs`（術語寫進 `CONTEXT.md`、決策寫 ADR）；Bug 用 `/diagnosing-bugs`；實作優先 `/tdd`
+- 發 PR 前跑 `/code-review`，即使改動看起來很簡單
+- Done-condition 見上方「CI/CD 與單一入口」
 
 ---
 
@@ -721,7 +397,6 @@ type 可選值：
 - 每建立或修改一個檔案後，簡短說明做了什麼以及為什麼
 - 遇到計畫文件中不明確的地方，先用你的判斷做決定，完成後統一列出所有假設
 - 嚴格遵守分層架構，不跨層呼叫
-- 每完成一個 Phase，列出驗收清單的通過狀態
 - 如果某個步驟需要做架構決策（例如選 Gin 還是 Echo），說明你的選擇理由
 - 當我提出架構修改或設計要求時，如果你認為原本的設計更合理、我的修改在此專案脈絡下屬於過度設計、或存在我可能沒考慮到的副作用（如安全風險、維護成本），請直接說出來並給出理由，不要無條件照做
 - 每次架構決策除了說明選擇理由，也要列出該決策的潛在缺點或 trade-off（例如：增加了複雜度、多了安全考量面、對目前專案規模是否過度設計）
@@ -742,4 +417,4 @@ Issue 與 spec 放在 GitHub Issues（`steven715/vaultflix`），透過 `gh` CLI
 
 ### Domain docs
 
-Single-context：root 的 `CONTEXT.md`（名詞表，按需建立）+ `docs/adr/`。See `docs/agents/domain.md`.
+Single-context：root 的 `CONTEXT.md`（術語表）+ `docs/adr/`。See `docs/agents/domain.md`.
