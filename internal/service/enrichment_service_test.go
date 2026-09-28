@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/steven/vaultflix/internal/mock"
@@ -286,5 +287,65 @@ func TestBackfillCodes_SeedsPendingAndNoCode(t *testing.T) {
 	// v3: 家庭聚會.mp4 → no code, status no_code
 	if calls[2].id != "v3" || calls[2].code != "" || calls[2].status != model.EnrichmentNoCode {
 		t.Errorf("call[2] = %+v, want {v3 '' no_code}", calls[2])
+	}
+}
+
+func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
+	var avatarKeys []string
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(_ context.Context, id string) (*model.Video, error) {
+			return &model.Video{ID: id, OriginalFilename: "DASD-626.mp4"}, nil
+		},
+		SetEnrichmentStatusFunc: func(_ context.Context, id, status string) error { return nil },
+	}
+	fakeScraper := &mock.Scraper{
+		SourceValue: "javbus",
+		ScrapeByCodeFunc: func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
+			return &model.EnrichedMetadata{
+				Code:      code,
+				Title:     "T",
+				Actresses: []model.ActressMeta{{NameJa: "山田 花子", AvatarURL: "https://example.com/a.jpg"}},
+			}, nil
+		},
+	}
+	var staged *model.MetadataSuggestion
+	svc := NewEnrichmentService(
+		[]scraper.MetadataScraper{fakeScraper},
+		videoRepo,
+		&mock.ActressRepository{},
+		&mock.SuggestionRepository{
+			CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error {
+				staged = s
+				return nil
+			},
+		},
+		&mock.TagRepository{},
+		&mock.MinIOClient{
+			UploadActressAvatarFunc: func(_ context.Context, key, _ string) error {
+				avatarKeys = append(avatarKeys, key)
+				return nil
+			},
+		},
+		&mock.Notifier{},
+	)
+	svc.downloadImage = func(_ context.Context, _ string) (string, error) {
+		f, err := os.CreateTemp(t.TempDir(), "img-*.jpg")
+		if err != nil {
+			return "", err
+		}
+		f.Close()
+		return f.Name(), nil
+	}
+
+	if err := svc.EnrichVideo(context.Background(), "v1", "u1"); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "actresses/山田_花子-DASD-626-javbus.jpg"
+	if len(avatarKeys) != 1 || avatarKeys[0] != want {
+		t.Fatalf("avatar keys = %v, want [%s]", avatarKeys, want)
+	}
+	if got := staged.Payload.Actresses[0].AvatarURL; got != want {
+		t.Errorf("staged avatar key = %q, want %q", got, want)
 	}
 }

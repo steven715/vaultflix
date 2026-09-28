@@ -158,7 +158,10 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 		for j := range res.Actresses {
 			a := &res.Actresses[j]
 			if a.AvatarURL != "" {
-				key := fmt.Sprintf("actresses/%s.jpg", sanitizeName(a.NameJa))
+				// Scoped by code+source like covers: a bare per-name key would
+				// overwrite the avatar an existing Performer already points to
+				// before this Suggestion is accepted (ADR-0010).
+				key := fmt.Sprintf("actresses/%s-%s-%s.jpg", sanitizeName(a.NameJa), code, source)
 				if avatarKey, ok := s.downloadAndUploadAvatar(ctx, videoID, a.AvatarURL, key); ok {
 					a.AvatarURL = avatarKey
 				}
