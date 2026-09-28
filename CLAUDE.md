@@ -725,3 +725,21 @@ type 可選值：
 - 如果某個步驟需要做架構決策（例如選 Gin 還是 Echo），說明你的選擇理由
 - 當我提出架構修改或設計要求時，如果你認為原本的設計更合理、我的修改在此專案脈絡下屬於過度設計、或存在我可能沒考慮到的副作用（如安全風險、維護成本），請直接說出來並給出理由，不要無條件照做
 - 每次架構決策除了說明選擇理由，也要列出該決策的潛在缺點或 trade-off（例如：增加了複雜度、多了安全考量面、對目前專案規模是否過度設計）
+
+---
+
+## Agent skills
+
+Matt Pocock skills（`mattpocock-skills` plugin）的每 repo 設定。
+
+### Issue tracker
+
+Issue 與 spec 放在 GitHub Issues（`steven715/vaultflix`），透過 `gh` CLI 操作。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+使用預設五個角色：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context：root 的 `CONTEXT.md`（名詞表，按需建立）+ `docs/adr/`。See `docs/agents/domain.md`.
