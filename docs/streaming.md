@@ -96,3 +96,25 @@
 若未來「對外多人」變成常態需求，正確方向不是加硬體，而是切換到預處理路線：
 全庫約 +350GB 磁碟（remux 124 部預先換盒 ~200GB、transcode 89 部一次性轉碼 ~150GB）
 即可讓全庫變 direct、即時管線整類消失 —— 該選項已記錄於 ADR-0009 的重新評估條件。
+
+---
+
+## 6. FFmpeg 媒體處理規範
+
+> 動 `internal/streaming/` 或任何呼叫 ffmpeg/ffprobe 的程式前先讀。
+
+### Input seek 落點不可信，邊界在輸出端裁定
+
+ffmpeg CLI 的 input seek（`-ss` 在 `-i` 前）落點**不保證**等於請求的時間：對含 B-frames 的輸入（`video_delay > 0`）它會把目標自動減 3/23s（dts heuristic），在 mkv 上因此系統性落到前一個 keyframe。這不是浮點精度問題，加 epsilon 無效。
+
+任何「切出的內容必須與宣告的時間區間一致」的功能（HLS 分段、預覽剪輯），規則是：
+
+- **input seek 只當粗跳**：刻意把 `-ss` 往前退一段（如 1s），只要求落點 ≤ 目標
+- **精準邊界交給只在 keyframe 切檔的機制**（segment muxer `-segment_time 0` + `-copyts`），從輸出端依絕對時間挑出目標區間 —— 不要用 output 端 `-ss`/`-t` 裁 `-c copy` 的流（以 dts 比對且等 keyframe，會把目標 GOP 整個丟掉）
+- 產生後驗證：選中分片的起點與目標不符時回 error，寧可 500 也不送出錯位內容
+
+### 內容對齊要測產物，不是測參數
+
+時間對齊類功能的測試必須用 ffprobe 斷言**產物內容**（首 pts、keyframe 分佈、是否越界），只斷言指令參數或 exit code 擋不住 demuxer 行為差異。fixture 必須含 B-frames（`-bf 2`）—— 無 B-frames 的合成檔觸發不了 dts heuristic，重現不了落點偏移。
+
+ffmpeg 相依的 Go 測試在 host 無 ffmpeg 時 `t.Skip`，由 `task test-integration` 在 api 容器內執行（與生產同版本 ffmpeg）補上 gate。

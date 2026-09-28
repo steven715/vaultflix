@@ -15,8 +15,11 @@
 #     for the X-Accel offload, and this makes drift between them impossible
 
 x-media-mounts: &media-mounts
-  - /mnt/d/AdultsV:/mnt/host/D/AdultsV:ro
-  - /mnt/g/下載:/mnt/host/G/下載:ro
+  # macOS
+  - /Volumes/Media:/mnt/host/Media:ro
+  - /Users/you/Movies:/mnt/host/Movies:ro
+  # Windows (WSL path) — uncomment and adjust
+  # - /mnt/d/Videos:/mnt/host/D/Videos:ro
 
 services:
   vaultflix-api:
