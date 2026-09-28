@@ -288,3 +288,63 @@ func TestBackfillCodes_SeedsPendingAndNoCode(t *testing.T) {
 		t.Errorf("call[2] = %+v, want {v3 '' no_code}", calls[2])
 	}
 }
+
+func TestEnrichVideo_PrefersStoredCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		video    model.Video
+		wantCode string
+	}{
+		{
+			name:     "stored code wins over filename",
+			video:    model.Video{ID: "v1", OriginalFilename: "DASD-626.mp4", Code: "SSIS-001"},
+			wantCode: "SSIS-001",
+		},
+		{
+			name:     "stored code used when filename has none",
+			video:    model.Video{ID: "v1", OriginalFilename: "family_trip.mp4", Code: "SSIS-001"},
+			wantCode: "SSIS-001",
+		},
+		{
+			name:     "falls back to filename when no stored code",
+			video:    model.Video{ID: "v1", OriginalFilename: "DASD-626.mp4"},
+			wantCode: "DASD-626",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var scrapedCode string
+			videoRepo := &mock.VideoRepository{
+				GetByIDFunc: func(_ context.Context, id string) (*model.Video, error) {
+					v := tt.video
+					return &v, nil
+				},
+				SetEnrichmentStatusFunc: func(_ context.Context, id, status string) error { return nil },
+			}
+			fakeScraper := &mock.Scraper{
+				SourceValue: "javbus",
+				ScrapeByCodeFunc: func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
+					scrapedCode = code
+					return &model.EnrichedMetadata{Code: code, Title: "T"}, nil
+				},
+			}
+			svc := NewEnrichmentService(
+				[]scraper.MetadataScraper{fakeScraper},
+				videoRepo,
+				&mock.ActressRepository{},
+				&mock.SuggestionRepository{
+					CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error { return nil },
+				},
+				&mock.TagRepository{},
+				&mock.MinIOClient{},
+				&mock.Notifier{},
+			)
+			if err := svc.EnrichVideo(context.Background(), "v1", "u1"); err != nil {
+				t.Fatal(err)
+			}
+			if scrapedCode != tt.wantCode {
+				t.Errorf("scraped code = %q, want %q", scrapedCode, tt.wantCode)
+			}
+		})
+	}
+}
