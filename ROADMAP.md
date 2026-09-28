@@ -55,6 +55,10 @@
 
 - [ ] ~~**WebRTC 串流**~~ — **已否決（2026-07-05）**。WebRTC 是即時雙向低延遲（通話/直播）的工具；本專案是 VOD 點播，產業標準即 HTTP-based HLS/DASH，且已有完整基建（X-Accel + nginx sendfile + HLS）。硬上會丟掉串流卸載架構、引入 STUN/TURN/ICE/signaling，過 ngrok 還因 UDP→TURN-over-TCP 幫倒忙，VOD 場景無實質收益。屬選錯工具，不做。
 
+- [ ] **MinIO → SeaweedFS 遷移** — 2026-09 MinIO 官方把 `minio/minio`、`minio/mc` 從 Docker Hub 刪除、Quay 也關閉匿名拉取，社群版不再修 CVE（如 CVE-2026-40344 認證繞過）。目前改用社群 fork `pgsty/minio`（SILO，已 backport CVE 修補），並固定版本。
+  - **觸發條件**（任一滿足即啟動）：pgsty fork 超過 6 個月無新 release／出現未修補的 CVE／fork 映像檔無法拉取
+  - **範圍**：Go 端用標準 S3 API（minio-go），主要成本在 compose、bucket 初始化（`minio-init` 的 `mc mb`）、healthcheck、nginx `/minio/` 反代與 presigned URL 的重新驗證
+
 - [ ] **孤兒檔案清理排程 / MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 刪除為 best-effort（`internal/service/video_service.go` 三個刪除失敗只 log、仍回 nil），孤兒物件會靜默累積。需定期比對 MinIO 與 DB 清理不一致物件。**觸發條件**：實際觀察到孤兒物件累積，或 MinIO 刪除失敗重複發生。
 
 ---

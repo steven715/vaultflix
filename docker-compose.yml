@@ -17,7 +17,9 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio
+    # Community fork (SILO): upstream minio/minio was pulled from Docker Hub and
+    # Quay (2026-09) and no longer receives CVE fixes. Bundles `mc` for the healthcheck.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -35,7 +37,7 @@ services:
       retries: 5
 
   minio-init:
-    image: minio/mc
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
