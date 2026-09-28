@@ -5,6 +5,7 @@
 #   1. 直接插入一筆 code=NULL 的 legacy 影片 (模擬 migration-013 前的舊資料)
 #   2. 呼叫 POST /api/enrich-jobs/backfill-codes 確認 HTTP 200 (不再 500)
 #   3. 確認 seeded >= 1 (legacy 行被 seed 成 pending 並寫入 code)
+#   4. GET /api/videos/:id 帶出已存的 code（EnrichVideo 依賴此路徑）
 # =============================================================================
 
 set -euo pipefail
@@ -96,11 +97,22 @@ STATUS_AFTER=$(psql "$DB_DSN" -t -A -c \
 assert_eq "legacy 影片 enrichment_status = pending" "pending" "$STATUS_AFTER"
 
 # ---------------------------------------------------------------------------
-# 5. 清除測試資料，避免污染其他 suite（legacy 影片無 source_id，會讓 import 的
+# 5. GET /api/videos/:id 回傳已存的 code（EnrichVideo 靠 GetByID 讀 Code，
+#    GetByID 漏 select code 時 enrichment 會退回解析檔名）
+# ---------------------------------------------------------------------------
+echo ""
+bold "[5] GET /api/videos/:id 帶出已存的 code"
+
+DETAIL_CODE=$(curl -s "${API_BASE}/api/videos/${LEGACY_ID}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq -r '.data.code // empty')
+assert_eq "video detail code = DASD-700" "DASD-700" "$DETAIL_CODE"
+
+# ---------------------------------------------------------------------------
+# 6. 清除測試資料，避免污染其他 suite（legacy 影片無 source_id，會讓 import 的
 #    data[0] 檢查誤以為影片沒有 source_id）
 # ---------------------------------------------------------------------------
 echo ""
-bold "[5] 清除 legacy 測試影片"
+bold "[6] 清除 legacy 測試影片"
 
 psql "$DB_DSN" -q -c \
     "DELETE FROM videos WHERE minio_object_key = 'legacy/DASD-700.mp4';" 2>/dev/null && \

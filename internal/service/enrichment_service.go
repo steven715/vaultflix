@@ -61,9 +61,10 @@ func NewEnrichmentService(
 	}
 }
 
-// EnrichVideo is the main entry point: it extracts a code, scrapes all sources,
+// EnrichVideo is the main entry point: it resolves a code (stored Code first,
+// else parsed from the filename), scrapes all sources,
 // stages suggestions, uploads images, updates enrichment status, and sends WS
-// notifications. Returns model.ErrCodeNotFound when the filename yields no code,
+// notifications. Returns model.ErrCodeNotFound when no code can be resolved,
 // or a wrapped error when all sources fail.
 func (s *EnrichmentService) EnrichVideo(ctx context.Context, videoID, userID string) error {
 	video, err := s.videoRepo.GetByID(ctx, videoID)
@@ -71,7 +72,7 @@ func (s *EnrichmentService) EnrichVideo(ctx context.Context, videoID, userID str
 		return fmt.Errorf("get video %s: %w", videoID, err)
 	}
 
-	code, ok := avid.ExtractCode(video.OriginalFilename)
+	code, ok := resolveCode(video)
 	if !ok {
 		return s.handleNoCode(ctx, videoID, userID)
 	}
@@ -88,6 +89,16 @@ func (s *EnrichmentService) EnrichVideo(ctx context.Context, videoID, userID str
 	}
 
 	return s.handleSuccess(ctx, videoID, userID, code, results)
+}
+
+// resolveCode returns the Code to enrich by. A stored Code (set at import,
+// by BackfillCodes, or by a manual correction) takes precedence; the filename
+// is parsed only when none is stored.
+func resolveCode(video *model.Video) (string, bool) {
+	if video.Code != "" {
+		return video.Code, true
+	}
+	return avid.ExtractCode(video.OriginalFilename)
 }
 
 // handleNoCode sets enrichment status to no_code, sends WS error, returns ErrCodeNotFound.
