@@ -82,7 +82,8 @@ const queryGetVideoByID = `
     SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
            duration_seconds, resolution, file_size_bytes, mime_type,
            COALESCE(video_codec, '') AS video_codec, COALESCE(audio_codec, '') AS audio_codec,
-           original_filename, created_at, updated_at, source_id, file_path
+           original_filename, created_at, updated_at, source_id, file_path,
+           COALESCE(code, '') AS code
     FROM videos
     WHERE id = $1
 `
@@ -161,6 +162,7 @@ func (r *videoRepository) GetByID(ctx context.Context, id string) (*model.Video,
 		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
 		&video.VideoCodec, &video.AudioCodec,
 		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
+		&video.Code,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
