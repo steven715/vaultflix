@@ -1,6 +1,6 @@
 # ADR-0005: Build the API once as a SHA-tagged image; layer envs with compose overrides
 
-- Status: Accepted
+- Status: Superseded by [ADR-0011](0011-single-stack-local-build.md)
 - Date: 2026-06-21
 
 ## Context
