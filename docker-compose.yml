@@ -65,13 +65,13 @@ services:
       ]
 
   vaultflix-api:
-    # Dev image: golang toolchain + ffmpeg/curl baked into a layer (see
-    # Dockerfile.dev). Prod overrides this with the compiled-binary image.
+    # Compiled-binary image (Dockerfile's default runtime stage). After a code
+    # change, `task up` rebuilds it; BuildKit cache mounts keep that incremental.
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    working_dir: /app
-    command: sh -c "go mod tidy && go run ./cmd/server"
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,16 +81,17 @@ services:
         condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
+    # The stack always runs behind nginx → offload byte serving via X-Accel-Redirect.
+    # Set here (not in .env) so it wins over env_file. Anything that talks to the
+    # api directly instead of through nginx must clear it — see
+    # docker-compose.test.yml; `npm run dev` proxies via nginx (:3000) instead.
     environment:
-      GOTOOLCHAIN: auto
+      VIDEO_XACCEL_PREFIX: /internal-video/
     env_file:
       - .env
     ports:
       - "8080:8080"
     volumes:
-      - .:/app
-      - go_modules:/go/pkg/mod
-      - go_build_cache:/root/.cache/go-build
       - vaultflix-transcode-cache:/var/cache/vaultflix/transcode
       # 影片來源目錄是「因機器而異」的設定，住在 gitignore 的
       # docker-compose.media.yml（見 docker-compose.media.yml.example）。
@@ -136,6 +137,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  go_modules:
-  go_build_cache:
   vaultflix-transcode-cache:

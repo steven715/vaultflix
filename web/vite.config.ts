@@ -41,7 +41,9 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:8080',
+      // Through nginx, not straight to the api: the api runs with X-Accel offload
+      // on, so stream bytes only flow when nginx answers the X-Accel-Redirect.
+      '/api': 'http://localhost:3000',
     },
   },
 })

@@ -1,12 +1,12 @@
 # Integration test override. Shared by local and CI for parity.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
-# or via `task test-integration`.
+# Usage: docker compose -p vaultflix-inttest -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
+# or via `task test-integration`. Requires Docker Compose v2.24+ (!override tags).
 services:
   # DB / MinIO become ephemeral (no named volume): every `up` is a clean environment.
   # ports !override []: the test stack talks to postgres/minio/api over the compose
   # network by service name (API_BASE=http://vaultflix-api:8080), so it never needs to
-  # publish host ports. Dropping them lets integration run alongside a running dev stack
-  # (which already holds 5432/9000/8080) without a "port is already allocated" conflict.
+  # publish host ports. Dropping them lets integration run alongside a running
+  # `vaultflix` stack (which already holds 5432/9000/8080) without a port conflict.
   postgres:
     volumes: !override []
     ports: !override []
@@ -15,13 +15,36 @@ services:
     ports: !override []
 
   vaultflix-api:
-    # Replace base's video mounts: use the repo-internal fixture, host-OS independent
+    # Same compiled image as the everyday stack — the tests exercise the real artifact.
+    # test_all.sh hits the api directly (not via nginx), so stream bytes must be
+    # served by the api itself: clear the X-Accel offload set in the base file.
+    environment:
+      VIDEO_XACCEL_PREFIX: ""
+    # Replace the base mounts with the repo-internal fixture: host-OS independent
     volumes: !override
+      - ./.ci/fixtures:/mnt/host/videos:ro
+    ports: !override []
+
+  # ffmpeg-dependent Go tests (HLS segment/manifest alignment) need ffmpeg, which
+  # the native verify gate lacks. This runs them on the Dockerfile `dev` stage —
+  # the same ffmpeg package set the runtime image ships.
+  go-test:
+    build:
+      context: .
+      target: dev
+    profiles: ["test"]
+    working_dir: /app
+    environment:
+      GOTOOLCHAIN: auto
+      # Turn a missing-ffmpeg skip into a failure: this step exists to run those tests.
+      VAULTFLIX_REQUIRE_FFMPEG: "1"
+    volumes:
       - .:/app
       - go_modules:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
-      - ./.ci/fixtures:/mnt/host/videos:ro
-    ports: !override []
+    # -count=1: the go test cache doesn't key on the ffmpeg binary, so a cached PASS
+    # would replay without executing ffmpeg after an image/ffmpeg bump.
+    command: ["go", "test", "-count=1", "./internal/streaming/"]
 
   test-runner:
     # The scripts log in as admin; the password must match the seeded admin
@@ -31,3 +54,7 @@ services:
       DB_USER: "${DB_USER}"
       DB_PASSWORD: "${DB_PASSWORD}"
       DB_NAME: "${DB_NAME}"
+
+volumes:
+  go_modules:
+  go_build_cache:

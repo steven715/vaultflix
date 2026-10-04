@@ -317,10 +317,7 @@ import (
 | `task lint` | `go vet` + 前端 `eslint`（手動 lint-only 便捷指令；eslint 也已含在 `test-fast` gate 內） | 原生 |
 | `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
 | `task test-full` | `test-fast` + `test-integration` | Docker |
-| `task build` / `task build:api` | build SHA-tagged image | Docker |
-| `task push:api` | 推 API image 到 GHCR | Docker |
-| `task deploy` | 本機部署（prod compose，build 不可變 nginx image） | Docker |
-| `task up` / `task down` / `task logs` | 起/停/看 dev stack（自動疊 `docker-compose.media.yml`） | Docker |
+| `task up` / `task down` / `task logs` | build 並起/停/看唯一的執行 stack（改 code 後重跑 `task up`；自動疊 `docker-compose.media.yml`） | Docker |
 | `task reset-admin-password` | 把 admin 密碼重設為 `.env` 的 `ADMIN_DEFAULT_PASSWORD` | Docker |
 
 ### 各場景 done-condition
@@ -330,11 +327,10 @@ import (
 - 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
 - Stop hook 會在收工前強制 `task verify`；別繞過它，紅燈就修到綠。
 
-### 不可變產物與部署
+### 執行 stack 與部署（ADR-0011）
 
-- Go API build 成 SHA-tagged image，CI 推到 `ghcr.io/steven715/vaultflix-api`。同一個產物 promote，不為不同環境 rebuild。
-- 部署是手動 gate：本機 `task deploy`。`local`/`test`/整合測試一律自動，無需介入。
-- prod / test 用 `docker-compose.prod.yml` / `docker-compose.test.yml` 以 `!override`/`!reset` 覆寫 base，不複製 infra 定義（避免 drift）。需 Docker Compose v2.24+。
+- 只有一個執行 stack：`docker-compose.yml`（API 為編譯後的 binary，nginx 在前、X-Accel 開啟）。本機 `task up` 即部署，不推 registry。
+- 整合測試用 `docker-compose.test.yml` 以 `!override` 覆寫 base（隔離的 compose project、拋棄式 volume、fixture 掛載），不複製 infra 定義。需 Docker Compose v2.24+。
 
 ---
 

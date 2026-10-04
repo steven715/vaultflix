@@ -15,7 +15,7 @@ React SPA (localhost:3000)
     +-- WebSocket --> Go API Server (real-time import progress)
 ```
 
-**Key design decision**: Video files stay on local disk. In production the Go API only validates auth + path safety and hands the byte path to nginx via `X-Accel-Redirect`, so nginx reads the file straight off disk with native HTTP Range (seeking) and video bytes never traverse the Go process. In dev (no nginx — vite proxies directly to the API) it falls back to `http.ServeFile`. MinIO holds only thumbnails/previews. Import progress is pushed in real-time via WebSocket.
+**Key design decision**: Video files stay on local disk. The Go API only validates auth + path safety and hands the byte path to nginx via `X-Accel-Redirect`, so nginx reads the file straight off disk with native HTTP Range (seeking) and video bytes never traverse the Go process. Anything that reaches the API without nginx (integration tests) runs with the offload off and falls back to `http.ServeFile`. MinIO holds only thumbnails/previews. Import progress is pushed in real-time via WebSocket.
 
 ### Tech Stack
 
@@ -35,7 +35,7 @@ React SPA (localhost:3000)
 - **Authorization**: Casbin RBAC with admin and viewer roles
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
-- **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); production offloads byte serving to nginx via `X-Accel-Redirect`, dev falls back to the API's `http.ServeFile`
+- **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); byte serving is offloaded to nginx via `X-Accel-Redirect` (direct-to-API callers fall back to the API's `http.ServeFile`)
 - **Adaptive Play Mode**: Every video is classified `direct` / `remux` / `transcode` from its container and codecs; files a browser cannot play natively are served as on-the-fly HLS (ffmpeg segments, disk-cached in the `vaultflix-transcode-cache` volume)
 - **Scoped Stream Tokens**: Short-lived `scope=stream` JWTs bound to one video ID and to the streaming routes only, so a token leaked through a `<video src>` URL cannot reach any other endpoint
 - **Tag System**: User-defined tags in `genre` / `custom` categories (legacy `actor` / `studio` categories are being migrated to Performer / Maker — see [ADR-0010](docs/adr/0010-performer-maker-entities-enrichment-suggestions.md))
@@ -119,9 +119,8 @@ has no mount for, and the anchor makes it impossible for the two to drift apart.
 
 Each mount is reachable at `/mnt/host/<name>/` inside the container; the
 target path must stay under `/mnt/host/` to pass the `AllowedMountPrefix` path
-validation. To enable the nginx offload, set `VIDEO_XACCEL_PREFIX=/internal-video/`
-(production / behind nginx); leave it empty for `npm run dev`, which proxies
-straight to the API without nginx.
+validation. The nginx offload (`VIDEO_XACCEL_PREFIX=/internal-video/`) is set in
+`docker-compose.yml` itself, since the stack always runs behind nginx.
 
 Integration tests deliberately ignore this file and mount `.ci/fixtures` instead,
 so they run identically on any host.
@@ -223,10 +222,8 @@ vaultflix/
 │       └── types/          # TypeScript type definitions
 ├── docs/                   # api.md, streaming.md, conventions/ (topic rules), adr/
 ├── .ci/fixtures/           # Host-independent media fixtures for integration tests
-├── Dockerfile              # Prod API image (multi-stage, compiled binary)
-├── Dockerfile.dev          # Dev API image (go toolchain + ffmpeg baked in)
-├── docker-compose.yml      # Base stack
-├── docker-compose.prod.yml # Prod overrides (immutable images)
+├── Dockerfile              # API image (compiled binary; `dev` stage = toolchain for tests)
+├── docker-compose.yml      # The stack (run via `task up`)
 ├── docker-compose.test.yml # Integration-test overrides
 ├── docker-compose.media.yml.example  # Per-machine video mounts (copy, don't edit the base)
 ├── Taskfile.yml            # Single entry point for build / test / deploy
@@ -238,17 +235,12 @@ vaultflix/
 
 ## Development
 
-### Running locally (outside Docker)
+### Development loop
 
-**Backend:**
+**Backend:** edit, then `task up` — it rebuilds the API image (BuildKit caches
+keep this incremental) and recreates the container.
 
-```bash
-# Ensure PostgreSQL and MinIO are running (e.g. via Docker)
-export $(cat .env | xargs)
-go run ./cmd/server
-```
-
-**Frontend:**
+**Frontend:** with the stack up, run the Vite dev server for hot reload:
 
 ```bash
 cd web
@@ -256,7 +248,8 @@ npm install
 npm run dev
 ```
 
-Vite dev server proxies `/api` requests to `localhost:8080` via the config in `vite.config.ts`.
+Vite proxies `/api` to nginx on `localhost:3000` (see `vite.config.ts`), so
+streaming goes through the same X-Accel path as the real stack.
 
 ### Running tests
 
@@ -352,27 +345,15 @@ To recover, set the password you want in `.env`, then run the reset flag:
 task reset-admin-password
 ```
 
-Under the hood (prod stack, or if you prefer the raw command):
+Under the hood — the image ENTRYPOINT is the compiled binary, so the flag goes as an arg:
 
 ```bash
-# dev  — source is bind-mounted, so run it straight from source
-docker compose run --rm --no-deps vaultflix-api go run ./cmd/server -reset-admin-password
-# prod — the image ENTRYPOINT is the compiled binary, so pass the flag as an arg
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  run --rm --no-deps vaultflix-api -reset-admin-password
+docker compose -f docker-compose.yml -f docker-compose.media.yml \
+  run --rm --no-deps --build vaultflix-api -reset-admin-password
 ```
 
 It resets only the account named by `ADMIN_DEFAULT_USERNAME` and exits; it never
 runs as part of a normal boot.
-
-### Startup feels slow
-
-A cold start compiles the Go source inside the container and populates the
-`go_modules` / `go_build_cache` volumes — expect a few minutes the very first
-time, then ~1s on subsequent starts. If **every** start is slow, check that the
-API image is actually built from `Dockerfile.dev` (`task up` passes `--build`);
-ffmpeg is baked into that layer, and installing it at container start instead
-costs ~13s per start.
 
 ## Roadmap
 

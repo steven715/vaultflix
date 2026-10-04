@@ -22,7 +22,7 @@
 ```bash
 docker compose build vaultflix-nginx
 docker compose up -d vaultflix-nginx
-# 或一次到位：task deploy
+# 或一次到位：task up
 ```
 
 改完前端若瀏覽器行為沒變，第一反應是 image 沒重 build（或 PWA/瀏覽器在吃舊快取，hard reload）—— 不再有 named volume 陷阱。
@@ -31,7 +31,7 @@ docker compose up -d vaultflix-nginx
 
 影片檔案保留在本機磁碟，透過 Docker volume mount 以唯讀模式掛載整個磁碟。
 
-**磁碟配置是「因機器而異」的設定，不進被 git 追蹤的檔案。** 它住在 gitignore 的 `docker-compose.media.yml`（範本：`docker-compose.media.yml.example`），與 `.env` 同一類。tracked 的 `docker-compose.yml` / `docker-compose.prod.yml` 一行影片掛載都不該有。
+**磁碟配置是「因機器而異」的設定，不進被 git 追蹤的檔案。** 它住在 gitignore 的 `docker-compose.media.yml`（範本：`docker-compose.media.yml.example`），與 `.env` 同一類。tracked 的 `docker-compose.yml` / `docker-compose.test.yml` 一行影片掛載都不該有。
 
 ```yaml
 # docker-compose.media.yml — 用 YAML anchor 一次餵給 api 與 nginx
@@ -52,9 +52,11 @@ services:
 - Media Source 的 `mount_path` 必須在 `/mnt/host/` 前綴下
 - api 與 nginx 必須拿到**完全相同**的掛載（nginx 少一個就無法做 X-Accel byte serving）。用 anchor 而不是抄兩份，讓兩者不可能 drift
 - 新增磁碟只需在 `docker-compose.media.yml` 的 anchor 加一行 + 在 Admin UI 新增 Media Source
-- `task up` / `task deploy` 會自動把這個檔案疊在最後；整合測試**刻意不疊**，改掛 `.ci/fixtures`，維持 host OS 無關
+- `task up` 會自動把這個檔案疊在最後；整合測試**刻意不疊**，改掛 `.ci/fixtures`，維持 host OS 無關
 
-**compose 疊加順序有兩個陷阱**（改 compose 檔時務必記得）：
+## 單一執行 stack（ADR-0011）
 
-1. `docker-compose.media.yml` 必須是**最後**一個 `-f`。prod 對 api 的 `volumes:` 用了 `!override`，媒體掛載疊在它後面才會 merge 進去，疊在前面會被清掉
-2. prod override 的 `build:` 必須明確寫 `dockerfile: Dockerfile`。compose 會 merge `build` map，base 指定了 `dockerfile: Dockerfile.dev`，沒有明確覆寫的話 prod 會拿 dev 的 toolchain image 去發版
+- `docker-compose.yml` 就是日常跑的 stack：API 是 `Dockerfile` 預設（最後一個）stage 的編譯後 binary，`VIDEO_XACCEL_PREFIX` 在 base 設定，所以 bytes 一律由 nginx 送。不要再加 dev/prod override 檔；改 code 後 `task up` 重 build
+- `Dockerfile` 的 stage 順序有意義：runtime 必須是**最後**一個 stage（compose 不指定 `target` 時 build 它）。`dev` stage（Go toolchain + ffmpeg）只給整合測試的 `go-test` 用
+- 任何**繞過 nginx 直連 API** 的消費者都要處理 X-Accel：整合測試在 `docker-compose.test.yml` 把 `VIDEO_XACCEL_PREFIX` 清空；`npm run dev` 的 Vite proxy 指向 nginx（`:3000`）而不是 `:8080`
+- 整合測試的 Taskfile `defer` 必須寫在它要保護的步驟**之前**：Task 的 defer 執行到該行才登記，寫在最後的話中途失敗就不會清理，`vaultflix-inttest` 會一直留著

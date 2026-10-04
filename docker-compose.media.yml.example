@@ -4,7 +4,7 @@
 # then edit the anchor below to point at your own disks.
 #
 # docker-compose.media.yml is gitignored: disk layout differs per machine, so it
-# must not live in a tracked file. `task up` / `task deploy` include it
+# must not live in a tracked file. `task up` includes it
 # automatically (integration tests deliberately do NOT — they use the repo
 # fixture in .ci/fixtures instead).
 #
