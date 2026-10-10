@@ -10,7 +10,7 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-func TestMediaProcessor_ProbeMediaInfo(t *testing.T) {
+func TestMediaProcessor_ProbeMediaInfo_ParsesProbeOutput(t *testing.T) {
 	cases := []struct {
 		name string
 		file string
@@ -106,7 +106,7 @@ func TestMediaProcessor_MakeThumbnailAndPreview_UploadUnderVideoKeys(t *testing.
 	}
 }
 
-func TestMediaProcessor_Make_Errors(t *testing.T) {
+func TestMediaProcessor_MakeThumbnailAndPreview_Errors(t *testing.T) {
 	f := model.MediaFile{VideoID: "v1", Path: "/x/a.mkv", DurationSeconds: 120}
 	failingUpload := &mock.MinIOClient{
 		UploadThumbnailFunc: func(context.Context, string, string) error { return errors.New("minio down") },
@@ -129,6 +129,31 @@ func TestMediaProcessor_Make_Errors(t *testing.T) {
 			if _, err := p.MakePreview(context.Background(), f); err == nil {
 				t.Error("MakePreview succeeded")
 			}
+			for _, tmp := range tt.tool.Created() {
+				if _, err := os.Stat(tmp); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("temp file %s left behind after a failure", tmp)
+				}
+			}
 		})
+	}
+}
+
+func TestMediaProcessor_MakeThumbnail_GrabsQuarterFrame(t *testing.T) {
+	tests := []struct {
+		duration, wantAt int
+	}{
+		{120, 30},
+		{2, 1}, // never before the first second
+	}
+	for _, tt := range tests {
+		tool := &mock.MediaTool{Dir: t.TempDir()}
+		minio := &mock.MinIOClient{UploadThumbnailFunc: func(context.Context, string, string) error { return nil }}
+		_, err := NewMediaProcessor(tool, minio).MakeThumbnail(context.Background(), model.MediaFile{VideoID: "v1", Path: "/x/a.mkv", DurationSeconds: tt.duration})
+		if err != nil {
+			t.Fatalf("MakeThumbnail: %v", err)
+		}
+		if got := tool.FrameAts(); len(got) != 1 || got[0] != tt.wantAt {
+			t.Errorf("duration %d: frame at %v, want %d", tt.duration, got, tt.wantAt)
+		}
 	}
 }

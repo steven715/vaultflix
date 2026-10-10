@@ -116,7 +116,7 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 
 ### 從檔案推導資料一律經 `MediaProcessor`
 
-Media Info、Thumbnail、Preview 的產生只能呼叫 `service.MediaProcessor`（`ProbeMediaInfo` / `MakeThumbnail` / `MakePreview`），不在 Import 或 Backfill 裡直接 `exec` ffprobe/ffmpeg。它擁有 ffprobe 解析、MIME 規則、暫存檔清理、object key 與上傳；唯一碰 `exec` 的是它的 `mediaTool` port 的正式 adapter（`ffmpegTool`），測試換成 `mock.MediaTool`。串流專用的 keyframe 探測與 HLS Segment 切割留在 `internal/streaming`，各有自己的 seam。
+Media Info、Thumbnail、Preview 的產生只能呼叫 `service.MediaProcessor`（`ProbeMediaInfo` / `MakeThumbnail` / `MakePreview`），不在 Import 或 Backfill 裡直接 `exec` ffprobe/ffmpeg。它擁有 ffprobe 解析、MIME 規則、暫存檔清理、object key 與上傳；碰 `exec` 的只有它的 `mediaTool` port 的正式 adapter（`FFmpegTool`，Preview 剪輯細節在它呼叫的 `preview_clip.go`），測試換成 `mock.MediaTool`。串流專用的 keyframe 探測與 HLS Segment 切割留在 `internal/streaming`，各有自己的 seam。
 
 ### Input seek 落點不可信，邊界在輸出端裁定
 

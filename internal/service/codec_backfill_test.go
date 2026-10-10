@@ -27,18 +27,21 @@ func (r *fakeCodecRepo) UpdateCodecs(_ context.Context, id, vc, ac string) error
 	return nil
 }
 
-func newTestCodecBackfill(repo *fakeCodecRepo, files mediaFileResolver) *CodecBackfill {
+func newTestCodecBackfill(repo *fakeCodecRepo, files mediaFileResolver) (*CodecBackfill, *mock.MediaTool) {
 	tool := &mock.MediaTool{ProbeOutput: map[string][]byte{"movie.mkv": mock.ProbeJSONFor(60, "h264", "aac")}}
-	return NewCodecBackfill(repo, files, NewMediaProcessor(tool, &mock.MinIOClient{}))
+	return NewCodecBackfill(repo, files, NewMediaProcessor(tool, &mock.MinIOClient{})), tool
 }
 
 func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 	repo := &fakeCodecRepo{}
 	src, fp := "s1", "movie.mkv"
 
-	err := newTestCodecBackfill(repo, mock.ResolveUnder("/mnt/host/D")).ProcessOne(context.Background(), &model.Video{ID: "v1", SourceID: &src, FilePath: &fp})
-	if err != nil {
+	svc, tool := newTestCodecBackfill(repo, mock.ResolveUnder("/mnt/host/D"))
+	if err := svc.ProcessOne(context.Background(), &model.Video{ID: "v1", SourceID: &src, FilePath: &fp}); err != nil {
 		t.Fatalf("ProcessOne: %v", err)
+	}
+	if got := tool.Probed(); len(got) != 1 || got[0] != "/mnt/host/D/movie.mkv" {
+		t.Errorf("probed %v, want the resolved /mnt/host/D/movie.mkv", got)
 	}
 	if repo.updated["v1"] != [2]string{"h264", "aac"} {
 		t.Errorf("v1 codecs = %v, want [h264 aac]", repo.updated["v1"])
@@ -61,7 +64,8 @@ func TestCodecBackfill_ProcessOne_Failures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeCodecRepo{}
-			err := newTestCodecBackfill(repo, tt.files).ProcessOne(context.Background(), tt.video)
+			svc, _ := newTestCodecBackfill(repo, tt.files)
+			err := svc.ProcessOne(context.Background(), tt.video)
 			if err == nil || (tt.want != nil && !errors.Is(err, tt.want)) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}

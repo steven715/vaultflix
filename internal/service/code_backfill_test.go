@@ -52,7 +52,7 @@ func TestCodeBackfill_ProcessOne_SeedsCodeFromFilename(t *testing.T) {
 	}
 }
 
-func TestCodeFromFilename(t *testing.T) {
+func TestCodeFromFilename_CodeMakesVideoPending(t *testing.T) {
 	cases := []struct {
 		filename   string
 		wantCode   string

@@ -45,7 +45,7 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 
 	video, err := s.deriveVideo(ctx, filePath)
 	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("%s: %v", filename, err)}
+		return fileResult{Status: "error", Error: fmt.Sprintf("failed to import %s: %v", filename, err)}
 	}
 	video.SourceID, video.FilePath = &source.ID, &relPath
 	if err := s.videoRepo.Create(ctx, video); err != nil {
@@ -68,17 +68,17 @@ func (s *ImportService) deriveVideo(ctx context.Context, filePath string) (*mode
 	filename := filepath.Base(filePath)
 	stat, err := os.Stat(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
+		return nil, fmt.Errorf("stat: %w", err)
 	}
 	info, err := s.media.ProbeMediaInfo(ctx, filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to probe metadata: %w", err)
+		return nil, fmt.Errorf("media info: %w", err)
 	}
 
 	file := model.MediaFile{VideoID: uuid.NewString(), Path: filePath, DurationSeconds: info.DurationSeconds}
 	thumbnailKey, err := s.media.MakeThumbnail(ctx, file)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate thumbnail: %w", err)
+		return nil, fmt.Errorf("thumbnail: %w", err)
 	}
 	previewKey, err := s.media.MakePreview(ctx, file)
 	if err != nil {

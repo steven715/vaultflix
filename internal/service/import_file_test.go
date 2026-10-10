@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -19,9 +18,9 @@ import (
 type importFixture struct {
 	svc       *ImportService
 	tool      *mock.MediaTool
+	keyframes *mock.KeyframeProber
 	mu        sync.Mutex
 	created   []model.Video
-	keyframed []string
 }
 
 func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...string) (*importFixture, *model.MediaSource) {
@@ -32,7 +31,7 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 			t.Fatal(err)
 		}
 	}
-	f := &importFixture{tool: &mock.MediaTool{Dir: t.TempDir(), ProbeOutput: files}}
+	f := &importFixture{tool: &mock.MediaTool{Dir: t.TempDir(), ProbeOutput: files}, keyframes: &mock.KeyframeProber{}}
 	repo := &mock.VideoRepository{
 		FindBySourceAndPathFunc: func(_ context.Context, _, path string) (*model.Video, error) {
 			for _, dup := range alreadyImported {
@@ -54,15 +53,8 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 		UploadPreviewFunc:   func(context.Context, string, string) error { return nil },
 	}
 	f.svc = NewImportService(repo, NewMediaProcessor(f.tool, minio), &mock.Notifier{})
-	f.svc.SetKeyframeProber(f)
+	f.svc.SetKeyframeProber(f.keyframes)
 	return f, &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
-}
-
-// TriggerProbe records which Videos the Import asked to index.
-func (f *importFixture) TriggerProbe(videoID, absPath string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.keyframed = append(f.keyframed, filepath.Base(absPath))
 }
 
 func (f *importFixture) run(t *testing.T, source *model.MediaSource) *model.ImportJob {
@@ -122,8 +114,8 @@ func TestImportStartAsync_RegistersEveryNewFile(t *testing.T) {
 	if home := f.video(t, "home.mp4"); home.EnrichmentStatus != model.EnrichmentNoCode || home.MimeType != "video/mp4" {
 		t.Errorf("home.mp4 = %+v", home)
 	}
-	if sort.Strings(f.keyframed); len(f.keyframed) != 1 || f.keyframed[0] != "DASD-626.mkv" {
-		t.Errorf("Keyframe Index probes = %v, want only the remux DASD-626.mkv", f.keyframed)
+	if got := f.keyframes.Files(); len(got) != 1 || got[0] != "DASD-626.mkv" {
+		t.Errorf("Keyframe Index probes = %v, want only the remux DASD-626.mkv", got)
 	}
 }
 

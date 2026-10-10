@@ -47,7 +47,7 @@ func (p *PreviewBackfill) ProcessOne(ctx context.Context, v *model.Video) error 
 
 	objectKey, err := p.previews.MakePreview(ctx, model.MediaFile{VideoID: v.ID, Path: absPath, DurationSeconds: v.DurationSeconds})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to backfill preview: %w", err)
 	}
 	if err := p.videoRepo.UpdatePreviewKey(ctx, v.ID, objectKey); err != nil {
 		return fmt.Errorf("failed to record preview key of video %s: %w", v.ID, err)
