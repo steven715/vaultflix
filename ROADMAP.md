@@ -14,7 +14,7 @@
   - **現況（2026-07-05 核實）**：codec 回填 498/498 完成、Play Mode Classification live。分佈：direct 285(521GB) / remux 124(200GB，已解) / **transcode 89(143GB，本項)**。不能播主因：`mpeg4`(65)、`wmv1/2/3`(16)、`vc1`(5)、`hevc`(2) + `wmav2/wmapro/ac3` 音訊。
   - **範圍**：`internal/streaming` 的 ffmpeg arg builder（`-c:v libx264`）+ Play Mode Classification 把 `transcode` 導向真轉碼；前端 hls.js 路徑共用。硬體 i7-14700F 28 threads 軟轉即時 1080p 足夠；NVENC 視需要再評估。remux 已改為 VOD-on-the-fly（PR #24，見 `docs/streaming.md`），轉碼要沿用同一套 Keyframe Index / Segment Boundary 對齊機制。
   - **已排除**：預轉存檔（+343GB×N 儲存，已否決，見 ADR-0009）。
-  - **同時要補 Casbin policy（2026-08-23 發現，2026-09-28 仍未修）**：`casbin/policy.csv` 給了 `viewer` `/api/videos/:id/stream`，但沒有 `/api/videos/:id/hls/index.m3u8` 與 `/api/videos/:id/hls/:segment`。`middleware.CasbinRBAC` 用實際 URL path 過 enforce，所以 viewer 碰到 remux/transcode 影片會拿到 403。改動極小（policy.csv 兩行），但**必須與本項同批驗證**，並補一個 viewer 打 HLS 路由的測試防回歸。
+  - **viewer 不能打 HLS 路由**：路由表（`cmd/server/routes.go`，ADR-0013）沒有開放 viewer 打 `/api/videos/:id/hls/*`，viewer 碰到 remux/transcode 影片會拿到 403。修正為獨立的 fix PR（路由表改兩列 + `TestAPIRoutes_ViewerPermissions`）。
 
 - [ ] **程式碼對齊術語表** — 2026-09-28 建立 CONTEXT.md 時只統一了文件用語，程式碼仍用舊名。拆成獨立 Refactor PR：
   - **Performer / Maker 遷移（ADR-0010）**：`actresses` → performers（DB / Go / API）；`actor`、`studio` Tag 資料遷移成 Performer / Maker 後淘汰這兩個 category
@@ -27,7 +27,6 @@
 ### 小型 bug（順手修）
 
 - [ ] 前端 `ImportJob.status` 型別缺 `cancelled`（後端有此狀態）
-- [ ] `casbin/policy.csv` 給 viewer `PUT /api/watch-history`，但 router 無此路由（死 policy，刪除）
 
 ### 其他未來功能
 

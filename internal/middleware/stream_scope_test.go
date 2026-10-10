@@ -12,17 +12,22 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// setupStreamScopeRouter wires the real streaming route plus an unrelated route,
-// both behind JWTAuth, so scope enforcement can be exercised end to end.
+// setupStreamScopeRouter mounts stream routes plus unrelated ones behind
+// JWTAuth and the route guard, to exercise the Stream Token's Token Scope end
+// to end. This fixture marks every route Viewer so only the Token Scope rule
+// decides; the real table's viewer permissions are pinned in cmd/server.
 func setupStreamScopeRouter() *gin.Engine {
 	r := gin.New()
-	r.Use(JWTAuth(testJWTSecret))
+	api := r.Group("/api")
+	api.Use(JWTAuth(testJWTSecret))
 	ok := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) }
-	r.GET("/api/videos/:id/stream", ok)
-	r.GET("/api/videos/:id/hls/index.m3u8", ok)
-	r.GET("/api/videos/:id/hls/:segment", ok)
-	r.GET("/api/videos/:id/other", ok)
-	r.GET("/api/users", ok)
+	RegisterRoutes(api, []Route{
+		{Method: http.MethodGet, Path: "/videos/:id/stream", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/hls/index.m3u8", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/hls/:segment", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/other", Handler: ok, Viewer: true},
+		{Method: http.MethodGet, Path: "/users", Handler: ok, Viewer: true},
+	})
 	return r
 }
 
@@ -37,7 +42,7 @@ func streamClaims(videoID string) jwt.MapClaims {
 	}
 }
 
-func TestJWTAuth_StreamScope(t *testing.T) {
+func TestRegisterRoutes_StreamTokenScope(t *testing.T) {
 	tests := []struct {
 		name   string
 		token  string

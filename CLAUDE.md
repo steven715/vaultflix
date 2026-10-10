@@ -165,7 +165,7 @@ HTTP Status Code 使用規則：
 - `204`：DELETE 成功（無 body）
 - `400`：request 格式錯誤、參數驗證失敗
 - `401`：未認證（無 token 或 token 過期）
-- `403`：已認證但無權限（Casbin 拒絕）
+- `403`：已認證但無權限（路由表的 Role／stream token 檢查拒絕，見 `cmd/server/routes.go`）
 - `404`：資源不存在
 - `409`：與資源當前狀態衝突（如重複執行中的作業、Media Source 已停用）
 - `500`：伺服器內部錯誤

@@ -24,7 +24,7 @@ type backfillJobs interface {
 
 // BackfillHandler exposes admin endpoints to run Backfill Jobs of every kind.
 // All routes live under /api/admin/* and are gated to the admin role by the
-// Casbin RBAC middleware in cmd/server/main.go.
+// route table in cmd/server/routes.go.
 type BackfillHandler struct {
 	jobs backfillJobs
 }

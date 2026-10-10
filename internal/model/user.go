@@ -16,3 +16,9 @@ type User struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
+
+// Roles (see CONTEXT.md「Role」).
+const (
+	RoleAdmin  = "admin"
+	RoleViewer = "viewer"
+)

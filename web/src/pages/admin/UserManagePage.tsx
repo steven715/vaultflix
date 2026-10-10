@@ -64,7 +64,7 @@ export default function UserManagePage() {
         <div>
           <h1 className="font-display font-bold text-xl tracking-tight text-cream">使用者與權限</h1>
           <p className="text-sm text-muted mt-0.5">
-            <span className="font-mono">{users.length}</span> 位 · Casbin RBAC
+            <span className="font-mono">{users.length}</span> 位 · admin／viewer
           </p>
         </div>
         <button

@@ -26,13 +26,13 @@ React SPA (localhost:3000)
 | Database | PostgreSQL 16 | Video metadata, users, tags, watch history |
 | Object Storage | MinIO | Thumbnails & previews only (videos stay on local disk), S3-compatible |
 | Auth | JWT + bcrypt | Stateless authentication |
-| Authorization | Casbin | RBAC with admin/viewer roles |
+| Authorization | Route table | admin/viewer Roles per route (ADR-0013) |
 | Infrastructure | Docker Compose V2 | All services containerized |
 
 ## Features
 
 - **Authentication**: JWT-based login with bcrypt password hashing
-- **Authorization**: Casbin RBAC with admin and viewer roles
+- **Authorization**: one route table declares, per route, whether the viewer Role and Stream Tokens may call it (admin may call all)
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
 - **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); byte serving is offloaded to nginx via `X-Accel-Redirect` (direct-to-API callers fall back to the API's `http.ServeFile`)
@@ -194,11 +194,11 @@ See [`.env.example`](.env.example) for a complete template.
 
 ```
 vaultflix/
-├── cmd/server/             # Application entrypoint (main.go, admin_reset.go)
+├── cmd/server/             # Application entrypoint (main.go, routes.go route table, admin_reset.go)
 ├── internal/
 │   ├── config/             # Environment-based configuration
 │   ├── handler/            # HTTP handlers (Gin)
-│   ├── middleware/         # JWT auth, stream-token scope, active-user, Casbin RBAC
+│   ├── middleware/         # JWT auth, active-user, route guard (Role + Token Scope)
 │   ├── model/              # Domain models and shared errors
 │   ├── repository/         # PostgreSQL data access layer
 │   ├── service/            # Business logic layer
@@ -207,7 +207,6 @@ vaultflix/
 │   ├── websocket/          # Hub + Notifier interface (real-time progress)
 │   └── mock/               # Hand-written mock structs for testing
 ├── migrations/             # SQL migration files (up/down pairs)
-├── casbin/                 # RBAC model and policy definitions
 ├── scripts/                # Integration test scripts (test_all.sh)
 ├── nginx/
 │   ├── Dockerfile          # Multi-stage build: Node (builds web/) -> Nginx

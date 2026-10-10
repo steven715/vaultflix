@@ -40,8 +40,6 @@ WORKDIR /app
 RUN apk add --no-cache ffmpeg ca-certificates curl
 
 COPY --from=builder /out/server /app/server
-# casbin is loaded at runtime from the relative path casbin/ (main.go: casbin.NewEnforcer("casbin/model.conf", ...))
-COPY casbin /app/casbin
 
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

@@ -38,7 +38,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.Register(c.Request.Context(), req.Username, req.Password, "viewer")
+	user, err := h.authService.Register(c.Request.Context(), req.Username, req.Password, model.RoleViewer)
 	if err != nil {
 		if errors.Is(err, service.ErrUsernameAlreadyExists) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{

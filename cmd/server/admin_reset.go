@@ -21,7 +21,7 @@ import (
 // rather than startup behaviour — an env var silently taking over an existing
 // account on every boot would be a security regression, not a convenience.
 //
-// Only the DB is needed, so this runs before MinIO/casbin are wired up.
+// Only the DB is needed, so this runs before MinIO is wired up.
 func runAdminPasswordReset(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	userRepo := repository.NewUserRepository(pool)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
