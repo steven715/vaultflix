@@ -1,4 +1,5 @@
 import client from './client'
+import { postKeepalive } from './keepalive'
 
 export interface PlaybackTelemetryPayload {
   session_id: string
@@ -17,17 +18,8 @@ export async function postPlaybackTelemetry(payload: PlaybackTelemetryPayload): 
 }
 
 // sendPlaybackTelemetryBeacon posts on page-leave/unmount using keepalive so the
-// request survives teardown (mirrors the heartbeat beacon in PlayerPage). The
-// server upsert on session_id makes a duplicate with the normal path harmless.
+// request survives teardown. The server upsert on session_id makes a duplicate
+// with the normal path harmless.
 export function sendPlaybackTelemetryBeacon(payload: PlaybackTelemetryPayload): void {
-  const token = localStorage.getItem('token')
-  fetch('/api/playback/telemetry', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
-    keepalive: true,
-  }).catch(() => {})
+  postKeepalive('/playback/telemetry', payload)
 }

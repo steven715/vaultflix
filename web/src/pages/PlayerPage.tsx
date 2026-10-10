@@ -3,9 +3,7 @@ import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'reac
 import { getVideo, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
-import { postHeartbeat } from '../api/watchSession'
 import { getTodayRecommendations } from '../api/recommendations'
-import { sendPlaybackTelemetryBeacon } from '../api/telemetry'
 import type { VideoDetail, VideoWithTags, RecommendationItem } from '../types'
 import { formatDuration, formatFileSize, formatDate } from '../utils/format'
 import { useToast } from '../contexts/ToastContext'
@@ -14,13 +12,11 @@ import UpNextList from '../components/UpNextList'
 import RecommendationList from '../components/RecommendationList'
 import NetworkHud from '../components/NetworkHud'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
-import { clampDelta } from '../lib/heartbeat'
 import { usePlaybackStats } from '../hooks/usePlaybackStats'
 import { useStreamSource } from '../hooks/useStreamSource'
+import { usePlaybackSession } from '../hooks/usePlaybackSession'
 import type { PositionReason, StreamFailure } from '../lib/streamSource'
 
-const PROGRESS_THROTTLE_MS = 10_000
-const HEARTBEAT_INTERVAL_MS = 15_000
 
 const streamFailureMessage: Record<StreamFailure, string> = {
   'media-error': '影片載入失敗',
@@ -44,18 +40,6 @@ export default function PlayerPage() {
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
 
-  // Progress reporting refs (no state to avoid re-renders)
-  const lastReportTimeRef = useRef(0)
-  const lastReportSecondsRef = useRef(-1)
-  const videoIDRef = useRef<string>('')
-  const playModeRef = useRef<string>('')
-  const telemetrySentRef = useRef(false)
-
-  // Heartbeat (accumulated real watch time) — session regenerates per open.
-  const sessionIdRef = useRef<string>('')
-  const lastSampleSecondsRef = useRef(0) // last currentTime we measured a delta from
-  const pendingDeltaRef = useRef(0) // play-seconds accumulated since last flush
-
   // Playback telemetry: stream inputs feed usePlaybackStats (bitrate-based
   // throughput estimate + TTFB matching), which must be mounted unconditionally
   // at the top level regardless of the loading/error early returns below.
@@ -74,59 +58,6 @@ export default function PlayerPage() {
   const hudVisible =
     searchParams.get('hud') === '1' || localStorage.getItem('vaultflix-hud') === '1'
 
-  // Flush the accumulated heartbeat delta. Defined before the effects below
-  // (rather than near handleTimeUpdate) because the fetchVideo effect's
-  // dependency array references it directly, and a `const`/useCallback
-  // binding — unlike a hoisted `function` declaration — must already be
-  // initialized at that point in source order. Reads only refs, so this is
-  // a stable useCallback (identity never changes across renders).
-  const flushHeartbeat = useCallback((useBeacon = false) => {
-    const vid = videoIDRef.current
-    const sid = sessionIdRef.current
-    const delta = pendingDeltaRef.current
-    if (!vid || !sid || delta <= 0) return
-    pendingDeltaRef.current = 0
-    const el = videoRef.current
-    const position = el ? Math.floor(el.currentTime) : 0
-    const payload = { session_id: sid, video_id: vid, played_delta: delta, position_seconds: position }
-    if (useBeacon) {
-      const token = localStorage.getItem('token')
-      fetch('/api/watch-sessions/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(payload),
-        keepalive: true,
-      }).catch(() => {})
-      return
-    }
-    postHeartbeat(payload).catch((err) => console.warn('failed to send heartbeat', err))
-  }, [])
-
-  // Emit the session's terminal quality summary once, on unmount / page leave.
-  // Guarded so a session that never played sends nothing; the server upserts on
-  // session_id, so a duplicate is harmless. Uses only refs (no setState here).
-  const sendTelemetry = useCallback(() => {
-    if (telemetrySentRef.current) return
-    const vid = videoIDRef.current
-    const sid = sessionIdRef.current
-    const mode = playModeRef.current
-    if (!vid || !sid || !mode) return
-    const s = getSessionSummary()
-    if (s.ttffMs == null && s.watchedMs <= 0) return
-    telemetrySentRef.current = true
-    sendPlaybackTelemetryBeacon({
-      session_id: sid,
-      video_id: vid,
-      play_mode: mode,
-      ttff_ms: s.ttffMs,
-      watched_ms: s.watchedMs,
-      rebuffer_count: s.rebufferCount,
-      rebuffer_ms: s.rebufferMs,
-      avg_downlink_mbps: s.avgDownlinkMbps,
-      fatal_error_family: s.fatalErrorFamily,
-    })
-  }, [getSessionSummary])
-
   useEffect(() => {
     let cancelled = false
     if (!id) return
@@ -141,12 +72,6 @@ export default function PlayerPage() {
         setVideo(data)
         setFavorited(data.is_favorited)
         setError('')
-        videoIDRef.current = data.id
-        playModeRef.current = data.play_mode
-        telemetrySentRef.current = false
-        sessionIdRef.current = crypto.randomUUID()
-        lastSampleSecondsRef.current = 0
-        pendingDeltaRef.current = 0
       } catch {
         if (!cancelled) {
           setError('無法載入影片')
@@ -161,12 +86,8 @@ export default function PlayerPage() {
     fetchVideo()
     return () => {
       cancelled = true
-      // Send final progress on unmount
-      sendProgressBeacon()
-      flushHeartbeat(true)
-      sendTelemetry()
     }
-  }, [id, flushHeartbeat, sendTelemetry])
+  }, [id])
 
   // Up-next column: 5 random other videos, excluding the current one. A random
   // sample (sort_by: 'random') rather than "newest", so the list differs on each
@@ -222,96 +143,18 @@ export default function PlayerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Send progress via sendBeacon for unmount/page leave
-  function sendProgressBeacon() {
-    const vid = videoIDRef.current
-    const el = videoRef.current
-    if (!vid || !el || el.currentTime < 1) return
-
-    const seconds = Math.floor(el.currentTime)
-    if (seconds === lastReportSecondsRef.current) return
-
-    const token = localStorage.getItem('token')
-    fetch('/api/watch-history', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ video_id: vid, progress_seconds: seconds }),
-      keepalive: true,
-    }).catch((err) => {
-      console.warn('failed to send progress beacon', err)
-    })
-  }
-
-  // Throttled progress reporter
-  const reportProgress = useCallback((currentTime: number) => {
-    const now = Date.now()
-    const seconds = Math.floor(currentTime)
-    if (
-      seconds === lastReportSecondsRef.current ||
-      now - lastReportTimeRef.current < PROGRESS_THROTTLE_MS
-    ) {
-      return
-    }
-
-    lastReportTimeRef.current = now
-    lastReportSecondsRef.current = seconds
-
-    saveProgress(videoIDRef.current, seconds).catch((err) => {
-      console.warn('failed to report progress', err)
-    })
-  }, [])
-
-  function handleTimeUpdate() {
-    const el = videoRef.current
-    if (!el) return
-    reportProgress(el.currentTime)
-    // Accumulate real play time for the heartbeat.
-    pendingDeltaRef.current += clampDelta(lastSampleSecondsRef.current, el.currentTime)
-    lastSampleSecondsRef.current = el.currentTime
-  }
-
-  // A seek (scrubber drag / skip) is not playback. Resync the heartbeat baseline
-  // to the seek target so the next timeupdate measures from there — the jump
-  // contributes zero. Without this, a forward seek adds up to MAX_HEARTBEAT_DELTA
-  // phantom seconds (clampDelta only caps the inflation, it doesn't remove it).
-  function handleSeeking() {
-    const el = videoRef.current
-    if (!el) return
-    lastSampleSecondsRef.current = el.currentTime
-  }
-
-  // Flush the accumulated heartbeat delta on a fixed cadence.
-  useEffect(() => {
-    const timer = setInterval(() => flushHeartbeat(false), HEARTBEAT_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [flushHeartbeat])
-
-  function handlePause() {
-    const el = videoRef.current
-    if (!el || el.currentTime < 1) return
-    const seconds = Math.floor(el.currentTime)
-    if (seconds === lastReportSecondsRef.current) return
-
-    lastReportTimeRef.current = Date.now()
-    lastReportSecondsRef.current = seconds
-
-    saveProgress(videoIDRef.current, seconds).catch((err) => {
-      console.warn('failed to report progress on pause', err)
-    })
-  }
+  // Reporting for this Playback Session (Watch Progress, heartbeat, telemetry).
+  const positionSet = usePlaybackSession({ mediaRef: videoRef, video, ready: !loading, summary: getSessionSummary })
 
   // The Stream Source moved the playback position itself (resume from Watch
-  // Progress, or back to where a token-refresh reload interrupted): measure
-  // heartbeat deltas from the new position, never across the jump.
+  // Progress, or back to where a token-refresh reload interrupted): that jump is
+  // not watch time.
   const handlePositionSet = useCallback(
     (seconds: number, reason: PositionReason) => {
-      lastSampleSecondsRef.current = seconds
+      positionSet(seconds)
       if (reason === 'resume') toast.info(`從 ${formatDuration(seconds)} 繼續播放`)
     },
-    [toast],
+    [positionSet, toast],
   )
   const stream = useStreamSource({ mediaRef: videoRef, video, ready: !loading, onPositionSet: handlePositionSet })
 
@@ -414,9 +257,6 @@ export default function PlayerPage() {
                   controls
                   preload="metadata"
                   className="aspect-video w-full"
-                  onTimeUpdate={handleTimeUpdate}
-                  onSeeking={handleSeeking}
-                  onPause={handlePause}
                   onLoadedMetadata={handleLoadedMetadata}
                   onVolumeChange={handleVolumeChange}
                 />
