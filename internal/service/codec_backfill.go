@@ -3,14 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 )
-
-// codecProbeFunc returns (videoCodec, audioCodec, error).
-type codecProbeFunc func(ctx context.Context, absPath string) (string, string, error)
 
 // codecVideoRepo is the subset of VideoRepository needed by CodecBackfill.
 type codecVideoRepo interface {
@@ -23,12 +18,18 @@ type codecVideoRepo interface {
 type CodecBackfill struct {
 	videoRepo codecVideoRepo
 	files     mediaFileResolver
-	probe     codecProbeFunc
+	media     mediaInfoProber
 }
 
-// NewCodecBackfill creates a CodecBackfill with the real ffprobe probe.
-func NewCodecBackfill(v codecVideoRepo, files mediaFileResolver) *CodecBackfill {
-	return &CodecBackfill{videoRepo: v, files: files, probe: probeCodecs}
+// mediaInfoProber reads Media Info (implemented by *MediaProcessor).
+type mediaInfoProber interface {
+	// ProbeMediaInfo returns a wrapped error when the file can't be probed.
+	ProbeMediaInfo(ctx context.Context, path string) (model.MediaInfo, error)
+}
+
+// NewCodecBackfill creates a CodecBackfill.
+func NewCodecBackfill(v codecVideoRepo, files mediaFileResolver, media mediaInfoProber) *CodecBackfill {
+	return &CodecBackfill{videoRepo: v, files: files, media: media}
 }
 
 // List returns the Videos whose codecs are unknown.
@@ -47,31 +48,12 @@ func (s *CodecBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
 	if err != nil {
 		return err
 	}
-	vc, ac, err := s.probe(ctx, abs)
+	info, err := s.media.ProbeMediaInfo(ctx, abs)
 	if err != nil {
 		return fmt.Errorf("failed to probe codecs of video %s: %w", v.ID, err)
 	}
-	if err := s.videoRepo.UpdateCodecs(ctx, v.ID, vc, ac); err != nil {
+	if err := s.videoRepo.UpdateCodecs(ctx, v.ID, info.VideoCodec, info.AudioCodec); err != nil {
 		return fmt.Errorf("failed to store codecs of video %s: %w", v.ID, err)
 	}
 	return nil
-}
-
-func probeCodecs(ctx context.Context, absPath string) (string, string, error) {
-	run := func(stream string) (string, error) {
-		cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error",
-			"-select_streams", stream, "-show_entries", "stream=codec_name",
-			"-of", "default=nw=1:nk=1", absPath)
-		out, err := cmd.Output()
-		if err != nil {
-			return "", fmt.Errorf("ffprobe %s failed: %w", stream, err)
-		}
-		return strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]), nil
-	}
-	vc, err := run("v:0")
-	if err != nil {
-		return "", "", err
-	}
-	ac, _ := run("a:0") // no audio track is acceptable
-	return vc, ac, nil
 }

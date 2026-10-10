@@ -147,7 +147,8 @@ func main() {
 	minioService := service.NewMinIOService(minioClient, presignClient, cfg.MinIOVideoBucket, cfg.MinIOThumbnailBucket, cfg.MinIOPreviewBucket, service.NewInMemoryURLCache())
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
 	userService := service.NewUserService(userRepo)
-	importService := service.NewImportService(videoRepo, minioService, hub)
+	mediaProcessor := service.NewMediaProcessor(service.NewFFmpegTool(), minioService)
+	importService := service.NewImportService(videoRepo, mediaProcessor, hub)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 	videoService := service.NewVideoService(videoRepo, mediaSourceService, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
@@ -205,8 +206,8 @@ func main() {
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
 	backfillRunner := service.NewBackfillRunner(hub, map[model.BackfillKind]service.BackfillTask{
-		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, minioService),
-		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService),
+		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, mediaProcessor),
+		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService, mediaProcessor),
 		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
 		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
 	})

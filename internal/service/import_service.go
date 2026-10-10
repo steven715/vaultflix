@@ -2,14 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +14,6 @@ import (
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
-	"github.com/steven/vaultflix/internal/scraper/avid"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
@@ -37,7 +32,7 @@ type fileResult struct {
 
 type ImportService struct {
 	videoRepo  repository.VideoRepository
-	minioSvc   MinIOClient
+	media      mediaDeriver
 	notifier   websocket.Notifier
 	activeJobs sync.Map
 	importMu   sync.Mutex
@@ -47,10 +42,10 @@ type ImportService struct {
 	keyframes keyframeProber // optional;nil 時不觸發
 }
 
-func NewImportService(videoRepo repository.VideoRepository, minioSvc MinIOClient, notifier websocket.Notifier) *ImportService {
+func NewImportService(videoRepo repository.VideoRepository, media mediaDeriver, notifier websocket.Notifier) *ImportService {
 	return &ImportService{
 		videoRepo: videoRepo,
-		minioSvc:  minioSvc,
+		media:     media,
 		notifier:  notifier,
 	}
 }
@@ -216,113 +211,6 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 	}
 }
 
-func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) fileResult {
-	filename := filepath.Base(filePath)
-
-	stat, err := os.Stat(filePath)
-	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to stat file %s: %v", filename, err)}
-	}
-	fileSize := stat.Size()
-
-	relPath, err := filepath.Rel(source.MountPath, filePath)
-	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to calculate relative path for %s: %v", filename, err)}
-	}
-	relPath = filepath.ToSlash(relPath)
-
-	_, err = s.videoRepo.FindBySourceAndPath(ctx, source.ID, relPath)
-	if err == nil {
-		slog.Info("video skipped, already imported",
-			"file", filename,
-			"source_id", source.ID,
-			"file_path", relPath,
-		)
-		return fileResult{Status: "skipped"}
-	}
-	if !errors.Is(err, model.ErrNotFound) {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to check duplicate for %s: %v", filename, err)}
-	}
-
-	metadata, err := s.probeMetadata(ctx, filePath)
-	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to probe metadata for %s: %v", filename, err)}
-	}
-
-	videoID := uuid.New().String()
-
-	thumbnailPath, err := s.generateThumbnail(ctx, filePath, metadata.durationSeconds)
-	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to generate thumbnail for %s: %v", filename, err)}
-	}
-	defer os.Remove(thumbnailPath)
-
-	thumbnailObjectKey := fmt.Sprintf("thumbnails/%s.jpg", videoID)
-
-	if err := s.minioSvc.UploadThumbnail(ctx, thumbnailObjectKey, thumbnailPath); err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to upload thumbnail for %s: %v", filename, err)}
-	}
-
-	previewObjectKey := s.tryGeneratePreview(ctx, videoID, filePath, filename, metadata.durationSeconds)
-
-	title := strings.TrimSuffix(filename, filepath.Ext(filename))
-
-	video := &model.Video{
-		ID:               videoID,
-		Title:            title,
-		Description:      "",
-		MinIOObjectKey:   "",
-		ThumbnailKey:     thumbnailObjectKey,
-		PreviewKey:       previewObjectKey,
-		DurationSeconds:  metadata.durationSeconds,
-		Resolution:       metadata.resolution,
-		FileSizeBytes:    fileSize,
-		MimeType:         metadata.mimeType,
-		VideoCodec:       metadata.videoCodec,
-		AudioCodec:       metadata.audioCodec,
-		OriginalFilename: filename,
-		SourceID:         &source.ID,
-		FilePath:         &relPath,
-	}
-
-	seedEnrichment(video, filename)
-
-	if err := s.videoRepo.Create(ctx, video); err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
-	}
-
-	if s.keyframes != nil {
-		ext := strings.TrimPrefix(filepath.Ext(filename), ".")
-		if shouldProbeKeyframes(ext, metadata.videoCodec, metadata.audioCodec) {
-			s.keyframes.TriggerProbe(videoID, filePath)
-		}
-	}
-
-	slog.Info("video imported",
-		"video_id", videoID,
-		"file", filename,
-		"source_id", source.ID,
-		"file_path", relPath,
-		"duration", metadata.durationSeconds,
-		"resolution", metadata.resolution,
-		"size_bytes", fileSize,
-	)
-
-	return fileResult{Status: "success"}
-}
-
-// seedEnrichment extracts a JAV code from the filename and sets Code and
-// EnrichmentStatus on video before it is persisted. If a code is found the
-// status is set to pending (eligible for batch enrichment); otherwise no_code.
-func seedEnrichment(video *model.Video, filename string) {
-	if code, ok := avid.ExtractCode(filename); ok {
-		video.Code = code
-		video.EnrichmentStatus = model.EnrichmentPending
-	} else {
-		video.EnrichmentStatus = model.EnrichmentNoCode
-	}
-}
-
 // GetJob returns a snapshot of the job with the given ID. Returns
 // model.ErrNotFound if not found.
 func (s *ImportService) GetJob(jobID string) (*model.ImportJob, error) {
@@ -388,178 +276,4 @@ func (s *ImportService) scanVideoFiles(sourceDir string) ([]string, error) {
 	}
 
 	return files, nil
-}
-
-type videoMetadata struct {
-	durationSeconds int
-	resolution      string
-	mimeType        string
-	videoCodec      string
-	audioCodec      string
-}
-
-type ffprobeOutput struct {
-	Format  ffprobeFormat   `json:"format"`
-	Streams []ffprobeStream `json:"streams"`
-}
-
-type ffprobeFormat struct {
-	Duration string `json:"duration"`
-	Size     string `json:"size"`
-}
-
-type ffprobeStream struct {
-	CodecType string `json:"codec_type"`
-	CodecName string `json:"codec_name"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-}
-
-func (s *ImportService) probeMetadata(ctx context.Context, filePath string) (*videoMetadata, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "quiet",
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		filePath,
-	)
-
-	output, err := cmd.Output()
-	if err != nil {
-		stderr := ""
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr = string(exitErr.Stderr)
-		}
-		return nil, fmt.Errorf("ffprobe failed: %w, stderr: %s", err, stderr)
-	}
-
-	ext := strings.ToLower(filepath.Ext(filePath))
-	return parseProbeOutput(output, ext)
-}
-
-// parseProbeOutput parses raw ffprobe JSON output and extracts video metadata.
-// ext must be lower-case (e.g. ".mp4"). Pure function — no I/O, easily unit-tested.
-func parseProbeOutput(raw []byte, ext string) (*videoMetadata, error) {
-	var probe ffprobeOutput
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("failed to parse ffprobe output: %w", err)
-	}
-
-	duration, _ := strconv.ParseFloat(probe.Format.Duration, 64)
-
-	var resolution, videoCodec, audioCodec string
-	for _, stream := range probe.Streams {
-		switch stream.CodecType {
-		case "video":
-			if videoCodec == "" {
-				videoCodec = stream.CodecName
-				resolution = fmt.Sprintf("%dx%d", stream.Width, stream.Height)
-			}
-		case "audio":
-			if audioCodec == "" {
-				audioCodec = stream.CodecName
-			}
-		}
-	}
-
-	return &videoMetadata{
-		durationSeconds: int(duration),
-		resolution:      resolution,
-		mimeType:        mimeTypeFor(ext, videoCodec, audioCodec),
-		videoCodec:      videoCodec,
-		audioCodec:      audioCodec,
-	}, nil
-}
-
-// mimeTypeFor returns "video/mp4" for direct-play videos (h264+aac in mp4/mov),
-// falling back to extensionToMIME for everything else. This fixes the prior bug
-// where .avi files were labelled "video/x-msvideo" and browsers refused to play.
-func mimeTypeFor(ext, videoCodec, audioCodec string) string {
-	if ClassifyPlayMode(ext, videoCodec, audioCodec) == model.PlayModeDirect {
-		return "video/mp4"
-	}
-	return extensionToMIME(ext)
-}
-
-// shouldProbeKeyframes 回傳 true 代表此影片會走 remux 播放模式,需要非同步觸發
-// keyframe 邊界表探測(供 HLS VOD-on-the-fly 使用)。
-func shouldProbeKeyframes(ext, videoCodec, audioCodec string) bool {
-	return ClassifyPlayMode(ext, videoCodec, audioCodec) == model.PlayModeRemux
-}
-
-func (s *ImportService) generateThumbnail(ctx context.Context, filePath string, durationSeconds int) (string, error) {
-	seekTime := durationSeconds / 4
-	if seekTime < 1 {
-		seekTime = 1
-	}
-
-	tmpFile, err := os.CreateTemp("", "vaultflix-thumb-*.jpg")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file for thumbnail: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-ss", strconv.Itoa(seekTime),
-		"-i", filePath,
-		"-vframes", "1",
-		"-q:v", "2",
-		"-y",
-		tmpPath,
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("ffmpeg thumbnail failed: %w, output: %s", err, string(output))
-	}
-
-	return tmpPath, nil
-}
-
-// tryGeneratePreview attempts to produce and upload a preview clip for the
-// given source. Failures are logged and result in an empty key (caller stores
-// PreviewKey="" so the video is still imported). A missing preview is treated
-// as a degraded but acceptable state per the spec — having a thumbnail is more
-// important than having a preview.
-func (s *ImportService) tryGeneratePreview(ctx context.Context, videoID, filePath, filename string, durationSeconds int) string {
-	previewPath, err := generatePreviewClip(ctx, filePath, durationSeconds)
-	if err != nil {
-		slog.Warn("preview generation failed",
-			"video_id", videoID,
-			"file", filename,
-			"error", err,
-		)
-		return ""
-	}
-	defer os.Remove(previewPath)
-
-	previewObjectKey := fmt.Sprintf("previews/%s.mp4", videoID)
-	if err := s.minioSvc.UploadPreview(ctx, previewObjectKey, previewPath); err != nil {
-		slog.Warn("preview upload failed",
-			"video_id", videoID,
-			"file", filename,
-			"error", err,
-		)
-		return ""
-	}
-	return previewObjectKey
-}
-
-func extensionToMIME(ext string) string {
-	switch ext {
-	case ".mp4":
-		return "video/mp4"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".avi":
-		return "video/x-msvideo"
-	case ".wmv":
-		return "video/x-ms-wmv"
-	case ".mov":
-		return "video/quicktime"
-	default:
-		return "application/octet-stream"
-	}
 }

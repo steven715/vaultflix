@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -16,16 +14,18 @@ import (
 type PreviewBackfill struct {
 	videoRepo repository.VideoRepository
 	files     mediaFileResolver
-	minioSvc  MinIOClient
-
-	// generatePreview is the preview-clip producer; overridable so tests can
-	// avoid shelling out to ffmpeg.
-	generatePreview func(ctx context.Context, srcPath string, durationSeconds int) (string, error)
+	previews  previewMaker
 }
 
-// NewPreviewBackfill creates a PreviewBackfill using the real ffmpeg clipper.
-func NewPreviewBackfill(videoRepo repository.VideoRepository, files mediaFileResolver, minioSvc MinIOClient) *PreviewBackfill {
-	return &PreviewBackfill{videoRepo: videoRepo, files: files, minioSvc: minioSvc, generatePreview: generatePreviewClip}
+// previewMaker cuts and uploads a Preview (implemented by *MediaProcessor).
+type previewMaker interface {
+	// MakePreview returns the uploaded Preview key, or a wrapped error.
+	MakePreview(ctx context.Context, f model.MediaFile) (string, error)
+}
+
+// NewPreviewBackfill creates a PreviewBackfill.
+func NewPreviewBackfill(videoRepo repository.VideoRepository, files mediaFileResolver, previews previewMaker) *PreviewBackfill {
+	return &PreviewBackfill{videoRepo: videoRepo, files: files, previews: previews}
 }
 
 // List returns every Video without a Preview.
@@ -45,19 +45,9 @@ func (p *PreviewBackfill) ProcessOne(ctx context.Context, v *model.Video) error 
 		return err
 	}
 
-	previewPath, err := p.generatePreview(ctx, absPath, v.DurationSeconds)
+	objectKey, err := p.previews.MakePreview(ctx, model.MediaFile{VideoID: v.ID, Path: absPath, DurationSeconds: v.DurationSeconds})
 	if err != nil {
-		return fmt.Errorf("failed to cut preview of video %s: %w", v.ID, err)
-	}
-	defer func() {
-		if err := os.Remove(previewPath); err != nil {
-			slog.Warn("failed to remove temp preview clip", "video_id", v.ID, "path", previewPath, "error", err)
-		}
-	}()
-
-	objectKey := fmt.Sprintf("previews/%s.mp4", v.ID)
-	if err := p.minioSvc.UploadPreview(ctx, objectKey, previewPath); err != nil {
-		return fmt.Errorf("failed to upload preview of video %s: %w", v.ID, err)
+		return fmt.Errorf("failed to backfill preview: %w", err)
 	}
 	if err := p.videoRepo.UpdatePreviewKey(ctx, v.ID, objectKey); err != nil {
 		return fmt.Errorf("failed to record preview key of video %s: %w", v.ID, err)
