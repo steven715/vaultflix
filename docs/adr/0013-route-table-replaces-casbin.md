@@ -9,7 +9,7 @@ Three separate lists described the protected API, and they had already drifted a
 
 - **Routes** — about 50 gin registrations in `cmd/server/main.go`.
 - **Roles** — `casbin/policy.csv`. Admin had one `/api/*` wildcard per method; viewer had 17 explicit rows. The file was baked into the image, so nothing could change it at runtime.
-- **Stream-token scope** — `streamRoutePaths` in `internal/middleware/auth.go`, listing where a `scope=stream` token works.
+- **Stream Token scope (Token Scope)** — `streamRoutePaths` in `internal/middleware/auth.go`, listing where a `scope=stream` token works.
 
 Two kinds of drift were already in the code:
 

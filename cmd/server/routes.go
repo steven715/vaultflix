@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/steven/vaultflix/internal/handler"
 	"github.com/steven/vaultflix/internal/middleware"
 )
@@ -26,86 +28,113 @@ type apiHandlers struct {
 	ws                *handler.WSHandler
 }
 
-const (
-	get = http.MethodGet
-	pst = http.MethodPost
-	put = http.MethodPut
-	del = http.MethodDelete
-)
-
 // apiRoutes is the one table of protected /api routes: path, handler, whether
 // the viewer Role may call it (admin may call every route), and whether a
-// scope=stream token may (ADR-0013). Paths are relative to /api.
+// Stream Token may (ADR-0013). Paths are relative to /api.
 func apiRoutes(h apiHandlers) []middleware.Route {
-	type r = middleware.Route
+	var routes []middleware.Route
+	for _, group := range [][]middleware.Route{
+		libraryRoutes(h), playbackRoutes(h), watchingRoutes(h), adminRoutes(h), enrichmentRoutes(h),
+	} {
+		routes = append(routes, group...)
+	}
+	return routes
+}
+
+// route builds one table row; the zero access is admin-only.
+func route(method, path string, handler gin.HandlerFunc, access ...access) middleware.Route {
+	r := middleware.Route{Method: method, Path: path, Handler: handler}
+	for _, a := range access {
+		a(&r)
+	}
+	return r
+}
+
+type access func(*middleware.Route)
+
+// viewer lets the viewer Role call the route.
+func viewer(r *middleware.Route) { r.Viewer = true }
+
+// streamToken lets a Stream Token call the route for its own Video.
+func streamToken(r *middleware.Route) { r.StreamToken = true }
+
+func libraryRoutes(h apiHandlers) []middleware.Route {
 	return []middleware.Route{
-		r{Method: get, Path: "/me", Handler: h.auth.Me, Viewer: true},
+		route(http.MethodGet, "/me", h.auth.Me, viewer),
+		route(http.MethodGet, "/videos", h.video.List, viewer),
+		route(http.MethodGet, "/videos/:id", h.video.GetByID, viewer),
+		route(http.MethodPut, "/videos/:id", h.video.Update),
+		route(http.MethodDelete, "/videos/:id", h.video.Delete),
+		route(http.MethodPost, "/videos/import", h.video.Import),
+		route(http.MethodGet, "/import-jobs/active", h.video.GetActiveImportJob),
+		route(http.MethodGet, "/import-jobs/:id", h.video.GetImportJob),
+		route(http.MethodPost, "/videos/:id/tags", h.tag.AddVideoTag),
+		route(http.MethodDelete, "/videos/:id/tags/:tagId", h.tag.RemoveVideoTag),
+		route(http.MethodGet, "/tags", h.tag.List, viewer),
+		route(http.MethodPost, "/tags", h.tag.Create),
+	}
+}
 
-		// Library
-		r{Method: get, Path: "/videos", Handler: h.video.List, Viewer: true},
-		r{Method: get, Path: "/videos/:id", Handler: h.video.GetByID, Viewer: true},
-		r{Method: put, Path: "/videos/:id", Handler: h.video.Update},
-		r{Method: del, Path: "/videos/:id", Handler: h.video.Delete},
-		r{Method: pst, Path: "/videos/import", Handler: h.video.Import},
-		r{Method: get, Path: "/import-jobs/active", Handler: h.video.GetActiveImportJob},
-		r{Method: get, Path: "/import-jobs/:id", Handler: h.video.GetImportJob},
-		r{Method: pst, Path: "/videos/:id/tags", Handler: h.tag.AddVideoTag},
-		r{Method: del, Path: "/videos/:id/tags/:tagId", Handler: h.tag.RemoveVideoTag},
-		r{Method: get, Path: "/tags", Handler: h.tag.List, Viewer: true},
-		r{Method: pst, Path: "/tags", Handler: h.tag.Create},
+func playbackRoutes(h apiHandlers) []middleware.Route {
+	return []middleware.Route{
+		route(http.MethodGet, "/videos/:id/stream", h.video.Stream, viewer, streamToken),
+		route(http.MethodGet, "/videos/:id/hls/index.m3u8", h.hls.Playlist, streamToken),
+		route(http.MethodGet, "/videos/:id/hls/:segment", h.hls.Segment, streamToken),
+		route(http.MethodGet, "/videos/:id/stream-token", h.auth.StreamToken, viewer),
+	}
+}
 
-		// Playback
-		r{Method: get, Path: "/videos/:id/stream", Handler: h.video.Stream, Viewer: true, StreamToken: true},
-		r{Method: get, Path: "/videos/:id/hls/index.m3u8", Handler: h.hls.Playlist, StreamToken: true},
-		r{Method: get, Path: "/videos/:id/hls/:segment", Handler: h.hls.Segment, StreamToken: true},
-		r{Method: get, Path: "/videos/:id/stream-token", Handler: h.auth.StreamToken, Viewer: true},
+func watchingRoutes(h apiHandlers) []middleware.Route {
+	return []middleware.Route{
+		route(http.MethodPost, "/watch-history", h.history.SaveProgress, viewer),
+		route(http.MethodGet, "/watch-history", h.history.List, viewer),
+		route(http.MethodDelete, "/watch-history", h.history.ClearHistory, viewer),
+		route(http.MethodPost, "/watch-sessions/heartbeat", h.watchSession.Heartbeat, viewer),
+		route(http.MethodPost, "/playback/telemetry", h.playbackTelemetry.Record, viewer),
+		route(http.MethodGet, "/admin/playback/telemetry", h.playbackTelemetry.Summary),
+		route(http.MethodGet, "/favorites", h.favorite.List, viewer),
+		route(http.MethodPost, "/favorites", h.favorite.Add, viewer),
+		route(http.MethodDelete, "/favorites/:videoId", h.favorite.Remove, viewer),
+		route(http.MethodGet, "/ws", h.ws.HandleWebSocket, viewer),
+	}
+}
 
-		// Watching
-		r{Method: pst, Path: "/watch-history", Handler: h.history.SaveProgress, Viewer: true},
-		r{Method: get, Path: "/watch-history", Handler: h.history.List, Viewer: true},
-		r{Method: del, Path: "/watch-history", Handler: h.history.ClearHistory, Viewer: true},
-		r{Method: pst, Path: "/watch-sessions/heartbeat", Handler: h.watchSession.Heartbeat, Viewer: true},
-		r{Method: pst, Path: "/playback/telemetry", Handler: h.playbackTelemetry.Record, Viewer: true},
-		r{Method: get, Path: "/admin/playback/telemetry", Handler: h.playbackTelemetry.Summary},
-		r{Method: get, Path: "/favorites", Handler: h.favorite.List, Viewer: true},
-		r{Method: pst, Path: "/favorites", Handler: h.favorite.Add, Viewer: true},
-		r{Method: del, Path: "/favorites/:videoId", Handler: h.favorite.Remove, Viewer: true},
+// adminRoutes: Users, Daily Recommendations, Media Sources, Backfill Jobs,
+// analytics.
+func adminRoutes(h apiHandlers) []middleware.Route {
+	return []middleware.Route{
+		route(http.MethodGet, "/users", h.user.List),
+		route(http.MethodPost, "/users", h.user.Create),
+		route(http.MethodDelete, "/users/:id", h.user.Delete),
+		route(http.MethodPut, "/users/:id/enable", h.user.Enable),
+		route(http.MethodPut, "/users/:id/password", h.user.ResetPassword),
 
-		// Users
-		r{Method: get, Path: "/users", Handler: h.user.List},
-		r{Method: pst, Path: "/users", Handler: h.user.Create},
-		r{Method: del, Path: "/users/:id", Handler: h.user.Delete},
-		r{Method: put, Path: "/users/:id/enable", Handler: h.user.Enable},
-		r{Method: put, Path: "/users/:id/password", Handler: h.user.ResetPassword},
+		route(http.MethodGet, "/recommendations/today", h.recommendation.GetToday, viewer),
+		route(http.MethodGet, "/recommendations", h.recommendation.ListByDate),
+		route(http.MethodPost, "/recommendations", h.recommendation.Create),
+		route(http.MethodPut, "/recommendations/:id", h.recommendation.UpdateSortOrder),
+		route(http.MethodDelete, "/recommendations/:id", h.recommendation.Delete),
 
-		// Daily Recommendations
-		r{Method: get, Path: "/recommendations/today", Handler: h.recommendation.GetToday, Viewer: true},
-		r{Method: get, Path: "/recommendations", Handler: h.recommendation.ListByDate},
-		r{Method: pst, Path: "/recommendations", Handler: h.recommendation.Create},
-		r{Method: put, Path: "/recommendations/:id", Handler: h.recommendation.UpdateSortOrder},
-		r{Method: del, Path: "/recommendations/:id", Handler: h.recommendation.Delete},
+		route(http.MethodGet, "/media-sources", h.mediaSource.List),
+		route(http.MethodPost, "/media-sources", h.mediaSource.Create),
+		route(http.MethodPut, "/media-sources/:id", h.mediaSource.Update),
+		route(http.MethodDelete, "/media-sources/:id", h.mediaSource.Delete),
 
-		// Media Sources
-		r{Method: get, Path: "/media-sources", Handler: h.mediaSource.List},
-		r{Method: pst, Path: "/media-sources", Handler: h.mediaSource.Create},
-		r{Method: put, Path: "/media-sources/:id", Handler: h.mediaSource.Update},
-		r{Method: del, Path: "/media-sources/:id", Handler: h.mediaSource.Delete},
+		route(http.MethodPost, "/admin/backfill-jobs", h.backfill.Start),
+		route(http.MethodGet, "/admin/backfill-jobs/active", h.backfill.GetActive),
+		route(http.MethodPost, "/admin/backfill-jobs/:id/cancel", h.backfill.Cancel),
+		route(http.MethodGet, "/admin/analytics", h.analytics.Get),
+	}
+}
 
-		// Backfill Jobs and analytics
-		r{Method: pst, Path: "/admin/backfill-jobs", Handler: h.backfill.Start},
-		r{Method: get, Path: "/admin/backfill-jobs/active", Handler: h.backfill.GetActive},
-		r{Method: pst, Path: "/admin/backfill-jobs/:id/cancel", Handler: h.backfill.Cancel},
-		r{Method: get, Path: "/admin/analytics", Handler: h.analytics.Get},
-
-		// Enrichment
-		r{Method: pst, Path: "/videos/:id/enrich", Handler: h.enrichment.EnrichVideo},
-		r{Method: get, Path: "/videos/:id/suggestions", Handler: h.enrichment.ListSuggestions},
-		r{Method: pst, Path: "/videos/:id/suggestions/:sid/accept", Handler: h.enrichment.AcceptSuggestion},
-		r{Method: del, Path: "/videos/:id/suggestions/:sid", Handler: h.enrichment.RejectSuggestion},
-		r{Method: pst, Path: "/enrich-jobs", Handler: h.enrichment.StartBatch},
-		r{Method: get, Path: "/enrich-jobs/active", Handler: h.enrichment.ActiveJob},
-		r{Method: del, Path: "/enrich-jobs/:jid", Handler: h.enrichment.CancelBatch},
-
-		r{Method: get, Path: "/ws", Handler: h.ws.HandleWebSocket, Viewer: true},
+func enrichmentRoutes(h apiHandlers) []middleware.Route {
+	return []middleware.Route{
+		route(http.MethodPost, "/videos/:id/enrich", h.enrichment.EnrichVideo),
+		route(http.MethodGet, "/videos/:id/suggestions", h.enrichment.ListSuggestions),
+		route(http.MethodPost, "/videos/:id/suggestions/:sid/accept", h.enrichment.AcceptSuggestion),
+		route(http.MethodDelete, "/videos/:id/suggestions/:sid", h.enrichment.RejectSuggestion),
+		route(http.MethodPost, "/enrich-jobs", h.enrichment.StartBatch),
+		route(http.MethodGet, "/enrich-jobs/active", h.enrichment.ActiveJob),
+		route(http.MethodDelete, "/enrich-jobs/:jid", h.enrichment.CancelBatch),
 	}
 }

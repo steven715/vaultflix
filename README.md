@@ -32,7 +32,7 @@ React SPA (localhost:3000)
 ## Features
 
 - **Authentication**: JWT-based login with bcrypt password hashing
-- **Authorization**: one route table declares, per route, whether the viewer Role and stream tokens may call it (admin may call all)
+- **Authorization**: one route table declares, per route, whether the viewer Role and Stream Tokens may call it (admin may call all)
 - **Video Import**: Bulk import from local directory with automatic ffprobe metadata extraction and ffmpeg thumbnail generation
 - **Video Browsing**: Paginated grid view with search, tag filtering, and multi-field sorting
 - **Video Streaming**: Direct-from-disk streaming with native HTTP Range (seeking); byte serving is offloaded to nginx via `X-Accel-Redirect` (direct-to-API callers fall back to the API's `http.ServeFile`)
@@ -198,7 +198,7 @@ vaultflix/
 ├── internal/
 │   ├── config/             # Environment-based configuration
 │   ├── handler/            # HTTP handlers (Gin)
-│   ├── middleware/         # JWT auth, active-user, route guard (Role + stream-token scope)
+│   ├── middleware/         # JWT auth, active-user, route guard (Role + Token Scope)
 │   ├── model/              # Domain models and shared errors
 │   ├── repository/         # PostgreSQL data access layer
 │   ├── service/            # Business logic layer

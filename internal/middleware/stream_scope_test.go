@@ -12,8 +12,10 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// setupStreamScopeRouter wires the real streaming route plus an unrelated route,
-// both behind JWTAuth, so scope enforcement can be exercised end to end.
+// setupStreamScopeRouter mounts stream routes plus unrelated ones behind
+// JWTAuth and the route guard, to exercise the Stream Token's Token Scope end
+// to end. This fixture marks every route Viewer so only the Token Scope rule
+// decides; the real table's viewer permissions are pinned in cmd/server.
 func setupStreamScopeRouter() *gin.Engine {
 	r := gin.New()
 	api := r.Group("/api")
@@ -40,7 +42,7 @@ func streamClaims(videoID string) jwt.MapClaims {
 	}
 }
 
-func TestJWTAuth_StreamScope(t *testing.T) {
+func TestRegisterRoutes_StreamTokenScope(t *testing.T) {
 	tests := []struct {
 		name   string
 		token  string

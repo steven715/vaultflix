@@ -46,8 +46,8 @@ func TestAPIRoutes_ViewerPermissions(t *testing.T) {
 	}
 }
 
-// Exactly where a scope=stream token works; each must bind :id, because the
-// guard matches the token's Video against it.
+// Exactly where a Stream Token works; each must bind :id, because the guard
+// matches the token's Video against it.
 func TestAPIRoutes_StreamTokenRoutes(t *testing.T) {
 	want := []string{
 		"GET /videos/:id/hls/:segment",
@@ -65,7 +65,7 @@ func TestAPIRoutes_StreamTokenRoutes(t *testing.T) {
 	}
 }
 
-func TestAPIRoutes_UniqueAndComplete(t *testing.T) {
+func TestAPIRoutes_Unique(t *testing.T) {
 	seen := map[string]bool{}
 	for _, r := range apiRoutes(apiHandlers{}) {
 		key := r.Method + " " + r.Path

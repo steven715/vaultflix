@@ -25,7 +25,7 @@ func routeTableRouter() *gin.Engine {
 	return r
 }
 
-func TestRouteGuard_RoleAndStreamToken(t *testing.T) {
+func TestRegisterRoutes_GuardsRoleAndStreamToken(t *testing.T) {
 	login := func(role string) jwt.MapClaims {
 		c := validClaims()
 		c["role"] = role
@@ -61,9 +61,9 @@ func TestRouteGuard_RoleAndStreamToken(t *testing.T) {
 	}
 }
 
-// A role check that cannot find the route (e.g. registered without the
-// table) must refuse rather than allow.
-func TestRouteGuard_MissingRoleRefused(t *testing.T) {
+// Without an authenticated Role (no JWTAuth in front) the guard refuses
+// rather than allows.
+func TestRegisterRoutes_MissingRoleRefused(t *testing.T) {
 	r := gin.New()
 	RegisterRoutes(r, []Route{{Method: http.MethodGet, Path: "/x", Handler: func(c *gin.Context) { c.Status(http.StatusOK) }, Viewer: true}})
 	w := httptest.NewRecorder()

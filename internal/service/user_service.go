@@ -60,7 +60,7 @@ func (s *UserService) Disable(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to get user %s: %w", id, err)
 	}
 
-	if user.Role == "admin" {
+	if user.Role == model.RoleAdmin {
 		return model.ErrCannotDisableAdmin
 	}
 

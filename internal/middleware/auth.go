@@ -10,8 +10,8 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// Context keys JWTAuth sets for the route guard (routes.go): which Token Scope
-// the request's token has, and the Video a stream token was issued for.
+// Context keys JWTAuth sets for the route guard (routes.go): the token's Token
+// Scope, and the Video a Stream Token was issued for.
 const (
 	ctxTokenScope   = "token_scope"
 	ctxTokenVideoID = "token_video_id"
@@ -69,9 +69,9 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// A scope-limited stream token may be used only on stream routes and only
-		// for the Video it was issued for; the route guard enforces that, since
-		// the route table is what knows which routes accept one.
+		// A Stream Token may be used only on stream routes and only for the Video
+		// it was issued for; the route guard enforces that, since the route
+		// table is what knows which routes accept one.
 		scope, _ := claims["scope"].(string)
 		videoID, _ := claims["video_id"].(string)
 		c.Set(ctxTokenScope, scope)
