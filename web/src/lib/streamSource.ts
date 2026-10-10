@@ -101,6 +101,8 @@ export function startStreamSource(opts: StreamSourceOptions): StreamSource {
         preparingRetries += 1
         setState({ status: 'preparing' })
         retryTimer = setTimeout(() => instance.loadSource(url), PREPARING_RETRY_DELAY_MS)
+      } else if (action === 'refresh-token') {
+        recover('stream-load-failed')
       } else if (action === 'fatal') {
         fail(preparingRetries > 0 ? 'preparing-timeout' : 'stream-load-failed')
       }
@@ -148,15 +150,21 @@ export function startStreamSource(opts: StreamSourceOptions): StreamSource {
     setState({ status: 'playing' })
   }
 
-  function onError() {
+  // recover refreshes the Stream Token once per error episode and reloads at
+  // the current position; a second failure before playback resumes is final.
+  function recover(exhausted: StreamFailure) {
     if (disposed) return
     if (refreshUsed) {
-      fail('media-error')
+      fail(exhausted)
       return
     }
     refreshUsed = true
     pendingSeek = media.currentTime
     opts.fetchToken(video.id).then(attach, () => fail('token-refresh-failed'))
+  }
+
+  function onError() {
+    recover('media-error')
   }
 
   media.addEventListener('loadedmetadata', onLoadedMetadata)

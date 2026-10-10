@@ -64,6 +64,10 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 - 播放端的選路、準備中輪詢、stream token 換新與跳回原位全在 Stream Source；PlayerPage 只看它回報的狀態
   （loading／preparing／playing／failed＋原因）。新的播放恢復規則加在 Stream Source 並用 fake media／fake Hls 測，
   不要回到頁面加 ref。
+- **HLS 的 Stream Token 會在播放中過期**：manifest 只載入一次，每個 HLS Segment 網址帶的是當下的 token，
+  超過 `STREAM_TOKEN_EXPIRY_MINUTES`（預設 60）後每個 segment 都是 401。hls.js 的 401 必須走與 `<video>` error
+  相同的恢復（換一次 token → 重建 hls.js → 回到原位置），不能當 fatal。新增任何 HLS 錯誤處理時，
+  先決定它屬於「準備中輪詢」「換 token」「失敗」哪一類，再加進 `classifyHlsError`。
 - jellyfin-web 的調參史是現成教訓：曾把 buffer 上限壓到 6 秒躲 Chrome `BufferFullError`，
   結果任何網路抖動都變成可見卡頓，最後回歸 hls.js 預設。**結論：buffer 寧大勿小**；
   區網頻寬成本 ≈ 0，唯一硬限制是瀏覽器的 MSE 配額（數十~百餘 MB 級，塞爆拋 `QuotaExceededError`，
