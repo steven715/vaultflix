@@ -247,6 +247,45 @@ describe('startStreamSource: remux', () => {
     expect(hls.sources).toHaveLength(1)
   })
 
+  // Regression: segment URLs carry the token the manifest was loaded with, so
+  // once it expires (STREAM_TOKEN_EXPIRY_MINUTES, default 60) every HLS Segment
+  // gets a 401 — a long remux Video used to fail mid-playback.
+  it('an expired token under hls.js (401) refreshes it and resumes at the same position', async () => {
+    const { media, instances, fetchToken, positions, last } = setup({ playMode: 'remux' })
+    await tick()
+    media.fire('loadedmetadata')
+    media.currentTime = 3700
+    instances[0].emit('error', { fatal: true, response: { code: 401 } })
+    await tick()
+    expect(fetchToken).toHaveBeenCalledTimes(2)
+    expect(instances[0].destroyed).toBe(true)
+    expect(instances[1].sources).toEqual(['/api/videos/v1/hls/index.m3u8?token=t2'])
+    expect(last()).not.toEqual(expect.objectContaining({ status: 'failed' }))
+    media.fire('loadedmetadata')
+    expect(positions).toEqual([[3700, 'recovery']])
+  })
+
+  it('a 401 before the first load still resumes from Watch Progress', async () => {
+    const { media, instances, positions } = setup({ playMode: 'remux', startAt: 600 })
+    await tick()
+    instances[0].emit('error', { fatal: true, response: { code: 401 } })
+    await tick()
+    media.fire('loadedmetadata')
+    expect(media.currentTime).toBe(600)
+    expect(positions).toEqual([[600, 'resume']])
+  })
+
+  it('a second 401 before playback recovers fails instead of looping', async () => {
+    const { instances, fetchToken, last } = setup({ playMode: 'remux' })
+    await tick()
+    instances[0].emit('error', { fatal: true, response: { code: 401 } })
+    await tick()
+    instances[1].emit('error', { fatal: true, response: { code: 401 } })
+    await tick()
+    expect(fetchToken).toHaveBeenCalledTimes(2)
+    expect(last()).toEqual({ status: 'failed', reason: 'stream-load-failed' })
+  })
+
   it('a media error under hls.js refreshes the token and rebuilds hls.js at the same position', async () => {
     const { media, instances, positions } = setup({ playMode: 'remux' })
     await tick()

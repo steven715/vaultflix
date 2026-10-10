@@ -19,6 +19,10 @@ describe('classifyHlsError', () => {
     expect(classifyHlsError({ fatal: true, response: { code: 409 } }, 0)).toBe('fatal')
   })
 
+  it('fatal 401 (Stream Token expired) → refresh-token', () => {
+    expect(classifyHlsError({ fatal: true, response: { code: 401 } }, 0)).toBe('refresh-token')
+  })
+
   it('fatal non-503 → fatal', () => {
     expect(classifyHlsError({ fatal: true, response: { code: 404 } }, 0)).toBe('fatal')
     expect(classifyHlsError({ fatal: true }, 0)).toBe('fatal')
