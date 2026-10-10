@@ -29,7 +29,7 @@ func TestEnrichVideo_FailedImageDownloadStagesNoKey(t *testing.T) {
 	}
 	var staged *model.MetadataSuggestion
 	sugRepo := &mock.SuggestionRepository{CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error { staged = s; return nil }}
-	svc := NewEnrichmentService([]scraper.MetadataScraper{fakeScraper}, videoRepo, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService([]scraper.MetadataScraper{fakeScraper}, videoRepo, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	svc.downloadImage = func(context.Context, string) (string, error) { return "", errors.New("404") }
 
 	if err := svc.EnrichVideo(context.Background(), "v1", "u1"); err != nil {

@@ -26,9 +26,7 @@ func TestEnrichVideo_NoCode(t *testing.T) {
 	svc := NewEnrichmentService(
 		nil,
 		videoRepo,
-		&mock.ActressRepository{},
 		&mock.SuggestionRepository{},
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -61,9 +59,7 @@ func TestEnrichVideo_WritesSuggestion(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{fakeScraper},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -101,9 +97,7 @@ func TestEnrichVideo_AllFailed(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{failingScraper},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -137,7 +131,7 @@ func TestAcceptSuggestion_AppliesEverythingInOneCall(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	newTitle := "覆寫標題"
 
 	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{Title: &newTitle, Genres: []string{"單體", ""}}); err != nil {
@@ -168,7 +162,7 @@ func TestAcceptSuggestion_UsesPayloadGenresWithoutOverride(t *testing.T) {
 		},
 		ApplyFunc: func(_ context.Context, app model.SuggestionApplication) error { applied = app; return nil },
 	}
-	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 
 	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{}); err != nil {
 		t.Fatal(err)
@@ -185,7 +179,7 @@ func TestAcceptSuggestion_ApplyFailurePropagates(t *testing.T) {
 		},
 		ApplyFunc: func(context.Context, model.SuggestionApplication) error { return model.ErrNotFound },
 	}
-	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{}); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
@@ -197,7 +191,7 @@ func TestAcceptSuggestion_NotFound(t *testing.T) {
 			return nil, model.ErrNotFound
 		},
 	}
-	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{})
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("errors.Is(err, model.ErrNotFound) = false, want true; err = %v", err)
@@ -210,7 +204,7 @@ func TestAcceptSuggestion_WrongVideo(t *testing.T) {
 			return &model.MetadataSuggestion{ID: id, VideoID: "other-video"}, nil
 		},
 	}
-	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{})
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("errors.Is(err, model.ErrNotFound) = false, want true; err = %v", err)
@@ -238,7 +232,7 @@ func TestRejectSuggestion_DeletesAndResetsStatusWhenLast(t *testing.T) {
 			return []model.MetadataSuggestion{}, nil
 		},
 	}
-	svc := NewEnrichmentService(nil, videoRepo, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, videoRepo, sugRepo, &mock.MinIOClient{}, &mock.Notifier{})
 	err := svc.RejectSuggestion(context.Background(), "v1", "s1")
 	if err != nil {
 		t.Fatal(err)
@@ -274,14 +268,12 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{fakeScraper},
 		videoRepo,
-		&mock.ActressRepository{},
 		&mock.SuggestionRepository{
 			CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error {
 				staged = s
 				return nil
 			},
 		},
-		&mock.TagRepository{},
 		&mock.MinIOClient{
 			UploadActressAvatarFunc: func(_ context.Context, key, _ string) error {
 				avatarKeys = append(avatarKeys, key)
@@ -359,11 +351,9 @@ func TestEnrichVideo_PrefersStoredCode(t *testing.T) {
 			svc := NewEnrichmentService(
 				[]scraper.MetadataScraper{fakeScraper},
 				videoRepo,
-				&mock.ActressRepository{},
 				&mock.SuggestionRepository{
 					CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error { return nil },
 				},
-				&mock.TagRepository{},
 				&mock.MinIOClient{},
 				&mock.Notifier{},
 			)

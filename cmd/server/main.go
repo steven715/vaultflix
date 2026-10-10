@@ -160,7 +160,6 @@ func main() {
 	playbackTelemetryService := service.NewPlaybackTelemetryService(playbackTelemetryRepo)
 
 	// Enrichment: scraper clients, service, and handler
-	actressRepo := repository.NewActressRepository(pool)
 	suggestionRepo := repository.NewSuggestionRepository(pool)
 	enrichHTTPClient := scraper.NewClient(scraper.ClientOptions{
 		Timeout:     cfg.EnrichHTTPTimeout,
@@ -173,7 +172,7 @@ func main() {
 		scraper.NewJavBusScraper(enrichHTTPClient, ""),
 		// JavLibrary deferred to Phase 1.x (Cloudflare-blocked); see spec §14.
 	}
-	enrichService := service.NewEnrichmentService(scrapers, videoRepo, actressRepo, suggestionRepo, tagRepo, minioService, hub)
+	enrichService := service.NewEnrichmentService(scrapers, videoRepo, suggestionRepo, minioService, hub)
 	enrichHandler := handler.NewEnrichmentHandler(enrichService)
 
 	// Inject user-interaction services into video service for enriching detail responses

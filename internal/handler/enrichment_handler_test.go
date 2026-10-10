@@ -17,33 +17,23 @@ import (
 )
 
 // buildEnrichmentRouter wires up a gin router with the EnrichmentHandler.
-// videoRepo, actressRepo, suggestionRepo, tagRepo may be nil if the test
-// does not exercise paths that call those repos.
+// videoRepo and suggestionRepo may be nil if the test does not exercise paths
+// that call them.
 func buildEnrichmentRouter(
 	videoRepo *mock.VideoRepository,
-	actressRepo *mock.ActressRepository,
 	suggestionRepo *mock.SuggestionRepository,
-	tagRepo *mock.TagRepository,
 ) (*gin.Engine, *service.EnrichmentService) {
 	if videoRepo == nil {
 		videoRepo = &mock.VideoRepository{}
 	}
-	if actressRepo == nil {
-		actressRepo = &mock.ActressRepository{}
-	}
 	if suggestionRepo == nil {
 		suggestionRepo = &mock.SuggestionRepository{}
-	}
-	if tagRepo == nil {
-		tagRepo = &mock.TagRepository{}
 	}
 
 	svc := service.NewEnrichmentService(
 		nil,
 		videoRepo,
-		actressRepo,
 		suggestionRepo,
-		tagRepo,
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -73,7 +63,7 @@ func TestEnrichmentHandler_AcceptSuggestion_NotFound(t *testing.T) {
 			return nil, model.ErrNotFound
 		},
 	}
-	r, _ := buildEnrichmentRouter(nil, nil, suggestionRepo, nil)
+	r, _ := buildEnrichmentRouter(nil, suggestionRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/videos/vid-1/suggestions/sid-ghost/accept", nil)
 	w := httptest.NewRecorder()
@@ -113,8 +103,7 @@ func TestEnrichmentHandler_AcceptSuggestion_HappyPath(t *testing.T) {
 			return nil
 		},
 	}
-	// No actresses or genres in payload, so actressRepo/tagRepo won't be called.
-	r, _ := buildEnrichmentRouter(videoRepo, nil, suggestionRepo, nil)
+	r, _ := buildEnrichmentRouter(videoRepo, suggestionRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/videos/vid-1/suggestions/sid-1/accept", nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -132,7 +121,7 @@ func TestEnrichmentHandler_AcceptSuggestion_HappyPath(t *testing.T) {
 
 func TestEnrichmentHandler_AcceptSuggestion_MalformedJSON_Returns400(t *testing.T) {
 	suggestionRepo := &mock.SuggestionRepository{}
-	r, _ := buildEnrichmentRouter(nil, nil, suggestionRepo, nil)
+	r, _ := buildEnrichmentRouter(nil, suggestionRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/videos/vid-1/suggestions/sid-1/accept",
 		strings.NewReader(`{bad json`))
@@ -167,7 +156,7 @@ func TestEnrichmentHandler_AcceptSuggestion_EmptyBody_Returns200(t *testing.T) {
 			return nil
 		},
 	}
-	r, _ := buildEnrichmentRouter(videoRepo, nil, suggestionRepo, nil)
+	r, _ := buildEnrichmentRouter(videoRepo, suggestionRepo)
 
 	// Empty body — should succeed (treat as zero-value override).
 	req := httptest.NewRequest(http.MethodPost, "/videos/vid-2/suggestions/sid-2/accept", nil)
@@ -203,7 +192,7 @@ func TestEnrichmentHandler_RejectSuggestion_HappyPath(t *testing.T) {
 			return nil
 		},
 	}
-	r, _ := buildEnrichmentRouter(videoRepo, nil, suggestionRepo, nil)
+	r, _ := buildEnrichmentRouter(videoRepo, suggestionRepo)
 
 	req := httptest.NewRequest(http.MethodDelete, "/videos/vid-3/suggestions/sid-3", nil)
 	w := httptest.NewRecorder()
@@ -234,7 +223,7 @@ func TestEnrichmentHandler_StartBatch_ConflictWhenRunning(t *testing.T) {
 			return nil
 		},
 	}
-	r, _ := buildEnrichmentRouter(videoRepo, nil, nil, nil)
+	r, _ := buildEnrichmentRouter(videoRepo, nil)
 
 	// First call: should succeed with 202.
 	req1 := httptest.NewRequest(http.MethodPost, "/enrich-jobs", nil)
