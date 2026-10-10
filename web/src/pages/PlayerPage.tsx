@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
-import Hls from 'hls.js'
-import { getVideo, getStreamToken, listVideos } from '../api/videos'
+import { getVideo, listVideos } from '../api/videos'
 import { saveProgress } from '../api/watchHistory'
 import { addFavorite, removeFavorite } from '../api/favorites'
 import { postHeartbeat } from '../api/watchSession'
@@ -16,11 +15,21 @@ import RecommendationList from '../components/RecommendationList'
 import NetworkHud from '../components/NetworkHud'
 import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../components/icons'
 import { clampDelta } from '../lib/heartbeat'
-import { classifyHlsError, PREPARING_RETRY_DELAY_MS } from '../lib/hlsError'
 import { usePlaybackStats } from '../hooks/usePlaybackStats'
+import { useStreamSource } from '../hooks/useStreamSource'
+import type { PositionReason, StreamFailure } from '../lib/streamSource'
 
 const PROGRESS_THROTTLE_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 15_000
+
+const streamFailureMessage: Record<StreamFailure, string> = {
+  'media-error': '影片載入失敗',
+  'stream-load-failed': '串流載入失敗',
+  'preparing-timeout': '首次播放準備逾時,請稍後重試',
+  'token-unavailable': '無法載入影片',
+  'token-refresh-failed': '影片串流憑證更新失敗',
+  unsupported: '此瀏覽器不支援串流播放',
+}
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
@@ -28,18 +37,12 @@ export default function PlayerPage() {
   const location = useLocation()
   const toast = useToast()
   const [video, setVideo] = useState<VideoDetail | null>(null)
-  const [streamToken, setStreamToken] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [favorited, setFavorited] = useState(false)
   const [upNext, setUpNext] = useState<VideoWithTags[]>([])
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
-  const [preparing, setPreparing] = useState(false)
-  const preparingRetryRef = useRef(0)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const retryCountRef = useRef(0)
-  // Playback position to restore after a stream-token refresh reload.
-  const pendingSeekRef = useRef<number | null>(null)
 
   // Progress reporting refs (no state to avoid re-renders)
   const lastReportTimeRef = useRef(0)
@@ -138,18 +141,12 @@ export default function PlayerPage() {
         setVideo(data)
         setFavorited(data.is_favorited)
         setError('')
-        retryCountRef.current = 0
-        preparingRetryRef.current = 0
-        setPreparing(false)
         videoIDRef.current = data.id
         playModeRef.current = data.play_mode
         telemetrySentRef.current = false
         sessionIdRef.current = crypto.randomUUID()
         lastSampleSecondsRef.current = 0
         pendingDeltaRef.current = 0
-
-        const { token } = await getStreamToken(id)
-        if (!cancelled) setStreamToken(token)
       } catch {
         if (!cancelled) {
           setError('無法載入影片')
@@ -203,67 +200,6 @@ export default function PlayerPage() {
       cancelled = true
     }
   }, [location.key])
-
-  // Reload the media element whenever the stream token changes (initial load
-  // and post-expiry refresh). Only for direct mode; remux is handled below.
-  useEffect(() => {
-    if (video?.play_mode === 'direct' && streamToken && videoRef.current) {
-      videoRef.current.load()
-    }
-  }, [video, streamToken])
-
-  // remux 影片用 hls.js 播放即時 HLS；direct 影片維持原生 src。
-  useEffect(() => {
-    const videoID = video?.id
-    const playMode = video?.play_mode
-    if (!videoID || playMode !== 'remux' || !streamToken || !videoRef.current) return
-    const el = videoRef.current
-    const url = `/api/videos/${videoID}/hls/index.m3u8?token=${streamToken}`
-
-    // hls.js(MSE)優先於原生 HLS。現代 Chrome 對
-    // canPlayType('application/vnd.apple.mpegurl') 會回「maybe」,但它內建的
-    // HLS/mpegts 解析在我們的 VOD 串流上會卡住(只 buffer 到約 8.2s 就不再推進,
-    // seek 到任何位置後 readyState 永遠停在 1)——已用獨立 hls.js 1.6.16 實例
-    // 對同一份 manifest 驗證過可正常 seek/播放,故 MSE 可用時一律用 hls.js,
-    // 不能只憑 canPlayType 判斷「原生可播」。
-    if (Hls.isSupported()) {
-      const hls = new Hls()
-      let retryTimer: number | undefined
-      hls.on(Hls.Events.ERROR, (_evt, data) => {
-        const action = classifyHlsError(data, preparingRetryRef.current)
-        if (action === 'retry-preparing') {
-          preparingRetryRef.current += 1
-          setPreparing(true)
-          retryTimer = window.setTimeout(() => hls.loadSource(url), PREPARING_RETRY_DELAY_MS)
-        } else if (action === 'fatal') {
-          setPreparing(false)
-          setError(preparingRetryRef.current > 0 ? '首次播放準備逾時,請稍後重試' : '串流載入失敗')
-        }
-      })
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        preparingRetryRef.current = 0
-        setPreparing(false)
-      })
-      hls.loadSource(url)
-      hls.attachMedia(el)
-      return () => {
-        if (retryTimer) window.clearTimeout(retryTimer)
-        hls.destroy()
-      }
-    }
-    // MSE 不可用時的原生 HLS fallback(真正的 Safari/iOS,沒有 hls.js 可用的
-    // MediaSource 支援)。注意:首播 503(stream_not_ready)在此分支不會走
-    // classifyHlsError 的輪詢邏輯,而是直接觸發 <video> 既有的 onError 處理路徑
-    // (見 handleVideoError)——使用者環境為 Chrome/PWA,故此限制暫不處理。
-    if (el.canPlayType('application/vnd.apple.mpegurl')) {
-      el.src = url
-      return () => {
-        el.removeAttribute('src')
-        el.load()
-      }
-    }
-    setError('此瀏覽器不支援串流播放')
-  }, [video?.id, video?.play_mode, streamToken])
 
   // Keyboard shortcuts: space toggles play/pause, arrows seek ±5s.
   useEffect(() => {
@@ -367,51 +303,30 @@ export default function PlayerPage() {
     })
   }
 
-  // Resume playback from watch_progress + restore volume
+  // The Stream Source moved the playback position itself (resume from Watch
+  // Progress, or back to where a token-refresh reload interrupted): measure
+  // heartbeat deltas from the new position, never across the jump.
+  const handlePositionSet = useCallback(
+    (seconds: number, reason: PositionReason) => {
+      lastSampleSecondsRef.current = seconds
+      if (reason === 'resume') toast.info(`從 ${formatDuration(seconds)} 繼續播放`)
+    },
+    [toast],
+  )
+  const stream = useStreamSource({ mediaRef: videoRef, video, ready: !loading, onPositionSet: handlePositionSet })
+
+  // Restore the remembered volume once metadata is in.
   function handleLoadedMetadata() {
-    if (!video || !videoRef.current) return
-    // A successful (re)load means recovery — reset the error-retry budget so a
-    // later, unrelated transient error still gets its one retry instead of
-    // failing outright.
-    retryCountRef.current = 0
+    if (!videoRef.current) return
     const savedVolume = localStorage.getItem('vaultflix-volume')
     if (savedVolume !== null) {
       videoRef.current.volume = parseFloat(savedVolume)
-    }
-    if (pendingSeekRef.current != null) {
-      // Restoring position after a token-refresh reload — not a fresh open.
-      videoRef.current.currentTime = pendingSeekRef.current
-      pendingSeekRef.current = null
-      lastSampleSecondsRef.current = videoRef.current.currentTime
-    } else if (video.watch_progress > 0) {
-      videoRef.current.currentTime = video.watch_progress
-      lastSampleSecondsRef.current = videoRef.current.currentTime
-      toast.info(`從 ${formatDuration(video.watch_progress)} 繼續播放`)
     }
   }
 
   function handleVolumeChange() {
     if (!videoRef.current) return
     localStorage.setItem('vaultflix-volume', String(videoRef.current.volume))
-  }
-
-  // Handle stream-token expiry: refresh the scoped token on video error
-  // (max 1 retry per error episode; the budget resets on a successful load).
-  function handleVideoError() {
-    if (!video || retryCountRef.current >= 1) {
-      if (retryCountRef.current >= 1) {
-        setError('影片載入失敗')
-      }
-      return
-    }
-    retryCountRef.current += 1
-    // Preserve the current position; the streamToken effect reloads the src.
-    pendingSeekRef.current = videoRef.current?.currentTime ?? null
-    getStreamToken(video.id)
-      .then(({ token }) => setStreamToken(token))
-      .catch(() => {
-        setError('影片串流憑證更新失敗')
-      })
   }
 
   // Favorite toggle with optimistic UI
@@ -459,10 +374,11 @@ export default function PlayerPage() {
     )
   }
 
-  if (error || !video) {
+  const streamError = stream.status === 'failed' ? streamFailureMessage[stream.reason] : ''
+  if (error || streamError || !video) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg">
-        <div className="text-muted">{error || '影片不存在'}</div>
+        <div className="text-muted">{error || streamError || '影片不存在'}</div>
         <Link to="/" className="text-sm text-accent hover:underline">
           返回片庫
         </Link>
@@ -497,13 +413,7 @@ export default function PlayerPage() {
                   ref={videoRef}
                   controls
                   preload="metadata"
-                  src={
-                    video.play_mode === 'direct' && streamToken
-                      ? `${video.stream_url}?token=${streamToken}`
-                      : undefined
-                  }
                   className="aspect-video w-full"
-                  onError={handleVideoError}
                   onTimeUpdate={handleTimeUpdate}
                   onSeeking={handleSeeking}
                   onPause={handlePause}
@@ -511,7 +421,7 @@ export default function PlayerPage() {
                   onVolumeChange={handleVolumeChange}
                 />
                 {hudVisible && <NetworkHud stats={stats} />}
-                {preparing && (
+                {stream.status === 'preparing' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-center text-sm text-muted">
                     <div className="px-6">首次播放準備中，索引建立後將自動開始…</div>
                   </div>

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -80,6 +80,46 @@ describe('PlayerPage play_mode', () => {
     } as never)
     renderPlayer()
     expect(await screen.findByText(/尚未支援|Phase 2|無法播放/)).toBeInTheDocument()
+  })
+
+  it('does not start a stream (no stream token) for transcode videos', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'transcode' } as never)
+    renderPlayer()
+    await screen.findByText(/尚未支援|Phase 2|無法播放/)
+    expect(videosApi.getStreamToken).not.toHaveBeenCalled()
+  })
+
+  it('recovers from a stream failure when moving on to another video', async () => {
+    vi.mocked(videosApi.getVideo).mockImplementation(async (id: string) => ({ ...base, id, play_mode: 'direct' }) as never)
+    vi.mocked(videosApi.getStreamToken)
+      .mockRejectedValueOnce(new Error('403'))
+      .mockResolvedValue({ token: 'tok', expires_in: 60 })
+    function Nav() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/watch/v2')}>go v2</button>
+    }
+    const { container } = render(
+      <MemoryRouter initialEntries={['/watch/v1']}>
+        <Nav />
+        <Routes>
+          <Route path="/watch/:id" element={<PlayerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('無法載入影片')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('go v2'))
+
+    await waitFor(() => expect(container.querySelector('video')).toBeTruthy())
+    expect(screen.queryByText('無法載入影片')).toBeNull()
+    await waitFor(() => expect(videosApi.getStreamToken).toHaveBeenLastCalledWith('v2'))
+  })
+
+  it('shows the Stream Source failure as the page error', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+    vi.mocked(videosApi.getStreamToken).mockRejectedValue(new Error('403'))
+    renderPlayer()
+    expect(await screen.findByText('無法載入影片')).toBeInTheDocument()
   })
 
   it('does not count a forward seek as watch time (heartbeat delta excludes the jump)', async () => {

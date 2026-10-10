@@ -57,8 +57,13 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 
 平台注意事項：
 - hls.js 不是 PC 專屬 —— 前提是 MSE，Android Chrome/PWA 完全支援，M/PC 走同一條路徑同一套參數。
-- 唯一例外是 **iOS Safari**（不開放 MSE），走 PlayerPage 的原生 HLS fallback，緩衝由 Safari 決定。
-  這是所有網頁播放器的共同限制，Jellyfin/Plex 亦同。
+- 唯一例外是 **iOS Safari**（不開放 MSE），走 Stream Source（`web/src/lib/streamSource.ts`）的原生 HLS fallback，
+  緩衝由 Safari 決定。這是所有網頁播放器的共同限制，Jellyfin/Plex 亦同。
+  已知缺口：原生 HLS 拿不到狀態碼，首播 503（Keyframe Index 準備中）不會走「準備中」輪詢，而是當成一般
+  media error（換一次 token 後失敗）。使用者環境為 Chrome/PWA，暫不處理。
+- 播放端的選路、準備中輪詢、stream token 換新與跳回原位全在 Stream Source；PlayerPage 只看它回報的狀態
+  （loading／preparing／playing／failed＋原因）。新的播放恢復規則加在 Stream Source 並用 fake media／fake Hls 測，
+  不要回到頁面加 ref。
 - jellyfin-web 的調參史是現成教訓：曾把 buffer 上限壓到 6 秒躲 Chrome `BufferFullError`，
   結果任何網路抖動都變成可見卡頓，最後回歸 hls.js 預設。**結論：buffer 寧大勿小**；
   區網頻寬成本 ≈ 0，唯一硬限制是瀏覽器的 MSE 配額（數十~百餘 MB 級，塞爆拋 `QuotaExceededError`，
