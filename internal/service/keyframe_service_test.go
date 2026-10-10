@@ -51,24 +51,55 @@ func (f *fakeKfVideoRepo) ListKeyframeCandidates(ctx context.Context, limit int)
 
 func strPtr(s string) *string { return &s }
 
-func TestGetSegments_NotFoundPassthrough(t *testing.T) {
-	s := NewKeyframeService(newFakeKeyframeRepo(), &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
-	_, err := s.GetSegments(context.Background(), "missing")
-	if !errors.Is(err, model.ErrNotFound) {
-		t.Errorf("err = %v, want ErrNotFound", err)
+func TestLookupOrProbe_MissTriggersProbeAndReportsPreparing(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
+	probedPath := make(chan string, 1)
+	s.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
+		probedPath <- absPath
+		return []float64{0, 8}, 16, nil
+	}
+
+	_, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
+	if !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("err = %v, want ErrStreamPreparing", err)
+	}
+	select {
+	case got := <-probedPath:
+		if got != "/mnt/host/D/a.avi" {
+			t.Errorf("probed %q, want /mnt/host/D/a.avi", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe was not triggered on a Keyframe Index miss")
 	}
 }
 
-func TestGetSegments_ReturnsStored(t *testing.T) {
+func TestLookupOrProbe_ReturnsStoredWithoutProbing(t *testing.T) {
 	repo := newFakeKeyframeRepo()
 	repo.stored["v1"] = &model.KeyframeIndex{
 		VideoID:  "v1",
 		Segments: []model.SegmentBoundary{{Start: 0, Duration: 8}},
 	}
 	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
-	segs, err := s.GetSegments(context.Background(), "v1")
+	s.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
+		t.Error("probe ran although the Keyframe Index exists")
+		return nil, 0, nil
+	}
+
+	segs, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
 	if err != nil || len(segs) != 1 {
 		t.Errorf("segs = %v, err = %v", segs, err)
+	}
+}
+
+func TestLookupOrProbe_RepoErrorIsNotPreparing(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	repo.getErr = errors.New("db down")
+	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
+
+	_, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
+	if err == nil || errors.Is(err, model.ErrStreamPreparing) {
+		t.Errorf("err = %v, want a non-preparing error", err)
 	}
 }
 

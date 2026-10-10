@@ -54,11 +54,17 @@ func NewKeyframeService(repo keyframeIndexRepo, videoRepo keyframeVideoRepo, fil
 	}
 }
 
-// GetSegments 回傳邊界表;無資料回 model.ErrNotFound(呼叫端可觸發 TriggerProbe)。
-func (s *KeyframeService) GetSegments(ctx context.Context, videoID string) ([]model.SegmentBoundary, error) {
+// LookupOrProbe 回傳 Video 的 Segment Boundary 表。Keyframe Index 尚不存在時,
+// 以 absPath 觸發背景探測並回 model.ErrStreamPreparing(呼叫端稍後重試);
+// 其他讀取失敗回 wrapped error。
+func (s *KeyframeService) LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error) {
 	idx, err := s.repo.Get(ctx, videoID)
+	if errors.Is(err, model.ErrNotFound) {
+		s.TriggerProbe(videoID, absPath)
+		return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrStreamPreparing)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get keyframe index of video %s: %w", videoID, err)
 	}
 	return idx.Segments, nil
 }

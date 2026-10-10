@@ -188,7 +188,8 @@ func main() {
 
 	keyframeIndexRepo := repository.NewKeyframeIndexRepository(pool)
 	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceService)
-	hlsHandler := handler.NewHLSHandler(videoService, keyframeService, segmentCache)
+	hlsService := service.NewHLSService(videoService, keyframeService, segmentCache)
+	hlsHandler := handler.NewHLSHandler(hlsService)
 	keyframeBackfillHandler := handler.NewKeyframeBackfillHandler(keyframeService)
 	importService.SetKeyframeProber(keyframeService)
 

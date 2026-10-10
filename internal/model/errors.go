@@ -13,6 +13,13 @@ var (
 	ErrInvalidInput       = errors.New("invalid input")
 )
 
+// ErrStreamPreparing 表示 Video 的 Keyframe Index 尚未就緒、探測已在背景進行，
+// 稍後重試即可播放。
+var ErrStreamPreparing = errors.New("stream is preparing")
+
+// ErrNotRemux 表示 Video 的 Play Mode 不是 remux，不經 HLS 播放。
+var ErrNotRemux = errors.New("video play mode is not remux")
+
 // ErrMediaSourceDisabled 表示 Video 所屬的 Media Source 已停用，不可讀取其檔案。
 var ErrMediaSourceDisabled = errors.New("media source is disabled")
 
