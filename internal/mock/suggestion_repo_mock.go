@@ -14,6 +14,7 @@ type SuggestionRepository struct {
 	GetByVideoIDFunc func(ctx context.Context, videoID string) ([]model.MetadataSuggestion, error)
 	GetByIDFunc      func(ctx context.Context, id string) (*model.MetadataSuggestion, error)
 	DeleteFunc       func(ctx context.Context, id string) error
+	ApplyFunc        func(ctx context.Context, app model.SuggestionApplication) error
 }
 
 func (m *SuggestionRepository) Create(ctx context.Context, s *model.MetadataSuggestion) error {
@@ -42,4 +43,11 @@ func (m *SuggestionRepository) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("mock: DeleteFunc not set")
 	}
 	return m.DeleteFunc(ctx, id)
+}
+
+func (m *SuggestionRepository) Apply(ctx context.Context, app model.SuggestionApplication) error {
+	if m.ApplyFunc == nil {
+		return fmt.Errorf("mock: ApplyFunc not set")
+	}
+	return m.ApplyFunc(ctx, app)
 }

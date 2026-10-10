@@ -119,47 +119,56 @@ func TestEnrichVideo_AllFailed(t *testing.T) {
 	}
 }
 
-func TestAcceptSuggestion_AppliesMetadataAndActressesAndGenres(t *testing.T) {
+func TestAcceptSuggestion_AppliesEverythingInOneCall(t *testing.T) {
 	payload := model.EnrichedMetadata{
 		Code: "DASD-626", Title: "原標題", Maker: "M",
 		Genres:    []string{"巨乳"},
-		Actresses: []model.ActressMeta{{NameJa: "女優A"}},
+		Actresses: []model.ActressMeta{{NameJa: "女優A", NameRomaji: "Joyu A", AvatarURL: "actresses/k.jpg"}},
+		CoverURL:  "covers/DASD-626-javbus.jpg",
 	}
-	var updated model.VideoMetadataUpdate
-	var linkedActress, linkedTag bool
-	videoRepo := &mock.VideoRepository{
-		UpdateMetadataFunc: func(_ context.Context, id string, m model.VideoMetadataUpdate) error {
-			updated = m
-			return nil
-		},
-	}
+	var applied *model.SuggestionApplication
 	sugRepo := &mock.SuggestionRepository{
 		GetByIDFunc: func(_ context.Context, id string) (*model.MetadataSuggestion, error) {
 			return &model.MetadataSuggestion{ID: id, VideoID: "v1", Source: "javbus", Code: "DASD-626", Payload: payload}, nil
 		},
-		DeleteFunc: func(_ context.Context, id string) error { return nil },
-	}
-	actRepo := &mock.ActressRepository{
-		UpsertFunc:          func(_ context.Context, a *model.Actress) error { a.ID = "a1"; return nil },
-		AddVideoActressFunc: func(_ context.Context, v, a string) error { linkedActress = true; return nil },
-	}
-	tagRepo := &mock.TagRepository{
-		GetOrCreateByNameFunc: func(_ context.Context, name, cat string) (*model.Tag, error) {
-			return &model.Tag{ID: 7, Name: name, Category: cat}, nil
+		ApplyFunc: func(_ context.Context, app model.SuggestionApplication) error {
+			applied = &app
+			return nil
 		},
-		AddVideoTagFunc: func(_ context.Context, v string, id int) error { linkedTag = true; return nil },
 	}
-	svc := NewEnrichmentService(nil, videoRepo, actRepo, sugRepo, tagRepo, &mock.MinIOClient{}, &mock.Notifier{})
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
 	newTitle := "覆寫標題"
-	err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{Title: &newTitle})
-	if err != nil {
+
+	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{Title: &newTitle, Genres: []string{"單體", ""}}); err != nil {
 		t.Fatal(err)
 	}
-	if updated.Title != "覆寫標題" {
-		t.Errorf("title = %q, want 覆寫標題 (override applied)", updated.Title)
+	if applied == nil {
+		t.Fatal("Apply not called")
 	}
-	if !linkedActress || !linkedTag {
-		t.Errorf("actress linked=%v tag linked=%v", linkedActress, linkedTag)
+	if applied.SuggestionID != "s1" || applied.VideoID != "v1" {
+		t.Errorf("ids = %s/%s", applied.SuggestionID, applied.VideoID)
+	}
+	if m := applied.Metadata; m.Title != "覆寫標題" || m.Code != "DASD-626" || m.Maker != "M" || m.CoverKey != "covers/DASD-626-javbus.jpg" {
+		t.Errorf("metadata = %+v (title override must win)", m)
+	}
+	if len(applied.Genres) != 1 || applied.Genres[0] != "單體" {
+		t.Errorf("genres = %v, want the override without empty names", applied.Genres)
+	}
+	if len(applied.Performers) != 1 || applied.Performers[0] != (model.Actress{NameJa: "女優A", NameRomaji: "Joyu A", AvatarKey: "actresses/k.jpg"}) {
+		t.Errorf("performers = %+v", applied.Performers)
+	}
+}
+
+func TestAcceptSuggestion_ApplyFailurePropagates(t *testing.T) {
+	sugRepo := &mock.SuggestionRepository{
+		GetByIDFunc: func(_ context.Context, id string) (*model.MetadataSuggestion, error) {
+			return &model.MetadataSuggestion{ID: id, VideoID: "v1"}, nil
+		},
+		ApplyFunc: func(context.Context, model.SuggestionApplication) error { return model.ErrNotFound },
+	}
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{}); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
 

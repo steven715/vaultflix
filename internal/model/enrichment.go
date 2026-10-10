@@ -67,6 +67,17 @@ type MetadataSuggestion struct {
 	Status    string           `json:"status"`
 }
 
+// SuggestionApplication 是接受一筆 Metadata Suggestion 時要一次寫入的全部變更：
+// Video 的 Metadata、連結的 Performer、genre Tag，以及刪除該 Suggestion。
+// 全部成功或全部不生效。
+type SuggestionApplication struct {
+	SuggestionID string
+	VideoID      string
+	Metadata     VideoMetadataUpdate
+	Performers   []Actress // 只用 NameJa、NameRomaji、AvatarKey
+	Genres       []string
+}
+
 // VideoMetadataUpdate 是 accept 後要套到 videos 的 scalar 欄位。
 type VideoMetadataUpdate struct {
 	Code           string

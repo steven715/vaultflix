@@ -16,11 +16,15 @@ import (
 // GetByVideoID returns all suggestions for a video, ordered by fetched_at DESC.
 // GetByID returns model.ErrNotFound when the suggestion does not exist.
 // Delete removes a suggestion by ID.
+// Apply writes an accepted Suggestion atomically (see suggestion_apply_repo.go);
+// it returns model.ErrNotFound (wrapped) when the Suggestion or the Video does
+// not exist, and writes nothing on any error.
 type SuggestionRepository interface {
 	Create(ctx context.Context, s *model.MetadataSuggestion) error
 	GetByVideoID(ctx context.Context, videoID string) ([]model.MetadataSuggestion, error)
 	GetByID(ctx context.Context, id string) (*model.MetadataSuggestion, error)
 	Delete(ctx context.Context, id string) error
+	Apply(ctx context.Context, app model.SuggestionApplication) error
 }
 
 const queryCreateSuggestion = `

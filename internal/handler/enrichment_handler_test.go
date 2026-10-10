@@ -104,7 +104,7 @@ func TestEnrichmentHandler_AcceptSuggestion_HappyPath(t *testing.T) {
 		GetByIDFunc: func(ctx context.Context, id string) (*model.MetadataSuggestion, error) {
 			return sug, nil
 		},
-		DeleteFunc: func(ctx context.Context, id string) error {
+		ApplyFunc: func(ctx context.Context, app model.SuggestionApplication) error {
 			return nil
 		},
 	}
@@ -158,7 +158,7 @@ func TestEnrichmentHandler_AcceptSuggestion_EmptyBody_Returns200(t *testing.T) {
 		GetByIDFunc: func(ctx context.Context, id string) (*model.MetadataSuggestion, error) {
 			return sug, nil
 		},
-		DeleteFunc: func(ctx context.Context, id string) error {
+		ApplyFunc: func(ctx context.Context, app model.SuggestionApplication) error {
 			return nil
 		},
 	}

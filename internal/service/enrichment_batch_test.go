@@ -342,8 +342,8 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 
 	videos := []model.Video{{ID: "vid-auto-1", OriginalFilename: "DASD-626.mp4", DurationSeconds: 90}}
 
-	// Track which operations occurred.
-	var metadataUpdated, genreLinked, actressLinked bool
+	// The application auto-accept hands to the repository.
+	var applied *model.SuggestionApplication
 
 	videoRepo := &mock.VideoRepository{
 		ListByEnrichmentStatusFunc: func(_ context.Context, _ string) ([]model.Video, error) {
@@ -353,10 +353,6 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 			return &videos[0], nil
 		},
 		SetEnrichmentStatusFunc: func(_ context.Context, _, _ string) error { return nil },
-		UpdateMetadataFunc: func(_ context.Context, _ string, _ model.VideoMetadataUpdate) error {
-			metadataUpdated = true
-			return nil
-		},
 	}
 
 	scrapeResult := &model.EnrichedMetadata{
@@ -404,36 +400,10 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 			}
 			return nil, model.ErrNotFound
 		},
-		DeleteFunc: func(_ context.Context, id string) error {
+		ApplyFunc: func(_ context.Context, app model.SuggestionApplication) error {
 			sugMu.Lock()
 			defer sugMu.Unlock()
-			for i, s := range sugRows {
-				if s.ID == id {
-					sugRows = append(sugRows[:i], sugRows[i+1:]...)
-					return nil
-				}
-			}
-			return nil
-		},
-	}
-
-	actressRepo := &mock.ActressRepository{
-		UpsertFunc: func(_ context.Context, a *model.Actress) error {
-			a.ID = "actress-auto-1"
-			return nil
-		},
-		AddVideoActressFunc: func(_ context.Context, _, _ string) error {
-			actressLinked = true
-			return nil
-		},
-	}
-
-	tagRepo := &mock.TagRepository{
-		GetOrCreateByNameFunc: func(_ context.Context, name, _ string) (*model.Tag, error) {
-			return &model.Tag{ID: 1, Name: name}, nil
-		},
-		AddVideoTagFunc: func(_ context.Context, _ string, _ int) error {
-			genreLinked = true
+			applied = &app
 			return nil
 		},
 	}
@@ -441,9 +411,9 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{sc},
 		videoRepo,
-		actressRepo,
+		&mock.ActressRepository{},
 		sugRepo,
-		tagRepo,
+		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -463,14 +433,14 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 	if final.Failed != 0 {
 		t.Errorf("Failed = %d, want 0", final.Failed)
 	}
-	if !metadataUpdated {
-		t.Error("expected UpdateMetadata to be called (auto-accept should apply metadata)")
+	sugMu.Lock()
+	defer sugMu.Unlock()
+	if applied == nil {
+		t.Fatal("auto-accept did not apply the Suggestion")
 	}
-	if !genreLinked {
-		t.Error("expected genre tag to be linked (auto-accept should apply genres)")
-	}
-	if !actressLinked {
-		t.Error("expected actress to be linked (auto-accept should apply actresses)")
+	if applied.SuggestionID != "sug-auto-1" || applied.Metadata.Maker != "Mellow Moon" ||
+		len(applied.Genres) != 1 || len(applied.Performers) != 1 {
+		t.Errorf("applied = %+v, want the scraped Metadata, one genre and one Performer", applied)
 	}
 }
 
