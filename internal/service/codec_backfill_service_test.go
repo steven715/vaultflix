@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/steven/vaultflix/internal/mock"
 	"github.com/steven/vaultflix/internal/model"
 )
 
@@ -25,22 +26,13 @@ func (r *fakeCodecRepo) UpdateCodecs(_ context.Context, id, vc, ac string) error
 	return nil
 }
 
-// fakeSourceRepo satisfies the subset of MediaSourceRepository needed by CodecBackfillService.
-type fakeSourceRepo struct {
-	mount string
-}
-
-func (r *fakeSourceRepo) FindByID(_ context.Context, _ string) (*model.MediaSource, error) {
-	return &model.MediaSource{MountPath: r.mount}, nil
-}
-
 func TestCodecBackfill_Run_UpdatesMissing(t *testing.T) {
 	src := "s1"
 	fp := "movie.mkv"
 	repo := &fakeCodecRepo{
 		missing: []model.Video{{ID: "v1", OriginalFilename: "movie.mkv", SourceID: &src, FilePath: &fp}},
 	}
-	svc := NewCodecBackfillService(repo, &fakeSourceRepo{mount: "/mnt/host/D"})
+	svc := NewCodecBackfillService(repo, mock.ResolveUnder("/mnt/host/D"))
 	svc.probe = func(_ context.Context, _ string) (string, string, error) {
 		return "h264", "aac", nil
 	}
@@ -54,5 +46,29 @@ func TestCodecBackfill_Run_UpdatesMissing(t *testing.T) {
 	}
 	if repo.updated["v1"] != [2]string{"h264", "aac"} {
 		t.Errorf("v1 codecs = %v, want [h264 aac]", repo.updated["v1"])
+	}
+}
+
+func TestCodecBackfill_Run_SkipsDisabledMediaSource(t *testing.T) {
+	src, fp := "s1", "movie.mkv"
+	repo := &fakeCodecRepo{
+		missing: []model.Video{{ID: "v1", OriginalFilename: "movie.mkv", SourceID: &src, FilePath: &fp}},
+	}
+	svc := NewCodecBackfillService(repo, mock.ResolveFailing(model.ErrMediaSourceDisabled))
+	probed := false
+	svc.probe = func(_ context.Context, _ string) (string, string, error) {
+		probed = true
+		return "h264", "aac", nil
+	}
+
+	processed, failed, err := svc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if processed != 0 || failed != 0 {
+		t.Errorf("processed=%d failed=%d, want 0/0", processed, failed)
+	}
+	if probed {
+		t.Error("ffprobe ran for a video on a disabled Media Source")
 	}
 }

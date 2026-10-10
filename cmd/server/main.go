@@ -147,13 +147,13 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
-	backfillService := service.NewBackfillService(videoRepo, mediaSourceRepo, minioService, hub)
-	videoService := service.NewVideoService(videoRepo, mediaSourceRepo, tagRepo, minioService)
+	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
+	backfillService := service.NewBackfillService(videoRepo, mediaSourceService, minioService, hub)
+	videoService := service.NewVideoService(videoRepo, mediaSourceService, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
 
 	recService := service.NewRecommendationService(recRepo, videoRepo, minioService)
-	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 	watchSessionService := service.NewWatchSessionService(watchSessionRepo)
 	analyticsService := service.NewAnalyticsService(analyticsRepo)
 	playbackTelemetryService := service.NewPlaybackTelemetryService(playbackTelemetryRepo)
@@ -187,7 +187,7 @@ func main() {
 	segmentCache.StartSweeper(ctx)
 
 	keyframeIndexRepo := repository.NewKeyframeIndexRepository(pool)
-	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceRepo)
+	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceService)
 	hlsHandler := handler.NewHLSHandler(videoService, keyframeService, segmentCache)
 	keyframeBackfillHandler := handler.NewKeyframeBackfillHandler(keyframeService)
 	importService.SetKeyframeProber(keyframeService)
@@ -205,7 +205,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
-	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceRepo)
+	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceService)
 	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
 
 	wsHandler := handler.NewWSHandler(hub)

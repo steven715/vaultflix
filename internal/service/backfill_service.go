@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -22,10 +21,10 @@ import (
 // failed. Only one backfill job runs at a time per process; concurrent
 // StartAsync calls return model.ErrConflict.
 type BackfillService struct {
-	videoRepo  repository.VideoRepository
-	sourceRepo repository.MediaSourceRepository
-	minioSvc   MinIOClient
-	notifier   websocket.Notifier
+	videoRepo repository.VideoRepository
+	files     mediaFileResolver
+	minioSvc  MinIOClient
+	notifier  websocket.Notifier
 
 	// generatePreview is the preview-clip producer; overridable so tests can
 	// avoid shelling out to ffmpeg. Defaults to the package-level
@@ -39,13 +38,13 @@ type BackfillService struct {
 
 func NewBackfillService(
 	videoRepo repository.VideoRepository,
-	sourceRepo repository.MediaSourceRepository,
+	files mediaFileResolver,
 	minioSvc MinIOClient,
 	notifier websocket.Notifier,
 ) *BackfillService {
 	return &BackfillService{
 		videoRepo:       videoRepo,
-		sourceRepo:      sourceRepo,
+		files:           files,
 		minioSvc:        minioSvc,
 		notifier:        notifier,
 		generatePreview: generatePreviewClip,
@@ -191,67 +190,56 @@ func (s *BackfillService) run(job *model.BackfillJob, cancelCh chan struct{}, us
 		}
 
 		s.updateJob(job, func(j *model.BackfillJob) { j.CurrentVideoID = v.ID })
-		s.notifier.SendToUser(userID, &websocket.Message{
-			Type: websocket.TypeBackfillProgress,
-			Payload: model.BackfillProgress{
-				JobID:            jobID,
-				VideoID:          v.ID,
-				OriginalFilename: v.OriginalFilename,
-				Current:          i + 1,
-				Total:            total,
-				Status:           "processing",
-			},
-		})
+		progress := model.BackfillProgress{
+			JobID:            jobID,
+			VideoID:          v.ID,
+			OriginalFilename: v.OriginalFilename,
+			Current:          i + 1,
+			Total:            total,
+			Status:           "processing",
+		}
+		s.sendProgress(userID, progress)
 
 		processErr := s.processOneVideo(&v)
-
 		s.updateJob(job, func(j *model.BackfillJob) {
 			j.Processed = i + 1
-			if processErr != nil {
+			switch {
+			case errors.Is(processErr, model.ErrMediaSourceDisabled):
+				j.Skipped++
+			case processErr != nil:
 				j.Failed++
 				j.Errors = append(j.Errors, model.BackfillError{
 					VideoID:          v.ID,
 					OriginalFilename: v.OriginalFilename,
 					Error:            processErr.Error(),
 				})
-			} else {
+			default:
 				j.Succeeded++
 			}
 		})
 
-		if processErr != nil {
+		switch {
+		case errors.Is(processErr, model.ErrMediaSourceDisabled):
+			slog.Info("backfill preview skipped, media source disabled", "job_id", jobID, "video_id", v.ID)
+			progress.Status = "skipped"
+		case processErr != nil:
 			slog.Warn("backfill preview failed",
 				"job_id", jobID,
 				"video_id", v.ID,
 				"file", v.OriginalFilename,
 				"error", processErr,
 			)
-			s.notifier.SendToUser(userID, &websocket.Message{
-				Type: websocket.TypeBackfillProgress,
-				Payload: model.BackfillProgress{
-					JobID:            jobID,
-					VideoID:          v.ID,
-					OriginalFilename: v.OriginalFilename,
-					Current:          i + 1,
-					Total:            total,
-					Status:           "error",
-					Error:            processErr.Error(),
-				},
-			})
-		} else {
-			s.notifier.SendToUser(userID, &websocket.Message{
-				Type: websocket.TypeBackfillProgress,
-				Payload: model.BackfillProgress{
-					JobID:            jobID,
-					VideoID:          v.ID,
-					OriginalFilename: v.OriginalFilename,
-					Current:          i + 1,
-					Total:            total,
-					Status:           "success",
-				},
-			})
+			progress.Status = "error"
+			progress.Error = processErr.Error()
+		default:
+			progress.Status = "success"
 		}
+		s.sendProgress(userID, progress)
 	}
+}
+
+func (s *BackfillService) sendProgress(userID string, p model.BackfillProgress) {
+	s.notifier.SendToUser(userID, &websocket.Message{Type: websocket.TypeBackfillProgress, Payload: p})
 }
 
 // processOneVideo generates and uploads a preview for one video. Uses
@@ -262,14 +250,9 @@ func (s *BackfillService) processOneVideo(v *model.Video) error {
 		return errors.New("video has no source/file_path; legacy MinIO-stored videos cannot be backfilled")
 	}
 
-	source, err := s.sourceRepo.FindByID(context.Background(), *v.SourceID)
+	absPath, err := s.files.ResolveFile(context.Background(), *v.SourceID, *v.FilePath)
 	if err != nil {
-		return fmt.Errorf("look up media source %s: %w", *v.SourceID, err)
-	}
-
-	absPath := filepath.Join(source.MountPath, *v.FilePath)
-	if err := validateMountedFilePath(absPath); err != nil {
-		return fmt.Errorf("validate preview source path: %w", err)
+		return fmt.Errorf("resolve preview source file: %w", err)
 	}
 
 	previewPath, err := s.generatePreview(context.Background(), absPath, v.DurationSeconds)

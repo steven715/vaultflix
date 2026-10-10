@@ -68,11 +68,6 @@ func newTestBackfillService(t *testing.T, videos []model.Video, gen func(ctx con
 			return nil
 		},
 	}
-	sourceRepo := &mock.MediaSourceRepository{
-		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
-			return &model.MediaSource{ID: id, Label: "test", MountPath: "/mnt/host/test"}, nil
-		},
-	}
 	minioSvc := &mock.MinIOClient{
 		UploadPreviewFunc: func(ctx context.Context, key, path string) error {
 			uploadCount.Add(1)
@@ -81,7 +76,7 @@ func newTestBackfillService(t *testing.T, videos []model.Video, gen func(ctx con
 	}
 	notifier := &mock.Notifier{}
 
-	svc := NewBackfillService(videoRepo, sourceRepo, minioSvc, notifier)
+	svc := NewBackfillService(videoRepo, mock.ResolveUnder("/mnt/host/test"), minioSvc, notifier)
 	svc.generatePreview = gen
 	return svc, notifier, uploadCount, updateCount
 }
@@ -297,3 +292,25 @@ var _ interface {
 
 // silence unused import in test helpers if structure changes.
 var _ = sync.Mutex{}
+
+func TestBackfillService_StartAsync_SkipsDisabledMediaSource(t *testing.T) {
+	var genCalls atomic.Int32
+	gen := func(ctx context.Context, srcPath string, dur int) (string, error) {
+		genCalls.Add(1)
+		return stubPreviewGenerator(nil)(ctx, srcPath, dur)
+	}
+	svc, _, _, _ := newTestBackfillService(t, fakeVideos(2), gen)
+	svc.files = mock.ResolveFailing(model.ErrMediaSourceDisabled)
+
+	job, err := svc.StartAsync("user-1")
+	if err != nil {
+		t.Fatalf("StartAsync failed: %v", err)
+	}
+	final := waitForJobStatus(t, svc, job.ID, "completed")
+	if final.Skipped != 2 || final.Failed != 0 || final.Succeeded != 0 {
+		t.Errorf("skipped=%d failed=%d succeeded=%d, want 2/0/0", final.Skipped, final.Failed, final.Succeeded)
+	}
+	if genCalls.Load() != 0 {
+		t.Errorf("preview generator called %d times, want 0", genCalls.Load())
+	}
+}

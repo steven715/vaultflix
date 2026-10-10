@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
@@ -20,21 +20,16 @@ type codecVideoRepo interface {
 	UpdateCodecs(ctx context.Context, id, videoCodec, audioCodec string) error
 }
 
-// codecSourceRepo is the subset of MediaSourceRepository needed by CodecBackfillService.
-type codecSourceRepo interface {
-	FindByID(ctx context.Context, id string) (*model.MediaSource, error)
-}
-
 // CodecBackfillService backfills missing codecs for existing videos.
 type CodecBackfillService struct {
-	videoRepo  codecVideoRepo
-	sourceRepo codecSourceRepo
-	probe      codecProbeFunc
+	videoRepo codecVideoRepo
+	files     mediaFileResolver
+	probe     codecProbeFunc
 }
 
 // NewCodecBackfillService creates a CodecBackfillService with the real ffprobe probe.
-func NewCodecBackfillService(v codecVideoRepo, s codecSourceRepo) *CodecBackfillService {
-	return &CodecBackfillService{videoRepo: v, sourceRepo: s, probe: probeCodecs}
+func NewCodecBackfillService(v codecVideoRepo, files mediaFileResolver) *CodecBackfillService {
+	return &CodecBackfillService{videoRepo: v, files: files, probe: probeCodecs}
 }
 
 // Run backfills all videos missing codecs, returning processed and failed counts.
@@ -46,13 +41,16 @@ func (s *CodecBackfillService) Run(ctx context.Context) (int, int, error) {
 
 	processed, failed := 0, 0
 	for _, v := range videos {
-		source, err := s.sourceRepo.FindByID(ctx, *v.SourceID)
+		abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+		if errors.Is(err, model.ErrMediaSourceDisabled) {
+			slog.Info("codec backfill: skipped, media source disabled", "video_id", v.ID)
+			continue
+		}
 		if err != nil {
-			slog.Warn("backfill: source lookup failed", "video_id", v.ID, "error", err)
+			slog.Warn("codec backfill: resolve file failed", "video_id", v.ID, "error", err)
 			failed++
 			continue
 		}
-		abs := filepath.Clean(filepath.Join(source.MountPath, *v.FilePath))
 		vc, ac, err := s.probe(ctx, abs)
 		if err != nil {
 			slog.Warn("backfill: probe failed", "video_id", v.ID, "error", err)
