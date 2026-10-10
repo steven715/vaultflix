@@ -59,6 +59,8 @@
   - **觸發條件**（任一滿足即啟動）：pgsty fork 超過 6 個月無新 release／出現未修補的 CVE／fork 映像檔無法拉取
   - **範圍**：Go 端用標準 S3 API（minio-go），主要成本在 compose、bucket 初始化（`minio-init` 的 `mc mb`）、healthcheck、nginx `/minio/` 反代與 presigned URL 的重新驗證
 
+- [ ] **`videos.mime_type` 依 codec 重算全庫** — `mime_type` 在匯入時由 `MediaProcessor` 依容器 + codec 推得，但 codec Backfill 只補 codec、不改 MIME；在 codec 支援前匯入的舊 Video，MIME 仍是只看副檔名的舊值。**目前無影響**：唯一讀它的是直連 Stream 的 `http.ServeFile`（`video_handler.go`），而唯一的執行 stack 開著 X-Accel，Content-Type 由 nginx 依副檔名決定；前端只宣告此欄位、未使用。**觸發條件**：有任何正式環境路徑或前端開始讀 `mime_type`。屆時以 migration 或 Backfill 依 codec 重算**全庫**（不能只靠 codec Backfill，它只處理 codec 為空的 Video）。
+
 - [ ] **孤兒檔案清理排程 / MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 刪除為 best-effort（`internal/service/video_service.go` 三個刪除失敗只 log、仍回 nil），孤兒物件會靜默累積。需定期比對 MinIO 與 DB 清理不一致物件。**觸發條件**：實際觀察到孤兒物件累積，或 MinIO 刪除失敗重複發生。
 
 ---
