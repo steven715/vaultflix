@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/steven/vaultflix/internal/model"
@@ -23,9 +22,7 @@ import (
 type EnrichmentService struct {
 	scrapers       []scraper.MetadataScraper
 	videoRepo      repository.VideoRepository
-	actressRepo    repository.ActressRepository
 	suggestionRepo repository.SuggestionRepository
-	tagRepo        repository.TagRepository
 	minioSvc       MinIOClient
 	notifier       websocket.Notifier
 
@@ -43,18 +40,14 @@ type EnrichmentService struct {
 func NewEnrichmentService(
 	scrapers []scraper.MetadataScraper,
 	videoRepo repository.VideoRepository,
-	actressRepo repository.ActressRepository,
 	suggestionRepo repository.SuggestionRepository,
-	tagRepo repository.TagRepository,
 	minioSvc MinIOClient,
 	notifier websocket.Notifier,
 ) *EnrichmentService {
 	return &EnrichmentService{
 		scrapers:       scrapers,
 		videoRepo:      videoRepo,
-		actressRepo:    actressRepo,
 		suggestionRepo: suggestionRepo,
-		tagRepo:        tagRepo,
 		minioSvc:       minioSvc,
 		notifier:       notifier,
 		downloadImage:  defaultDownloadImage,
@@ -162,7 +155,7 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 			continue
 		}
 		if res.CoverURL != "" {
-			key := fmt.Sprintf("covers/%s-%s.jpg", code, source)
+			key := coverKey(code, source)
 			if coverKey, ok := s.downloadAndUploadCover(ctx, videoID, res.CoverURL, key); ok {
 				res.CoverKey = coverKey
 			}
@@ -170,10 +163,7 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 		for j := range res.Actresses {
 			a := &res.Actresses[j]
 			if a.AvatarURL != "" {
-				// Scoped by code+source like covers: a bare per-name key would
-				// overwrite the avatar an existing Performer already points to
-				// before this Suggestion is accepted (ADR-0010).
-				key := fmt.Sprintf("actresses/%s-%s-%s.jpg", sanitizeName(a.NameJa), code, source)
+				key := avatarKey(a.NameJa, code, source)
 				if avatarKey, ok := s.downloadAndUploadAvatar(ctx, videoID, a.AvatarURL, key); ok {
 					a.AvatarKey = avatarKey
 				}
@@ -249,12 +239,6 @@ func (s *EnrichmentService) handleSuccess(ctx context.Context, videoID, userID, 
 		"status", model.EnrichmentSuggested,
 	)
 	return nil
-}
-
-// sanitizeName replaces characters that are unsafe in object key paths with underscores.
-func sanitizeName(name string) string {
-	r := strings.NewReplacer("/", "_", " ", "_", ".", "_")
-	return r.Replace(name)
 }
 
 // defaultDownloadImage performs a real HTTP GET and writes the body to a temp file.

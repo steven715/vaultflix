@@ -46,11 +46,11 @@ func suggestionApplication(sug *model.MetadataSuggestion, override model.Suggest
 		VideoID:      sug.VideoID,
 		Metadata: model.VideoMetadataUpdate{
 			Code: p.Code, Title: title, ReleaseDate: p.ReleaseDate, RuntimeMinutes: p.RuntimeMinutes,
-			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: stagedKey(p.CoverKey, p.CoverURL, "covers/"),
+			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: stagedKey(p.CoverKey, p.CoverURL, coverKeyPrefix),
 		},
 	}
 	for _, a := range p.Actresses {
-		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: stagedKey(a.AvatarKey, a.AvatarURL, "actresses/")})
+		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: stagedKey(a.AvatarKey, a.AvatarURL, avatarKeyPrefix)})
 	}
 	for _, g := range genres {
 		if g != "" {

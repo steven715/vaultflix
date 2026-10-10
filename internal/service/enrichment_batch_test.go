@@ -75,9 +75,7 @@ func newTestEnrichmentService(
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{sc},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -191,9 +189,7 @@ func TestStartBatchAsync_DefaultStatusIsPending(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{sc},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)
@@ -242,9 +238,7 @@ func TestStartBatchAsync_PropagatesProgressAndCompleteMessages(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{sc},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		notifier,
 	)
@@ -411,9 +405,7 @@ func TestStartBatchAsync_AutoAcceptAppliesSuggestion(t *testing.T) {
 	svc := NewEnrichmentService(
 		[]scraper.MetadataScraper{sc},
 		videoRepo,
-		&mock.ActressRepository{},
 		sugRepo,
-		&mock.TagRepository{},
 		&mock.MinIOClient{},
 		&mock.Notifier{},
 	)

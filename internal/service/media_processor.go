@@ -70,7 +70,7 @@ func (p *MediaProcessor) MakeThumbnail(ctx context.Context, f model.MediaFile) (
 	}
 	defer removeTemp(tmp, f.VideoID)
 
-	key := fmt.Sprintf("thumbnails/%s.jpg", f.VideoID)
+	key := thumbnailKey(f.VideoID)
 	if err := p.minio.UploadThumbnail(ctx, key, tmp); err != nil {
 		return "", fmt.Errorf("failed to upload thumbnail of video %s: %w", f.VideoID, err)
 	}
@@ -86,7 +86,7 @@ func (p *MediaProcessor) MakePreview(ctx context.Context, f model.MediaFile) (st
 	}
 	defer removeTemp(tmp, f.VideoID)
 
-	key := fmt.Sprintf("previews/%s.mp4", f.VideoID)
+	key := previewKey(f.VideoID)
 	if err := p.minio.UploadPreview(ctx, key, tmp); err != nil {
 		return "", fmt.Errorf("failed to upload preview of video %s: %w", f.VideoID, err)
 	}
