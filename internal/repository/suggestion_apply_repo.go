@@ -51,6 +51,7 @@ func applySuggestion(ctx context.Context, tx pgx.Tx, app model.SuggestionApplica
 	}
 	for _, p := range app.Performers {
 		var id string
+		// queryUpsertActress returns (id, created_at); only the id is needed.
 		if err := tx.QueryRow(ctx, queryUpsertActress, p.NameJa, p.NameRomaji, p.AvatarKey).Scan(&id, new(any)); err != nil {
 			return fmt.Errorf("upsert performer %q: %w", p.NameJa, err)
 		}
@@ -75,7 +76,7 @@ func applySuggestion(ctx context.Context, tx pgx.Tx, app model.SuggestionApplica
 func execOne(ctx context.Context, tx pgx.Tx, query string, args ...any) error {
 	tag, err := tx.Exec(ctx, query, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return model.ErrNotFound

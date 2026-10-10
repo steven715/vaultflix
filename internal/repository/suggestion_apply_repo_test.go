@@ -109,14 +109,15 @@ func TestSuggestionRepository_Apply_GenreAlreadyOnVideo(t *testing.T) {
 	}
 }
 
-// A failure part-way through leaves nothing applied and the Suggestion pending.
+// A failure at the very last write leaves nothing applied and the Suggestion
+// pending: Metadata, the Performer and the first genre are all rolled back.
 func TestSuggestionRepository_Apply_RollsBackOnFailure(t *testing.T) {
 	f := newApplyFixture(t)
 	ctx := context.Background()
-	tooLong := f.tag + strings.Repeat("長", 300) // name_ja is VARCHAR(255)
+	tooLong := f.tag + strings.Repeat("長", 120) // tags.name is VARCHAR(100)
 
-	if err := f.suggestions.Apply(ctx, f.application([]string{f.tag + "-genre"}, tooLong)); err == nil {
-		t.Fatal("Apply succeeded with an over-long Performer name")
+	if err := f.suggestions.Apply(ctx, f.application([]string{f.tag + "-genre", tooLong}, f.tag+"-performer")); err == nil {
+		t.Fatal("Apply succeeded with an over-long genre name")
 	}
 
 	if v, _ := f.videos.GetByID(ctx, f.videoID); v.Maker != "Maker" {
@@ -124,6 +125,9 @@ func TestSuggestionRepository_Apply_RollsBackOnFailure(t *testing.T) {
 	}
 	if names := f.tagNames(t); len(names) != 0 {
 		t.Errorf("tags linked despite rollback: %v", names)
+	}
+	if performers, _ := f.performers.GetByVideoID(ctx, f.videoID); len(performers) != 0 {
+		t.Errorf("performers linked despite rollback: %+v", performers)
 	}
 	if _, err := f.suggestions.GetByID(ctx, f.suggestion); err != nil {
 		t.Errorf("Suggestion gone despite rollback: %v", err)

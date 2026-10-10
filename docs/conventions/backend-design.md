@@ -98,6 +98,6 @@ abs := filepath.Join(source.MountPath, *v.FilePath)
 
 一個使用者動作要寫多張表、且「寫一半」會留下錯誤狀態時（例如接受 Metadata Suggestion：Video Metadata、Performer、genre Tag、刪除 Suggestion），整組寫入放進**一個 repository 方法、一個交易**（`pool.Begin` → 全部成功才 `Commit`，任何錯誤 `Rollback`），不要在 service 裡逐一呼叫多個 repository。
 
-- 交易內沿用同 package 既有的 query 常數，不另寫一份 SQL
-- 「把已存在的關聯再連一次」是合法操作時，關聯表用 `ON CONFLICT DO NOTHING`，不要回 `ErrConflict` 讓整個動作失敗
+- 交易內沿用同 package 既有的 query 常數；只有語意真的不同時才另寫一句（例如下一條）
+- 「把已存在的關聯再連一次」是合法操作時，用 `ON CONFLICT DO NOTHING` 的版本（如 `queryLinkGenreTag`），不要回 `ErrConflict` 讓整個動作失敗；使用者手動加 Tag 時「重複」仍是錯誤，所以 `AddVideoTag` 維持 `ErrConflict`
 - 以 `openTestPool`（ADR-0012）對真 Postgres 測：成功路徑 + 中途失敗後**什麼都沒寫入**

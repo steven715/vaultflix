@@ -159,6 +159,24 @@ func TestAcceptSuggestion_AppliesEverythingInOneCall(t *testing.T) {
 	}
 }
 
+func TestAcceptSuggestion_UsesPayloadGenresWithoutOverride(t *testing.T) {
+	var applied model.SuggestionApplication
+	sugRepo := &mock.SuggestionRepository{
+		GetByIDFunc: func(_ context.Context, id string) (*model.MetadataSuggestion, error) {
+			return &model.MetadataSuggestion{ID: id, VideoID: "v1", Payload: model.EnrichedMetadata{Title: "T", Genres: []string{"巨乳", "單體"}}}, nil
+		},
+		ApplyFunc: func(_ context.Context, app model.SuggestionApplication) error { applied = app; return nil },
+	}
+	svc := NewEnrichmentService(nil, &mock.VideoRepository{}, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+
+	if err := svc.AcceptSuggestion(context.Background(), "v1", "s1", model.SuggestionOverride{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.Genres) != 2 || applied.Metadata.Title != "T" {
+		t.Errorf("applied = %+v, want the payload's title and both genres", applied)
+	}
+}
+
 func TestAcceptSuggestion_ApplyFailurePropagates(t *testing.T) {
 	sugRepo := &mock.SuggestionRepository{
 		GetByIDFunc: func(_ context.Context, id string) (*model.MetadataSuggestion, error) {
