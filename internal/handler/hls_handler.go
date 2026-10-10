@@ -103,7 +103,7 @@ func writeHLSError(c *gin.Context, videoID string, err error) {
 		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{Error: "stream_not_ready", Message: "preparing stream for first playback, please retry"})
 	case errors.Is(err, model.ErrMediaSourceDisabled):
 		// 409，不是 503：播放器把 503 一律當「準備中」輪詢重試（hlsError.ts）。
-		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_unavailable", Message: "media source disabled"})
+		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_unavailable", Message: "media source is currently disabled"})
 	case errors.Is(err, model.ErrNotRemux):
 		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video is not served over HLS"})
 	case errors.Is(err, model.ErrNotFound), errors.Is(err, model.ErrPathNotExist):
