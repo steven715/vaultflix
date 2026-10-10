@@ -17,7 +17,10 @@ import (
 // service that hands a Video file to ffmpeg/ffprobe or a byte server depends
 // on this instead of joining mount_path itself.
 type mediaFileResolver interface {
-	// ResolveFile follows MediaSourceService.ResolveFile's error contract.
+	// ResolveFile returns model.ErrNotFound (wrapped) for an unknown Media
+	// Source, model.ErrMediaSourceDisabled (wrapped) for a disabled one,
+	// model.ErrPathNotAllowed (wrapped) when the path escapes the mount or the
+	// mount prefix, and model.ErrPathNotExist (wrapped) when the file is absent.
 	ResolveFile(ctx context.Context, sourceID, filePath string) (string, error)
 }
 
@@ -26,8 +29,8 @@ type mediaFileResolver interface {
 // a path on disk: callers never join mount_path themselves.
 //
 // Returns model.ErrNotFound (wrapped) if the Media Source does not exist;
-// model.ErrMediaSourceDisabled if it is disabled;
-// model.ErrPathNotAllowed if the result escapes the Media Source mount or the
+// model.ErrMediaSourceDisabled (wrapped) if it is disabled;
+// model.ErrPathNotAllowed (wrapped) if the result escapes the Media Source mount or the
 // allowed mount prefix;
 // model.ErrPathNotExist (wrapped) if the file is absent from disk;
 // a wrapped error otherwise.
@@ -37,13 +40,13 @@ func (s *MediaSourceService) ResolveFile(ctx context.Context, sourceID, filePath
 		return "", fmt.Errorf("failed to get media source %s: %w", sourceID, err)
 	}
 	if !source.Enabled {
-		return "", model.ErrMediaSourceDisabled
+		return "", fmt.Errorf("media source %s: %w", sourceID, model.ErrMediaSourceDisabled)
 	}
 	abs := filepath.Join(source.MountPath, filePath)
 	// 兩層檢查：必須落在該 Media Source 的 mount 內，且 mount 本身必須在
 	// 注入的 mountPrefix 內（防 DB 中的 mount_path 本身有問題）。
 	if !isWithin(abs, source.MountPath) || !isWithin(abs, s.mountPrefix) {
-		return "", model.ErrPathNotAllowed
+		return "", fmt.Errorf("file %q in media source %s: %w", filePath, sourceID, model.ErrPathNotAllowed)
 	}
 	if _, err := os.Stat(abs); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

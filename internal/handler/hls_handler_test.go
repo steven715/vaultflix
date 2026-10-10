@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,6 +214,23 @@ func TestHLSPlaylist_VideoNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHLSPlaylist_MediaSourceDisabled(t *testing.T) {
+	err := fmt.Errorf("failed to resolve file of video v1: %w", model.ErrMediaSourceDisabled)
+	h := NewHLSHandler(&fakeResolver{err: err}, &fakeKeyframes{}, &fakeEnsurer{})
+	r := newHLSTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos/v1/hls/index.m3u8", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "source_unavailable") {
+		t.Errorf("body = %s, want error source_unavailable", w.Body.String())
 	}
 }
 
