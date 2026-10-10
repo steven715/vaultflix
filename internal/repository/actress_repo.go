@@ -11,6 +11,7 @@ import (
 
 // ActressRepository defines the contract for actress data access.
 // Upsert inserts or updates an actress by name_ja and backfills ID and CreatedAt.
+// An empty AvatarKey keeps the avatar_key the Performer already has.
 // AddVideoActress links an actress to a video; silently ignores duplicate links.
 // GetByVideoID returns all actresses for a video, ordered by name_ja.
 type ActressRepository interface {
@@ -24,7 +25,8 @@ const queryUpsertActress = `
     VALUES ($1, $2, $3)
     ON CONFLICT (name_ja) DO UPDATE
         SET name_romaji = EXCLUDED.name_romaji,
-            avatar_key  = EXCLUDED.avatar_key
+            -- an empty key means no Avatar was staged: keep the Performer's
+            avatar_key  = COALESCE(NULLIF(EXCLUDED.avatar_key, ''), actresses.avatar_key)
     RETURNING id, created_at
 `
 

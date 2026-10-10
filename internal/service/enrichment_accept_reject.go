@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 )
@@ -45,11 +46,11 @@ func suggestionApplication(sug *model.MetadataSuggestion, override model.Suggest
 		VideoID:      sug.VideoID,
 		Metadata: model.VideoMetadataUpdate{
 			Code: p.Code, Title: title, ReleaseDate: p.ReleaseDate, RuntimeMinutes: p.RuntimeMinutes,
-			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: p.CoverURL,
+			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: stagedKey(p.CoverKey, p.CoverURL, "covers/"),
 		},
 	}
 	for _, a := range p.Actresses {
-		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: a.AvatarURL})
+		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: stagedKey(a.AvatarKey, a.AvatarURL, "actresses/")})
 	}
 	for _, g := range genres {
 		if g != "" {
@@ -57,6 +58,23 @@ func suggestionApplication(sug *model.MetadataSuggestion, override model.Suggest
 		}
 	}
 	return app
+}
+
+// stagedKey returns the object key staged for an image, or "" when none was
+// uploaded. Suggestions staged before cover_key/avatar_key existed stored the
+// key in the URL field on success (and the source URL on failure), so a URL
+// field holding a value with this kind's key prefix ("covers/", "actresses/")
+// is still read as a key; anything else there — a URL in any case, a data:
+// URI, a relative path — never is. Remove the fallback once no such
+// Suggestions remain pending (tracked in ROADMAP).
+func stagedKey(key, sourceURL, keyPrefix string) string {
+	if key != "" {
+		return key
+	}
+	if strings.HasPrefix(sourceURL, keyPrefix) {
+		return sourceURL
+	}
+	return ""
 }
 
 // autoAcceptHighestPriority accepts the suggestion from the highest-priority

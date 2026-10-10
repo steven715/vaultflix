@@ -37,14 +37,16 @@ type EnrichedMetadata struct {
 	Series         string        `json:"series"`
 	Genres         []string      `json:"genres"`
 	Actresses      []ActressMeta `json:"actresses"`
-	CoverURL       string        `json:"cover_url"`
+	CoverURL       string        `json:"cover_url"`           // 來源站的原始網址，一律不當成 object key
+	CoverKey       string        `json:"cover_key,omitempty"` // staging 時上傳成功的 Cover object key；失敗則留空
 }
 
 // ActressMeta 是 scrape 出的女優資料（尚未落表）。
 type ActressMeta struct {
 	NameJa     string `json:"name_ja"`
 	NameRomaji string `json:"name_romaji"`
-	AvatarURL  string `json:"avatar_url"`
+	AvatarURL  string `json:"avatar_url"`           // 來源站的原始網址，一律不當成 object key
+	AvatarKey  string `json:"avatar_key,omitempty"` // staging 時上傳成功的 Avatar object key；失敗則留空
 }
 
 // Actress 對應 actresses 表。

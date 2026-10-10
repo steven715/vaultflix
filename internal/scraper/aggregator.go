@@ -41,7 +41,8 @@ func MergeByPriority(results []SourceResult) *model.EnrichedMetadata {
 			out.Series = d.Series
 		}
 		if out.CoverURL == "" {
-			out.CoverURL = d.CoverURL
+			// URL and staged key describe the same image; take them together.
+			out.CoverURL, out.CoverKey = d.CoverURL, d.CoverKey
 		}
 		if len(out.Genres) == 0 {
 			out.Genres = d.Genres

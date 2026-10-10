@@ -146,3 +146,47 @@ func TestSuggestionRepository_Apply_SuggestionMissing(t *testing.T) {
 		t.Errorf("Metadata applied for a missing Suggestion: %+v", v)
 	}
 }
+
+// A Suggestion without a staged image must not erase the image a Video or
+// Performer already has; a staged one replaces it.
+func TestSuggestionRepository_Apply_ImageKeys(t *testing.T) {
+	tests := []struct {
+		name                  string
+		coverKey, avatarKey   string
+		wantCover, wantAvatar string
+	}{
+		{"nothing staged keeps existing images", "", "", "covers/ABC-123-javbus.jpg", "actresses/old.jpg"},
+		{"staged images replace them", "covers/new.jpg", "actresses/new.jpg", "covers/new.jpg", "actresses/new.jpg"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newApplyFixture(t)
+			ctx := context.Background()
+			name := f.tag + "-performer"
+			if err := f.performers.Upsert(ctx, &model.Actress{NameJa: name, AvatarKey: "actresses/old.jpg"}); err != nil {
+				t.Fatalf("seed performer: %v", err)
+			}
+			app := f.application(nil)
+			app.Metadata.CoverKey = tt.coverKey
+			app.Performers = []model.Actress{{NameJa: name, AvatarKey: tt.avatarKey}}
+
+			if err := f.suggestions.Apply(ctx, app); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			v, err := f.videos.GetByID(ctx, f.videoID)
+			if err != nil {
+				t.Fatalf("GetByID: %v", err)
+			}
+			if v.CoverKey != tt.wantCover {
+				t.Errorf("cover_key = %q, want %q", v.CoverKey, tt.wantCover)
+			}
+			ps, err := f.performers.GetByVideoID(ctx, f.videoID)
+			if err != nil {
+				t.Fatalf("performers: %v", err)
+			}
+			if len(ps) != 1 || ps[0].AvatarKey != tt.wantAvatar {
+				t.Errorf("performers = %+v, want avatar %q", ps, tt.wantAvatar)
+			}
+		})
+	}
+}

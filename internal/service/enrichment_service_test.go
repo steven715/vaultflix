@@ -123,8 +123,9 @@ func TestAcceptSuggestion_AppliesEverythingInOneCall(t *testing.T) {
 	payload := model.EnrichedMetadata{
 		Code: "DASD-626", Title: "原標題", Maker: "M",
 		Genres:    []string{"巨乳"},
-		Actresses: []model.ActressMeta{{NameJa: "女優A", NameRomaji: "Joyu A", AvatarURL: "actresses/k.jpg"}},
-		CoverURL:  "covers/DASD-626-javbus.jpg",
+		Actresses: []model.ActressMeta{{NameJa: "女優A", NameRomaji: "Joyu A", AvatarURL: "https://x/a.jpg", AvatarKey: "actresses/k.jpg"}},
+		CoverURL:  "https://x/cover.jpg",
+		CoverKey:  "covers/DASD-626-javbus.jpg",
 	}
 	var applied *model.SuggestionApplication
 	sugRepo := &mock.SuggestionRepository{
@@ -265,6 +266,7 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 				Code:      code,
 				Title:     "T",
 				Actresses: []model.ActressMeta{{NameJa: "山田 花子", AvatarURL: "https://example.com/a.jpg"}},
+				CoverURL:  "https://example.com/cover.jpg",
 			}, nil
 		},
 	}
@@ -285,6 +287,7 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 				avatarKeys = append(avatarKeys, key)
 				return nil
 			},
+			UploadCoverFunc: func(context.Context, string, string) error { return nil },
 		},
 		&mock.Notifier{},
 	)
@@ -305,8 +308,12 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 	if len(avatarKeys) != 1 || avatarKeys[0] != want {
 		t.Fatalf("avatar keys = %v, want [%s]", avatarKeys, want)
 	}
-	if got := staged.Payload.Actresses[0].AvatarURL; got != want {
-		t.Errorf("staged avatar key = %q, want %q", got, want)
+	a := staged.Payload.Actresses[0]
+	if a.AvatarKey != want || a.AvatarURL != "https://example.com/a.jpg" {
+		t.Errorf("staged avatar key %q / url %q, want key %q and the source URL kept", a.AvatarKey, a.AvatarURL, want)
+	}
+	if p := staged.Payload; p.CoverKey != "covers/DASD-626-javbus.jpg" || p.CoverURL != "https://example.com/cover.jpg" {
+		t.Errorf("staged cover key %q / url %q", p.CoverKey, p.CoverURL)
 	}
 }
 
