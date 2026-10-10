@@ -177,6 +177,26 @@ OOR_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     "${API_BASE}/api/videos/${MKV_ID}/hls/seg99999.ts?token=${STREAM_TOKEN}")
 assert_eq "超出範圍 segment 回 404" "404" "$OOR_CODE"
 
+# =====================================================================
+# [10] viewer 也能播 remux（以前 viewer 打 HLS 路由一律 403）
+# =====================================================================
+echo ""
+bold "[10] viewer 用自己的 stream token 播 remux：playlist 與 segment 都回 200"
+
+register_user "test_hls_viewer" "test1234" >/dev/null 2>&1 || true
+VIEWER_TOKEN=$(login_as "test_hls_viewer" "test1234")
+VIEWER_STREAM_TOKEN=$(curl -s "${API_BASE}/api/videos/${MKV_ID}/stream-token" \
+    -H "Authorization: Bearer ${VIEWER_TOKEN}" | jq -r '.data.token // empty')
+assert_not_empty "viewer 取得 stream token" "$VIEWER_STREAM_TOKEN"
+
+VIEWER_PLAYLIST_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${API_BASE}/api/videos/${MKV_ID}/hls/index.m3u8?token=${VIEWER_STREAM_TOKEN}")
+assert_eq "viewer 取得 playlist 回 200" "200" "$VIEWER_PLAYLIST_CODE"
+
+VIEWER_SEG_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${API_BASE}/api/videos/${MKV_ID}/hls/${FIRST_SEG_NAME}?token=${VIEWER_STREAM_TOKEN}")
+assert_eq "viewer 取得 segment 回 200" "200" "$VIEWER_SEG_CODE"
+
 # ---------------------------------------------------------------------------
 print_summary "HLS remux 播放鏈"
 exit $?
