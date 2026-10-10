@@ -40,13 +40,19 @@ func (b *CodeBackfill) List(ctx context.Context) ([]model.Video, error) {
 // ProcessOne seeds v's Code and enrichment status. A file name without a Code
 // is a successful outcome (status no_code), not a failure.
 func (b *CodeBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
-	code, ok := avid.ExtractCode(v.OriginalFilename)
-	status := model.EnrichmentPending
-	if !ok {
-		code, status = "", model.EnrichmentNoCode
-	}
+	code, status := codeFromFilename(v.OriginalFilename)
 	if err := b.videoRepo.SeedCode(ctx, v.ID, code, status); err != nil {
 		return fmt.Errorf("failed to seed code of video %s: %w", v.ID, err)
 	}
 	return nil
+}
+
+// codeFromFilename parses a Code from a file name. A Code makes the Video
+// pending for Enrichment; without one it is no_code. Import and CodeBackfill
+// share this rule.
+func codeFromFilename(filename string) (code, status string) {
+	if code, ok := avid.ExtractCode(filename); ok {
+		return code, model.EnrichmentPending
+	}
+	return "", model.EnrichmentNoCode
 }

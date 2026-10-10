@@ -656,7 +656,7 @@ func TestStream_XAccelRedirect(t *testing.T) {
 
 func TestImportHandler_Async_Conflict(t *testing.T) {
 	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
 	importSvc.LockForTest() // simulate a running job
 
 	mediaSourceRepo := &mock.MediaSourceRepository{
@@ -688,7 +688,7 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 
 func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
 	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
 
 	r := gin.New()
 	h := NewVideoHandler(importSvc, nil, nil, "")
@@ -715,7 +715,7 @@ func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
 
 func TestGetImportJobHandler_NotFound(t *testing.T) {
 	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, &mock.MinIOClient{}, notifier)
+	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
 
 	r := gin.New()
 	h := NewVideoHandler(importSvc, nil, nil, "")

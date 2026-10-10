@@ -51,3 +51,24 @@ func TestCodeBackfill_ProcessOne_SeedsCodeFromFilename(t *testing.T) {
 		})
 	}
 }
+
+func TestCodeFromFilename(t *testing.T) {
+	cases := []struct {
+		filename   string
+		wantCode   string
+		wantStatus string
+	}{
+		{"DASD-626.mp4", "DASD-626", model.EnrichmentPending},
+		{"FC2-PPV-1234567.mkv", "FC2-PPV-1234567", model.EnrichmentPending},
+		{"家庭聚會.mp4", "", model.EnrichmentNoCode},
+		{"random_home_video.mp4", "", model.EnrichmentNoCode},
+	}
+	for _, tc := range cases {
+		t.Run(tc.filename, func(t *testing.T) {
+			code, status := codeFromFilename(tc.filename)
+			if code != tc.wantCode || status != tc.wantStatus {
+				t.Errorf("got (%q, %q), want (%q, %q)", code, status, tc.wantCode, tc.wantStatus)
+			}
+		})
+	}
+}

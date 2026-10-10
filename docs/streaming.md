@@ -114,6 +114,10 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 
 > 動 `internal/streaming/` 或任何呼叫 ffmpeg/ffprobe 的程式前先讀。
 
+### 從檔案推導資料一律經 `MediaProcessor`
+
+Media Info、Thumbnail、Preview 的產生只能呼叫 `service.MediaProcessor`（`ProbeMediaInfo` / `MakeThumbnail` / `MakePreview`），不在 Import 或 Backfill 裡直接 `exec` ffprobe/ffmpeg。它擁有 ffprobe 解析、MIME 規則、暫存檔清理、object key 與上傳；唯一碰 `exec` 的是它的 `mediaTool` port 的正式 adapter（`ffmpegTool`），測試換成 `mock.MediaTool`。串流專用的 keyframe 探測與 HLS Segment 切割留在 `internal/streaming`，各有自己的 seam。
+
 ### Input seek 落點不可信，邊界在輸出端裁定
 
 ffmpeg CLI 的 input seek（`-ss` 在 `-i` 前）落點**不保證**等於請求的時間：對含 B-frames 的輸入（`video_delay > 0`）它會把目標自動減 3/23s（dts heuristic），在 mkv 上因此系統性落到前一個 keyframe。這不是浮點精度問題，加 epsilon 無效。
