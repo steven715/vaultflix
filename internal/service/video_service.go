@@ -195,27 +195,6 @@ func (s *VideoService) Update(ctx context.Context, id string, input model.Update
 	return video, nil
 }
 
-// ResolveDiskPath returns the validated absolute on-disk path of a video.
-//
-// Returns model.ErrNotFound if the video is missing or has no disk source;
-// otherwise follows MediaSourceService.ResolveFile's error contract
-// (ErrMediaSourceDisabled, ErrPathNotAllowed, ErrPathNotExist).
-func (s *VideoService) ResolveDiskPath(ctx context.Context, videoID string) (string, error) {
-	video, err := s.videoRepo.GetByID(ctx, videoID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get video %s: %w", videoID, err)
-	}
-	if video.SourceID == nil || video.FilePath == nil {
-		return "", model.ErrNotFound
-	}
-
-	path, err := s.files.ResolveFile(ctx, *video.SourceID, *video.FilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve file of video %s: %w", videoID, err)
-	}
-	return path, nil
-}
-
 func (s *VideoService) Delete(ctx context.Context, id string) error {
 	video, err := s.videoRepo.GetByID(ctx, id)
 	if err != nil {

@@ -27,6 +27,12 @@
 | **remux** | 編碼相容、容器不相容（MKV/AVI） | keyframe 索引 → VOD manifest → 逐段 on-demand `ffmpeg -c copy` 切 mpegts（`internal/streaming/`）→ hls.js (MSE) 播放 | hls.js config（可控） |
 | **transcode** | 編碼不相容（mpeg4/wmv/hevc…） | 尚未實作（Phase 2），前端顯示占位訊息 | —— |
 
+remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`），只開兩個呼叫：
+`Manifest(videoID)` 與 `Segment(videoID, name)`。它在 seam 後面依序做：`VideoService.ResolvePlayback`
+（路徑 + Play Mode，非 remux 回 `ErrNotRemux`）→ `KeyframeService.Lookup`（Keyframe Index 不存在時觸發背景探測
+並回 `ErrStreamPreparing`）→ 檔名文法（`streaming.SegmentName` / `ParseSegmentName` 成對）與範圍檢查 →
+`SegmentCache.EnsureSegment`。HLS handler 只做 token 改寫與 error → HTTP 對映。
+
 片庫分布（2026-08-24 快照）：direct 285 部 / 521GB、remux 124 部 / 200GB、transcode 89 部 / 143GB。
 
 ## 3. 緩衝策略：執行在客戶端，策略是業務參數
