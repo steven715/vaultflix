@@ -16,16 +16,24 @@ type keyframeVideoRepo interface {
 	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
+// keyframeIndexer builds a Video's Keyframe Index (implemented by
+// *KeyframeService).
+type keyframeIndexer interface {
+	// IndexFile probes absPath and stores the Keyframe Index of videoID, or
+	// returns a wrapped probe/store error.
+	IndexFile(ctx context.Context, videoID, absPath string) error
+}
+
 // KeyframeBackfill is the Keyframe Index kind of Backfill: it probes every
 // remux Video that has no Keyframe Index yet. BackfillRunner drives it.
 type KeyframeBackfill struct {
-	keyframes *KeyframeService
+	keyframes keyframeIndexer
 	videoRepo keyframeVideoRepo
 	files     mediaFileResolver
 }
 
 // NewKeyframeBackfill creates a KeyframeBackfill that stores through keyframes.
-func NewKeyframeBackfill(keyframes *KeyframeService, videoRepo keyframeVideoRepo, files mediaFileResolver) *KeyframeBackfill {
+func NewKeyframeBackfill(keyframes keyframeIndexer, videoRepo keyframeVideoRepo, files mediaFileResolver) *KeyframeBackfill {
 	return &KeyframeBackfill{keyframes: keyframes, videoRepo: videoRepo, files: files}
 }
 
@@ -50,14 +58,13 @@ func (b *KeyframeBackfill) List(ctx context.Context) ([]model.Video, error) {
 // Returns model.ErrMediaSourceDisabled (wrapped) when v's Media Source is
 // disabled.
 func (b *KeyframeBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
-	// ListKeyframeCandidates guarantees source_id/file_path are non-NULL.
-	abs, err := b.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+	abs, err := resolveVideoFile(ctx, b.files, v)
 	if err != nil {
-		return fmt.Errorf("failed to resolve file of video %s: %w", v.ID, err)
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	if err := b.keyframes.probeAndStore(ctx, v.ID, abs); err != nil {
+	if err := b.keyframes.IndexFile(ctx, v.ID, abs); err != nil {
 		return fmt.Errorf("failed to build keyframe index of video %s: %w", v.ID, err)
 	}
 	return nil

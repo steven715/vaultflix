@@ -77,14 +77,15 @@ func (s *KeyframeService) TriggerProbe(videoID, absPath string) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
-		if err := s.probeAndStore(ctx, videoID, absPath); err != nil {
+		if err := s.IndexFile(ctx, videoID, absPath); err != nil {
 			slog.Warn("keyframe probe failed", "video_id", videoID, "error", err)
 		}
 	}()
 }
 
-// probeAndStore 探測、分組並寫入邊界表。
-func (s *KeyframeService) probeAndStore(ctx context.Context, videoID, absPath string) error {
+// IndexFile 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
+// 失敗回 wrapped error(探測、空表或寫入失敗)。
+func (s *KeyframeService) IndexFile(ctx context.Context, videoID, absPath string) error {
 	start := time.Now()
 	kf, total, err := s.probe(ctx, absPath)
 	if err != nil {

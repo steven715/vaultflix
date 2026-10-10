@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"context"
+
 	"github.com/steven/vaultflix/internal/model"
 )
 
@@ -14,7 +16,7 @@ type BackfillJobs struct {
 	StartedKind model.BackfillKind
 }
 
-func (m *BackfillJobs) Start(kind model.BackfillKind, userID string) (*model.BackfillJob, error) {
+func (m *BackfillJobs) Start(ctx context.Context, kind model.BackfillKind, userID string) (*model.BackfillJob, error) {
 	m.StartedKind = kind
 	if m.StartErr != nil {
 		return nil, m.StartErr
@@ -22,6 +24,6 @@ func (m *BackfillJobs) Start(kind model.BackfillKind, userID string) (*model.Bac
 	return &model.BackfillJob{ID: "job-1", Kind: kind, Status: "running"}, nil
 }
 
-func (m *BackfillJobs) Active() *model.BackfillJob { return m.Job }
+func (m *BackfillJobs) Active(ctx context.Context) *model.BackfillJob { return m.Job }
 
-func (m *BackfillJobs) Cancel(jobID string) error { return m.CancelErr }
+func (m *BackfillJobs) Cancel(ctx context.Context, jobID string) error { return m.CancelErr }

@@ -12,27 +12,27 @@ import (
 // codecProbeFunc returns (videoCodec, audioCodec, error).
 type codecProbeFunc func(ctx context.Context, absPath string) (string, string, error)
 
-// codecVideoRepo is the subset of VideoRepository needed by CodecBackfillService.
+// codecVideoRepo is the subset of VideoRepository needed by CodecBackfill.
 type codecVideoRepo interface {
 	ListMissingCodecs(ctx context.Context, limit int) ([]model.Video, error)
 	UpdateCodecs(ctx context.Context, id, videoCodec, audioCodec string) error
 }
 
-// CodecBackfillService is the codec kind of Backfill: it probes the video and
+// CodecBackfill is the codec kind of Backfill: it probes the video and
 // audio codec of every Video whose Media Info lacks them. BackfillRunner drives it.
-type CodecBackfillService struct {
+type CodecBackfill struct {
 	videoRepo codecVideoRepo
 	files     mediaFileResolver
 	probe     codecProbeFunc
 }
 
-// NewCodecBackfillService creates a CodecBackfillService with the real ffprobe probe.
-func NewCodecBackfillService(v codecVideoRepo, files mediaFileResolver) *CodecBackfillService {
-	return &CodecBackfillService{videoRepo: v, files: files, probe: probeCodecs}
+// NewCodecBackfill creates a CodecBackfill with the real ffprobe probe.
+func NewCodecBackfill(v codecVideoRepo, files mediaFileResolver) *CodecBackfill {
+	return &CodecBackfill{videoRepo: v, files: files, probe: probeCodecs}
 }
 
 // List returns the Videos whose codecs are unknown.
-func (s *CodecBackfillService) List(ctx context.Context) ([]model.Video, error) {
+func (s *CodecBackfill) List(ctx context.Context) ([]model.Video, error) {
 	videos, err := s.videoRepo.ListMissingCodecs(ctx, 10000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list videos missing codecs: %w", err)
@@ -42,11 +42,10 @@ func (s *CodecBackfillService) List(ctx context.Context) ([]model.Video, error) 
 
 // ProcessOne probes and stores the codecs of v. Returns
 // model.ErrMediaSourceDisabled (wrapped) when v's Media Source is disabled.
-func (s *CodecBackfillService) ProcessOne(ctx context.Context, v *model.Video) error {
-	// ListMissingCodecs guarantees source_id/file_path are non-NULL.
-	abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+func (s *CodecBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
+	abs, err := resolveVideoFile(ctx, s.files, v)
 	if err != nil {
-		return fmt.Errorf("failed to resolve file of video %s: %w", v.ID, err)
+		return err
 	}
 	vc, ac, err := s.probe(ctx, abs)
 	if err != nil {

@@ -35,6 +35,7 @@ export default function BackfillProgress({ jobId, kind, onComplete }: BackfillPr
   const [total, setTotal] = useState(0)
   const [succeeded, setSucceeded] = useState(0)
   const [failed, setFailed] = useState(0)
+  const [skipped, setSkipped] = useState(0)
   const [errors, setErrors] = useState<BackfillError[]>([])
   const [finalResult, setFinalResult] = useState<BackfillJob | null>(null)
   const [showErrors, setShowErrors] = useState(false)
@@ -52,6 +53,7 @@ export default function BackfillProgress({ jobId, kind, onComplete }: BackfillPr
       setTotal(job.total)
       setSucceeded(job.succeeded)
       setFailed(job.failed)
+      setSkipped(job.skipped)
       setErrors(job.errors || [])
       if (job.status !== 'running') {
         setRunState(job.status)
@@ -77,6 +79,7 @@ export default function BackfillProgress({ jobId, kind, onComplete }: BackfillPr
           setProcessed(p.current)
           setTotal(p.total)
           if (p.status === 'success') setSucceeded((prev) => prev + 1)
+          if (p.status === 'skipped') setSkipped((prev) => prev + 1)
           if (p.status === 'error') {
             setFailed((prev) => prev + 1)
             setErrors((prev) => [...prev, {
@@ -161,10 +164,14 @@ export default function BackfillProgress({ jobId, kind, onComplete }: BackfillPr
           {currentFile && (
             <p className="text-xs text-faint mb-2 truncate">處理中: {currentFile}</p>
           )}
-          <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="grid grid-cols-3 gap-2 text-sm">
             <div className="text-center">
               <div className="text-live font-medium font-mono">{succeeded}</div>
               <div className="text-faint text-xs">成功</div>
+            </div>
+            <div className="text-center">
+              <div className="text-muted font-medium font-mono">{skipped}</div>
+              <div className="text-faint text-xs">略過</div>
             </div>
             <div className="text-center">
               <div className="text-fav font-medium font-mono">{failed}</div>
@@ -183,6 +190,7 @@ export default function BackfillProgress({ jobId, kind, onComplete }: BackfillPr
             <div className="flex justify-between text-cream"><span>掃描影片</span><span className="font-mono">{finalResult?.total ?? total}</span></div>
             <div className="flex justify-between text-cream"><span>已處理</span><span className="font-mono">{finalResult?.processed ?? processed}</span></div>
             <div className="flex justify-between text-live"><span>成功補齊</span><span className="font-mono">{finalResult?.succeeded ?? succeeded}</span></div>
+            <div className="flex justify-between text-muted"><span>略過</span><span className="font-mono">{finalResult?.skipped ?? skipped}</span></div>
             <div className="flex justify-between text-fav"><span>失敗</span><span className="font-mono">{finalResult?.failed ?? failed}</span></div>
           </div>
           {finalErrors.length > 0 && (

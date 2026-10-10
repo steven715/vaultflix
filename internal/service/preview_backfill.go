@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/steven/vaultflix/internal/model"
@@ -40,28 +40,27 @@ func (p *PreviewBackfill) List(ctx context.Context) ([]model.Video, error) {
 // ProcessOne cuts, uploads and records the Preview of v. Returns
 // model.ErrMediaSourceDisabled (wrapped) when v's Media Source is disabled.
 func (p *PreviewBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
-	if v.SourceID == nil || v.FilePath == nil {
-		return errors.New("video has no source/file_path; legacy MinIO-stored videos cannot be backfilled")
-	}
-
-	absPath, err := p.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+	absPath, err := resolveVideoFile(ctx, p.files, v)
 	if err != nil {
-		return fmt.Errorf("resolve preview source file: %w", err)
+		return err
 	}
 
 	previewPath, err := p.generatePreview(ctx, absPath, v.DurationSeconds)
 	if err != nil {
-		return fmt.Errorf("generate preview clip: %w", err)
+		return fmt.Errorf("failed to cut preview of video %s: %w", v.ID, err)
 	}
-	defer os.Remove(previewPath)
+	defer func() {
+		if err := os.Remove(previewPath); err != nil {
+			slog.Warn("failed to remove temp preview clip", "video_id", v.ID, "path", previewPath, "error", err)
+		}
+	}()
 
 	objectKey := fmt.Sprintf("previews/%s.mp4", v.ID)
 	if err := p.minioSvc.UploadPreview(ctx, objectKey, previewPath); err != nil {
-		return fmt.Errorf("upload preview: %w", err)
+		return fmt.Errorf("failed to upload preview of video %s: %w", v.ID, err)
 	}
-
 	if err := p.videoRepo.UpdatePreviewKey(ctx, v.ID, objectKey); err != nil {
-		return fmt.Errorf("update preview key: %w", err)
+		return fmt.Errorf("failed to record preview key of video %s: %w", v.ID, err)
 	}
 	return nil
 }

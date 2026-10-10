@@ -29,7 +29,7 @@ func (r *fakeCodecRepo) UpdateCodecs(_ context.Context, id, vc, ac string) error
 
 func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 	repo := &fakeCodecRepo{}
-	svc := NewCodecBackfillService(repo, mock.ResolveUnder("/mnt/host/D"))
+	svc := NewCodecBackfill(repo, mock.ResolveUnder("/mnt/host/D"))
 	var probed string
 	svc.probe = func(_ context.Context, absPath string) (string, string, error) {
 		probed = absPath
@@ -49,7 +49,7 @@ func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 }
 
 func TestCodecBackfill_ProcessOne_DisabledMediaSourceSkipsProbe(t *testing.T) {
-	svc := NewCodecBackfillService(&fakeCodecRepo{}, mock.ResolveFailing(model.ErrMediaSourceDisabled))
+	svc := NewCodecBackfill(&fakeCodecRepo{}, mock.ResolveFailing(model.ErrMediaSourceDisabled))
 	svc.probe = func(_ context.Context, _ string) (string, string, error) {
 		t.Error("ffprobe ran for a Video on a disabled Media Source")
 		return "", "", nil
@@ -59,5 +59,13 @@ func TestCodecBackfill_ProcessOne_DisabledMediaSourceSkipsProbe(t *testing.T) {
 	err := svc.ProcessOne(context.Background(), &model.Video{ID: "v1", SourceID: &src, FilePath: &fp})
 	if !errors.Is(err, model.ErrMediaSourceDisabled) {
 		t.Errorf("err = %v, want ErrMediaSourceDisabled", err)
+	}
+}
+
+// A Video without a Media Source must fail, not panic the runner's goroutine.
+func TestCodecBackfill_ProcessOne_VideoWithoutMediaSourceFails(t *testing.T) {
+	svc := NewCodecBackfill(&fakeCodecRepo{}, mock.ResolveUnder("/mnt/host/D"))
+	if err := svc.ProcessOne(context.Background(), &model.Video{ID: "legacy"}); err == nil {
+		t.Error("ProcessOne succeeded for a Video without a Media Source")
 	}
 }

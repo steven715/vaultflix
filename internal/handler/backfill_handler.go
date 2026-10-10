@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,11 +15,11 @@ import (
 type backfillJobs interface {
 	// Start returns model.ErrInvalidInput (wrapped) for an unknown kind and
 	// model.ErrConflict while any Backfill Job is running.
-	Start(kind model.BackfillKind, userID string) (*model.BackfillJob, error)
+	Start(ctx context.Context, kind model.BackfillKind, userID string) (*model.BackfillJob, error)
 	// Active returns the latest job, or nil when none has started.
-	Active() *model.BackfillJob
+	Active(ctx context.Context) *model.BackfillJob
 	// Cancel returns model.ErrNotFound when jobID is not the latest job.
-	Cancel(jobID string) error
+	Cancel(ctx context.Context, jobID string) error
 }
 
 // BackfillHandler exposes admin endpoints to run Backfill Jobs of every kind.
@@ -46,7 +47,7 @@ func (h *BackfillHandler) Start(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "kind is required"})
 		return
 	}
-	job, err := h.jobs.Start(req.Kind, c.GetString("user_id"))
+	job, err := h.jobs.Start(c.Request.Context(), req.Kind, c.GetString("user_id"))
 	if err != nil {
 		if errors.Is(err, model.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "unknown backfill kind"})
@@ -74,7 +75,7 @@ func (h *BackfillHandler) Start(c *gin.Context) {
 // Responds with {"data": null} when no backfill has ever started in this
 // process.
 func (h *BackfillHandler) GetActive(c *gin.Context) {
-	job := h.jobs.Active()
+	job := h.jobs.Active(c.Request.Context())
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
 }
 
@@ -83,7 +84,7 @@ func (h *BackfillHandler) GetActive(c *gin.Context) {
 // known job.
 func (h *BackfillHandler) Cancel(c *gin.Context) {
 	jobID := c.Param("id")
-	if err := h.jobs.Cancel(jobID); err != nil {
+	if err := h.jobs.Cancel(c.Request.Context(), jobID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
 				Error:   "not_found",

@@ -19,6 +19,7 @@ import (
 	"github.com/steven/vaultflix/internal/config"
 	"github.com/steven/vaultflix/internal/handler"
 	"github.com/steven/vaultflix/internal/middleware"
+	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
@@ -203,12 +204,12 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
-	backfillRunner := service.NewBackfillRunner(hub, service.BackfillTasks{
-		Preview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, minioService),
-		Codec:    service.NewCodecBackfillService(videoRepo, mediaSourceService),
-		Keyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
-		Code:     service.NewCodeBackfill(videoRepo),
-	}.ByKind())
+	backfillRunner := service.NewBackfillRunner(hub, map[model.BackfillKind]service.BackfillTask{
+		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, minioService),
+		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService),
+		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
+		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
+	})
 	backfillHandler := handler.NewBackfillHandler(backfillRunner)
 
 	wsHandler := handler.NewWSHandler(hub)
