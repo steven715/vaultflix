@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,30 +25,22 @@ type keyframeIndexRepo interface {
 	Upsert(ctx context.Context, idx *model.KeyframeIndex) error
 }
 
-// keyframeVideoRepo 是 KeyframeService 所需的 video 查詢子集。
-type keyframeVideoRepo interface {
-	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
-}
-
-// KeyframeService 提供邊界表查詢、非同步探測(去重)與 backfill。
+// KeyframeService 提供 Keyframe Index 查詢與非同步探測(去重);
+// 對既有 Video 的批次補算見 KeyframeBackfill。
 type KeyframeService struct {
-	repo      keyframeIndexRepo
-	videoRepo keyframeVideoRepo
-	files     mediaFileResolver
-	probe     keyframeProbeFunc
+	repo  keyframeIndexRepo
+	probe keyframeProbeFunc
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
 }
 
 // NewKeyframeService 建立 KeyframeService(使用真實 ffprobe 探測)。
-func NewKeyframeService(repo keyframeIndexRepo, videoRepo keyframeVideoRepo, files mediaFileResolver) *KeyframeService {
+func NewKeyframeService(repo keyframeIndexRepo) *KeyframeService {
 	return &KeyframeService{
-		repo:      repo,
-		videoRepo: videoRepo,
-		files:     files,
-		probe:     streaming.ProbeKeyframes,
-		inflight:  make(map[string]struct{}),
+		repo:     repo,
+		probe:    streaming.ProbeKeyframes,
+		inflight: make(map[string]struct{}),
 	}
 }
 
@@ -114,41 +104,4 @@ func (s *KeyframeService) probeAndStore(ctx context.Context, videoID, absPath st
 		"elapsed_ms", time.Since(start).Milliseconds(),
 	)
 	return nil
-}
-
-// RunBackfill 掃描缺邊界表的 remux 影片並循序探測,回傳 (processed, failed)。
-func (s *KeyframeService) RunBackfill(ctx context.Context) (int, int, error) {
-	videos, err := s.videoRepo.ListKeyframeCandidates(ctx, 10000)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list keyframe candidates: %w", err)
-	}
-	processed, failed := 0, 0
-	for _, v := range videos {
-		if ctx.Err() != nil {
-			break
-		}
-		container := strings.TrimPrefix(filepath.Ext(v.OriginalFilename), ".")
-		if ClassifyPlayMode(container, v.VideoCodec, v.AudioCodec) != model.PlayModeRemux {
-			continue
-		}
-		// ListKeyframeCandidates 的 SQL 已保證 source_id/file_path 非 NULL,故可安全解參考。
-		abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
-		if errors.Is(err, model.ErrMediaSourceDisabled) {
-			slog.Info("keyframe backfill: skipped, media source disabled", "video_id", v.ID)
-			continue
-		}
-		if err != nil {
-			slog.Warn("keyframe backfill: resolve file failed", "video_id", v.ID, "error", err)
-			failed++
-			continue
-		}
-		if err := s.probeAndStore(ctx, v.ID, abs); err != nil {
-			slog.Warn("keyframe backfill: probe failed", "video_id", v.ID, "error", err)
-			failed++
-			continue
-		}
-		processed++
-	}
-	slog.Info("keyframe backfill complete", "processed", processed, "failed", failed)
-	return processed, failed, nil
 }

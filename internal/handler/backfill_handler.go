@@ -8,26 +8,50 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/steven/vaultflix/internal/model"
-	"github.com/steven/vaultflix/internal/service"
 )
 
-// BackfillHandler exposes admin endpoints to manage the preview-backfill job.
+// backfillJobs runs Backfill Jobs (implemented by *service.BackfillRunner).
+type backfillJobs interface {
+	// Start returns model.ErrInvalidInput (wrapped) for an unknown kind and
+	// model.ErrConflict while any Backfill Job is running.
+	Start(kind model.BackfillKind, userID string) (*model.BackfillJob, error)
+	// Active returns the latest job, or nil when none has started.
+	Active() *model.BackfillJob
+	// Cancel returns model.ErrNotFound when jobID is not the latest job.
+	Cancel(jobID string) error
+}
+
+// BackfillHandler exposes admin endpoints to run Backfill Jobs of every kind.
 // All routes live under /api/admin/* and are gated to the admin role by the
 // Casbin RBAC middleware in cmd/server/main.go.
 type BackfillHandler struct {
-	svc *service.BackfillService
+	jobs backfillJobs
 }
 
-func NewBackfillHandler(svc *service.BackfillService) *BackfillHandler {
-	return &BackfillHandler{svc: svc}
+func NewBackfillHandler(jobs backfillJobs) *BackfillHandler {
+	return &BackfillHandler{jobs: jobs}
 }
 
-// Start launches a new backfill job. Returns 202 Accepted with the job id on
-// success, or 409 Conflict when another backfill is already running.
+type startBackfillRequest struct {
+	Kind model.BackfillKind `json:"kind" binding:"required"`
+}
+
+// Start launches a Backfill Job of the requested kind. Returns 202 Accepted
+// with the job id, 400 for a missing or unknown kind, or 409 Conflict when
+// another Backfill Job is already running.
+// POST /api/admin/backfill-jobs {"kind": "preview"|"codec"|"keyframe"|"code"}
 func (h *BackfillHandler) Start(c *gin.Context) {
-	userID := c.GetString("user_id")
-	job, err := h.svc.StartAsync(userID)
+	var req startBackfillRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "kind is required"})
+		return
+	}
+	job, err := h.jobs.Start(req.Kind, c.GetString("user_id"))
 	if err != nil {
+		if errors.Is(err, model.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "unknown backfill kind"})
+			return
+		}
 		if errors.Is(err, model.ErrConflict) {
 			c.JSON(http.StatusConflict, model.ErrorResponse{
 				Error:   "backfill_in_progress",
@@ -35,22 +59,22 @@ func (h *BackfillHandler) Start(c *gin.Context) {
 			})
 			return
 		}
-		slog.Error("failed to start backfill", "error", err)
+		slog.Error("failed to start backfill", "error", err, "kind", req.Kind)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "internal_error",
 			Message: "啟動 backfill 失敗",
 		})
 		return
 	}
-	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: gin.H{"job_id": job.ID}})
+	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: gin.H{"job_id": job.ID, "kind": job.Kind}})
 }
 
-// GetActive returns the most recent backfill job (running or finished). The
+// GetActive returns the most recent Backfill Job of any kind (running or finished). The
 // frontend uses this to restore the progress panel after a page reload.
 // Responds with {"data": null} when no backfill has ever started in this
 // process.
 func (h *BackfillHandler) GetActive(c *gin.Context) {
-	job := h.svc.GetActiveJob()
+	job := h.jobs.Active()
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
 }
 
@@ -59,7 +83,7 @@ func (h *BackfillHandler) GetActive(c *gin.Context) {
 // known job.
 func (h *BackfillHandler) Cancel(c *gin.Context) {
 	jobID := c.Param("id")
-	if err := h.svc.Cancel(jobID); err != nil {
+	if err := h.jobs.Cancel(jobID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
 				Error:   "not_found",

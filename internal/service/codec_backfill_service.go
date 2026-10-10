@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"strings"
 
@@ -20,7 +18,8 @@ type codecVideoRepo interface {
 	UpdateCodecs(ctx context.Context, id, videoCodec, audioCodec string) error
 }
 
-// CodecBackfillService backfills missing codecs for existing videos.
+// CodecBackfillService is the codec kind of Backfill: it probes the video and
+// audio codec of every Video whose Media Info lacks them. BackfillRunner drives it.
 type CodecBackfillService struct {
 	videoRepo codecVideoRepo
 	files     mediaFileResolver
@@ -32,40 +31,31 @@ func NewCodecBackfillService(v codecVideoRepo, files mediaFileResolver) *CodecBa
 	return &CodecBackfillService{videoRepo: v, files: files, probe: probeCodecs}
 }
 
-// Run backfills all videos missing codecs, returning processed and failed counts.
-func (s *CodecBackfillService) Run(ctx context.Context) (int, int, error) {
+// List returns the Videos whose codecs are unknown.
+func (s *CodecBackfillService) List(ctx context.Context) ([]model.Video, error) {
 	videos, err := s.videoRepo.ListMissingCodecs(ctx, 10000)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list videos missing codecs: %w", err)
+		return nil, fmt.Errorf("failed to list videos missing codecs: %w", err)
 	}
+	return videos, nil
+}
 
-	processed, failed := 0, 0
-	for _, v := range videos {
-		abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
-		if errors.Is(err, model.ErrMediaSourceDisabled) {
-			slog.Info("codec backfill: skipped, media source disabled", "video_id", v.ID)
-			continue
-		}
-		if err != nil {
-			slog.Warn("codec backfill: resolve file failed", "video_id", v.ID, "error", err)
-			failed++
-			continue
-		}
-		vc, ac, err := s.probe(ctx, abs)
-		if err != nil {
-			slog.Warn("backfill: probe failed", "video_id", v.ID, "error", err)
-			failed++
-			continue
-		}
-		if err := s.videoRepo.UpdateCodecs(ctx, v.ID, vc, ac); err != nil {
-			slog.Warn("backfill: update failed", "video_id", v.ID, "error", err)
-			failed++
-			continue
-		}
-		processed++
+// ProcessOne probes and stores the codecs of v. Returns
+// model.ErrMediaSourceDisabled (wrapped) when v's Media Source is disabled.
+func (s *CodecBackfillService) ProcessOne(ctx context.Context, v *model.Video) error {
+	// ListMissingCodecs guarantees source_id/file_path are non-NULL.
+	abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve file of video %s: %w", v.ID, err)
 	}
-	slog.Info("codec backfill complete", "processed", processed, "failed", failed)
-	return processed, failed, nil
+	vc, ac, err := s.probe(ctx, abs)
+	if err != nil {
+		return fmt.Errorf("failed to probe codecs of video %s: %w", v.ID, err)
+	}
+	if err := s.videoRepo.UpdateCodecs(ctx, v.ID, vc, ac); err != nil {
+		return fmt.Errorf("failed to store codecs of video %s: %w", v.ID, err)
+	}
+	return nil
 }
 
 func probeCodecs(ctx context.Context, absPath string) (string, string, error) {

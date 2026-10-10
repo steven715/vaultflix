@@ -17,12 +17,20 @@ vi.mock('../../contexts/ToastContext', () => ({
 
 describe('BackfillProgress', () => {
   it('renders progress panel and uses no gray/indigo classes', async () => {
-    const { container } = render(<BackfillProgress jobId="j1" />)
+    const { container } = render(<BackfillProgress jobId="j1" kind="preview" />)
 
     await waitFor(() => {
       expect(container.textContent).toContain('補齊預覽中')
     })
 
     expect(container.innerHTML).not.toMatch(/(?:bg|text)-(?:gray|indigo)-/)
+  })
+
+  it('names the kind of Backfill that is running', async () => {
+    const { container } = render(<BackfillProgress jobId="j1" kind="keyframe" />)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('補齊 Keyframe Index 中')
+    })
   })
 })

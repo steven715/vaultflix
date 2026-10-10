@@ -1,14 +1,5 @@
 import client from './client'
-import type {
-  BackfillJob,
-  ImportJob,
-  MediaSource,
-  Video,
-  Tag,
-  DailyRecommendation,
-  RecommendationItem,
-  User,
-} from '../types'
+import type { BackfillJob, ImportJob, MediaSource, Video, Tag, DailyRecommendation, RecommendationItem, User, BackfillKind } from '../types'
 
 export async function importVideos(sourceID: string): Promise<ImportJob> {
   const res = await client.post<ImportJob>('/videos/import', { source_id: sourceID })
@@ -25,8 +16,8 @@ export async function getImportJob(id: string): Promise<ImportJob> {
   return res.data
 }
 
-export async function startBackfill(): Promise<{ job_id: string }> {
-  const res = await client.post<{ job_id: string }>('/admin/videos/backfill-previews')
+export async function startBackfill(kind: BackfillKind): Promise<{ job_id: string; kind: BackfillKind }> {
+  const res = await client.post<{ job_id: string; kind: BackfillKind }>('/admin/backfill-jobs', { kind })
   return res.data
 }
 

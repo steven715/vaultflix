@@ -3,8 +3,8 @@
 # Integration test: enrichment backfill with NULL code (regression for 500 bug)
 # 測試項目:
 #   1. 直接插入一筆 code=NULL 的 legacy 影片 (模擬 migration-013 前的舊資料)
-#   2. 呼叫 POST /api/enrich-jobs/backfill-codes 確認 HTTP 200 (不再 500)
-#   3. 確認 seeded >= 1 (legacy 行被 seed 成 pending 並寫入 code)
+#   2. 啟動 Code Backfill Job (POST /api/admin/backfill-jobs {"kind":"code"}) 回 202
+#   3. 輪詢到 job completed，且 succeeded >= 1、failed = 0 (legacy 行被 seed 成 pending 並寫入 code)
 #   4. GET /api/videos/:id 帶出已存的 code（EnrichVideo 依賴此路徑）
 # =============================================================================
 
@@ -61,26 +61,39 @@ CODE_VAL=$(psql "$DB_DSN" -t -A -c \
 assert_eq "legacy 影片 code IS NULL" "t" "$CODE_VAL"
 
 # ---------------------------------------------------------------------------
-# 2. 呼叫 backfill-codes，應回 HTTP 200（修復前會 500）
+# 2. 啟動 Code Backfill Job，應回 HTTP 202（修復前同步版會 500）
 # ---------------------------------------------------------------------------
 echo ""
-bold "[2] POST /api/enrich-jobs/backfill-codes 回 200"
+bold "[2] POST /api/admin/backfill-jobs {kind: code} 回 202"
 
 BACKFILL_HTTP=$(curl -s -o /tmp/backfill_body.json -w "%{http_code}" -X POST \
-    "${API_BASE}/api/enrich-jobs/backfill-codes" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}")
-BACKFILL_BODY=$(cat /tmp/backfill_body.json)
+    "${API_BASE}/api/admin/backfill-jobs" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"kind":"code"}')
+JOB_ID=$(jq -r '.data.job_id // empty' /tmp/backfill_body.json)
 
-assert_eq "backfill-codes 回 200 (not 500)" "200" "$BACKFILL_HTTP"
+assert_eq "code backfill 回 202" "202" "$BACKFILL_HTTP"
 
 # ---------------------------------------------------------------------------
-# 3. 回應 JSON 含 seeded >= 1
+# 3. 輪詢 job 直到結束：completed、succeeded >= 1、failed = 0
 # ---------------------------------------------------------------------------
 echo ""
-bold "[3] 回應 seeded >= 1"
+bold "[3] Code Backfill Job completed 且 succeeded >= 1"
 
-SEEDED=$(echo "$BACKFILL_BODY" | jq -r '.data.seeded // .seeded // 0' 2>/dev/null || echo "0")
-assert_gte "seeded >= 1" 1 "$SEEDED"
+JOB_STATUS="running"
+for _ in $(seq 1 50); do
+    ACTIVE=$(curl -s "${API_BASE}/api/admin/backfill-jobs/active" -H "Authorization: Bearer ${ADMIN_TOKEN}")
+    if [ "$(echo "$ACTIVE" | jq -r '.data.id // empty')" = "$JOB_ID" ]; then
+        JOB_STATUS=$(echo "$ACTIVE" | jq -r '.data.status')
+        [ "$JOB_STATUS" != "running" ] && break
+    fi
+    sleep 0.2
+done
+
+assert_eq "code backfill job completed" "completed" "$JOB_STATUS"
+assert_gte "succeeded >= 1" 1 "$(echo "$ACTIVE" | jq -r '.data.succeeded // 0')"
+assert_eq "failed = 0" "0" "$(echo "$ACTIVE" | jq -r '.data.failed // -1')"
 
 # ---------------------------------------------------------------------------
 # 4. DB 中 legacy 影片 code 已被寫入 DASD-700，enrichment_status 變 pending

@@ -5,17 +5,27 @@ import { useToast } from '../../contexts/ToastContext'
 import type {
   BackfillError,
   BackfillJob,
+  BackfillKind,
   BackfillProgress as BackfillProgressType,
 } from '../../types'
+
+// 英文詞條前後留空白，讓「補齊{label}中」中英混排時仍有間隔。
+const kindLabel: Record<BackfillKind, string> = {
+  preview: '預覽',
+  codec: '編碼資訊',
+  keyframe: ' Keyframe Index ',
+  code: '番號',
+}
 
 type RunState = 'running' | 'completed' | 'failed' | 'cancelled'
 
 interface BackfillProgressProps {
   jobId: string
+  kind: BackfillKind
   onComplete?: () => void
 }
 
-export default function BackfillProgress({ jobId, onComplete }: BackfillProgressProps) {
+export default function BackfillProgress({ jobId, kind, onComplete }: BackfillProgressProps) {
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
 
@@ -125,7 +135,9 @@ export default function BackfillProgress({ jobId, onComplete }: BackfillProgress
       {runState === 'running' && (
         <>
           <div className="flex justify-between items-start mb-3">
-            <div className="text-sm text-accent font-medium">補齊預覽中</div>
+            <div className="text-sm text-accent font-medium">
+              {`補齊${kindLabel[kind]}中`}
+            </div>
             <button
               onClick={handleCancel}
               disabled={cancelling}
