@@ -87,3 +87,9 @@ useEffect(() => {
 // ❌ 錯誤：B → 返回片庫 會回到上一個播放頁 A，不是片庫
 <button onClick={() => navigate(-1)}>返回片庫</button>
 ```
+
+## 在 effect 裡掛的 listener：先等 effect 跑完再 fire 事件
+
+Stream Source 與 Playback Session 是在 `useEffect` 裡對 `<video>` 掛 listener（不是 JSX 的 `onXxx` prop）。`findByText` 等到畫面出現時，passive effect **不一定已經執行**，此時 `fireEvent.timeUpdate` 等事件沒有人在聽——測試會隨機失敗（實測約 1/8）。
+
+規則：fire 媒體事件前，先用一個「effect 已執行」的可觀察證據等待，例如 `await waitFor(() => expect(getStreamToken).toHaveBeenCalled())`（兩個 hook 在同一次 commit 啟動）。PlayerPage 測試的 `sessionListening()` 就是這個用途。

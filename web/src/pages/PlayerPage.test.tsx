@@ -55,6 +55,14 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+// The Playback Session (and the Stream Source) attach their media listeners in
+// an effect, which may not have run yet when the first render's text appears.
+// Both start in the same commit, so a stream-token request proves the session
+// is listening — wait for that before firing media events.
+async function sessionListening() {
+  await waitFor(() => expect(videosApi.getStreamToken).toHaveBeenCalled())
+}
+
 describe('PlayerPage play_mode', () => {
   beforeEach(() => {
     vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })
@@ -134,6 +142,7 @@ describe('PlayerPage play_mode', () => {
 
     const { container, unmount } = renderPlayer()
     await screen.findByText('T')
+    await sessionListening()
     const el = container.querySelector('video') as HTMLVideoElement
     expect(el).toBeTruthy()
 
@@ -177,6 +186,7 @@ describe('PlayerPage play_mode', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
     const { container, unmount } = renderPlayer()
     await screen.findByText('T')
+    await sessionListening()
     const el = container.querySelector('video') as HTMLVideoElement
     let ct = 0
     Object.defineProperty(el, 'currentTime', { get: () => ct, set: (v: number) => { ct = v }, configurable: true })
