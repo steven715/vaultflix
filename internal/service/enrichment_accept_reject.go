@@ -8,10 +8,12 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// AcceptSuggestion applies the staged suggestion's metadata to the video,
-// upserts actresses and links them, gets-or-creates genre tags and links them,
-// then deletes the suggestion. override fields take precedence over suggestion payload.
-// Returns model.ErrNotFound if the suggestion does not exist or belongs to a different video.
+// AcceptSuggestion applies a staged Metadata Suggestion to its Video in one
+// transaction: the Video's Metadata, its Performers, its genre Tags, and the
+// Suggestion's deletion all happen or none do. override fields take precedence
+// over the Suggestion's payload.
+// Returns model.ErrNotFound (wrapped) if the Suggestion does not exist or
+// belongs to a different Video.
 func (s *EnrichmentService) AcceptSuggestion(ctx context.Context, videoID, suggestionID string, override model.SuggestionOverride) error {
 	sug, err := s.suggestionRepo.GetByID(ctx, suggestionID)
 	if err != nil {
@@ -20,82 +22,41 @@ func (s *EnrichmentService) AcceptSuggestion(ctx context.Context, videoID, sugge
 	if sug.VideoID != videoID {
 		return fmt.Errorf("suggestion %s does not belong to video %s: %w", suggestionID, videoID, model.ErrNotFound)
 	}
+	if err := s.suggestionRepo.Apply(ctx, suggestionApplication(sug, override)); err != nil {
+		return fmt.Errorf("accept suggestion %s: %w", suggestionID, err)
+	}
+	return nil
+}
 
-	title := sug.Payload.Title
+// suggestionApplication turns a Suggestion plus the user's overrides into the
+// writes accepting it makes.
+func suggestionApplication(sug *model.MetadataSuggestion, override model.SuggestionOverride) model.SuggestionApplication {
+	p := sug.Payload
+	title := p.Title
 	if override.Title != nil {
 		title = *override.Title
 	}
-	genres := sug.Payload.Genres
+	genres := p.Genres
 	if override.Genres != nil {
 		genres = override.Genres
 	}
-
-	if err := s.applyVideoMetadata(ctx, videoID, title, sug.Payload); err != nil {
-		return err
+	app := model.SuggestionApplication{
+		SuggestionID: sug.ID,
+		VideoID:      sug.VideoID,
+		Metadata: model.VideoMetadataUpdate{
+			Code: p.Code, Title: title, ReleaseDate: p.ReleaseDate, RuntimeMinutes: p.RuntimeMinutes,
+			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: p.CoverURL,
+		},
 	}
-	if err := s.linkActresses(ctx, videoID, sug.Payload.Actresses); err != nil {
-		return err
+	for _, a := range p.Actresses {
+		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: a.AvatarURL})
 	}
-	if err := s.linkGenres(ctx, videoID, genres); err != nil {
-		return err
-	}
-	if err := s.suggestionRepo.Delete(ctx, suggestionID); err != nil {
-		return fmt.Errorf("delete suggestion %s: %w", suggestionID, err)
-	}
-	return nil
-}
-
-// applyVideoMetadata updates the video's scalar metadata fields.
-func (s *EnrichmentService) applyVideoMetadata(ctx context.Context, videoID, title string, payload model.EnrichedMetadata) error {
-	upd := model.VideoMetadataUpdate{
-		Code:           payload.Code,
-		Title:          title,
-		ReleaseDate:    payload.ReleaseDate,
-		RuntimeMinutes: payload.RuntimeMinutes,
-		Maker:          payload.Maker,
-		Label:          payload.Label,
-		Series:         payload.Series,
-		CoverKey:       payload.CoverURL,
-	}
-	if err := s.videoRepo.UpdateMetadata(ctx, videoID, upd); err != nil {
-		return fmt.Errorf("update video %s metadata: %w", videoID, err)
-	}
-	return nil
-}
-
-// linkActresses upserts each actress and links her to the video.
-func (s *EnrichmentService) linkActresses(ctx context.Context, videoID string, actresses []model.ActressMeta) error {
-	for _, a := range actresses {
-		actress := &model.Actress{
-			NameJa:     a.NameJa,
-			NameRomaji: a.NameRomaji,
-			AvatarKey:  a.AvatarURL,
-		}
-		if err := s.actressRepo.Upsert(ctx, actress); err != nil {
-			return fmt.Errorf("upsert actress %q: %w", a.NameJa, err)
-		}
-		if err := s.actressRepo.AddVideoActress(ctx, videoID, actress.ID); err != nil {
-			return fmt.Errorf("link actress %s to video %s: %w", actress.ID, videoID, err)
+	for _, g := range genres {
+		if g != "" {
+			app.Genres = append(app.Genres, g)
 		}
 	}
-	return nil
-}
-
-// linkGenres gets-or-creates each genre tag and links it to the video.
-func (s *EnrichmentService) linkGenres(ctx context.Context, videoID string, genres []string) error {
-	for _, name := range genres {
-		if name == "" {
-			continue
-		}
-		tag, err := s.tagRepo.GetOrCreateByName(ctx, name, "genre")
-		if err != nil {
-			return fmt.Errorf("get or create genre tag %q: %w", name, err)
-		}
-		if err := s.tagRepo.AddVideoTag(ctx, videoID, tag.ID); err != nil {
-			return fmt.Errorf("link genre tag %d to video %s: %w", tag.ID, videoID, err)
-		}
-	}
-	return nil
+	return app
 }
 
 // autoAcceptHighestPriority accepts the suggestion from the highest-priority
