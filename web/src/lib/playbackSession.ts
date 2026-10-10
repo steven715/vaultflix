@@ -6,12 +6,13 @@
 // 不依賴 React：media 元素、送出請求的 sender 與品質摘要都由呼叫端注入。
 import { clampDelta } from './heartbeat'
 import type { SessionSummary } from '../utils/playbackStats'
+import type { VideoDetail } from '../types'
 
 export const PROGRESS_THROTTLE_MS = 10_000
 export const HEARTBEAT_INTERVAL_MS = 15_000
 
 /** The subset of HTMLVideoElement the Playback Session listens to. */
-export interface SessionMedia extends EventTarget {
+export interface PlaybackSessionMedia extends EventTarget {
   currentTime: number
 }
 
@@ -25,7 +26,7 @@ export interface HeartbeatReport {
 export interface TelemetryReport {
   session_id: string
   video_id: string
-  play_mode: string
+  play_mode: VideoDetail['play_mode']
   ttff_ms: number | null
   watched_ms: number
   rebuffer_count: number
@@ -36,19 +37,20 @@ export interface TelemetryReport {
 
 /**
  * Where the session's reports go. `leaving` marks the final reports sent while
- * the page tears down; those must survive it (keepalive). Fire-and-forget:
- * failures are the sender's to log.
+ * the page tears down; those must survive it (keepalive). Telemetry has no
+ * flag: it is only ever sent at the end. Fire-and-forget: failures are the
+ * sender's to log.
  */
-export interface SessionSender {
+export interface PlaybackSessionSender {
   saveProgress(report: { videoId: string; seconds: number }, leaving: boolean): void
   heartbeat(report: HeartbeatReport, leaving: boolean): void
   telemetry(report: TelemetryReport): void
 }
 
 export interface PlaybackSessionOptions {
-  media: SessionMedia
-  video: { id: string; playMode: string }
-  sender: SessionSender
+  media: PlaybackSessionMedia
+  video: { id: string; playMode: VideoDetail['play_mode'] }
+  sender: PlaybackSessionSender
   /** The quality summary to report at the end (from usePlaybackStats). */
   summary: () => SessionSummary
   newSessionId?: () => string
@@ -69,24 +71,28 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
   let lastReportSeconds = -1
   let lastSample = 0 // the currentTime the next heartbeat delta is measured from
   let pendingDelta = 0 // play-seconds accumulated since the last heartbeat
+  // Where playback last was, per the media events. The final reports use it,
+  // not media.currentTime: the Stream Source's teardown may already have
+  // reset the element when the session ends.
+  let lastPosition = 0
 
-  function reportProgress(leaving: boolean, throttle: boolean) {
-    const seconds = Math.floor(media.currentTime)
+  function reportProgress(at: number, { leaving, throttled }: { leaving: boolean; throttled: boolean }) {
+    const seconds = Math.floor(at)
     if (seconds === lastReportSeconds) return
     const now = Date.now()
-    if (throttle && now - lastReportAt < PROGRESS_THROTTLE_MS) return
+    if (throttled && now - lastReportAt < PROGRESS_THROTTLE_MS) return
     lastReportAt = now
     lastReportSeconds = seconds
     sender.saveProgress({ videoId: video.id, seconds }, leaving)
   }
 
-  function flushHeartbeat(leaving: boolean) {
+  function flushHeartbeat(at: number, leaving: boolean) {
     if (pendingDelta <= 0) return
     const report = {
       session_id: sessionId,
       video_id: video.id,
       played_delta: pendingDelta,
-      position_seconds: Math.floor(media.currentTime),
+      position_seconds: Math.floor(at),
     }
     pendingDelta = 0
     sender.heartbeat(report, leaving)
@@ -109,27 +115,32 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
   }
 
   const onTimeUpdate = () => {
-    reportProgress(false, true)
-    pendingDelta += clampDelta(lastSample, media.currentTime)
-    lastSample = media.currentTime
+    lastPosition = media.currentTime
+    reportProgress(lastPosition, { leaving: false, throttled: true })
+    pendingDelta += clampDelta(lastSample, lastPosition)
+    lastSample = lastPosition
   }
   // A seek (scrubber drag / skip) is not playback: measure from the target.
   const onSeeking = () => {
-    lastSample = media.currentTime
+    lastPosition = media.currentTime
+    lastSample = lastPosition
   }
   const onPause = () => {
-    if (media.currentTime < 1) return
-    reportProgress(false, false)
+    lastPosition = media.currentTime
+    if (lastPosition < 1) return
+    reportProgress(lastPosition, { leaving: false, throttled: false })
   }
 
   media.addEventListener('timeupdate', onTimeUpdate)
   media.addEventListener('seeking', onSeeking)
   media.addEventListener('pause', onPause)
-  const timer = setInterval(() => flushHeartbeat(false), HEARTBEAT_INTERVAL_MS)
+  const timer = setInterval(() => flushHeartbeat(media.currentTime, false), HEARTBEAT_INTERVAL_MS)
 
   return {
     positionSet(seconds) {
-      if (!ended) lastSample = seconds
+      if (ended) return
+      lastPosition = seconds
+      lastSample = seconds
     },
     end() {
       if (ended) return
@@ -138,8 +149,8 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
       media.removeEventListener('timeupdate', onTimeUpdate)
       media.removeEventListener('seeking', onSeeking)
       media.removeEventListener('pause', onPause)
-      if (media.currentTime >= 1) reportProgress(true, false)
-      flushHeartbeat(true)
+      if (lastPosition >= 1) reportProgress(lastPosition, { leaving: true, throttled: false })
+      flushHeartbeat(lastPosition, true)
       sendTelemetry()
     },
   }

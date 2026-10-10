@@ -170,6 +170,32 @@ describe('PlayerPage play_mode', () => {
     fetchSpy.mockRestore()
   })
 
+  // On main the unmount cleanup read videoRef.current, which React had already
+  // cleared, so leaving the page never sent the final Watch Progress.
+  it('sends the final Watch Progress and position when leaving the page', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct', duration_seconds: 6000 } as never)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const { container, unmount } = renderPlayer()
+    await screen.findByText('T')
+    const el = container.querySelector('video') as HTMLVideoElement
+    let ct = 0
+    Object.defineProperty(el, 'currentTime', { get: () => ct, set: (v: number) => { ct = v }, configurable: true })
+
+    ct = 12
+    fireEvent.timeUpdate(el)
+    ct = 300
+    fireEvent.seeking(el)
+    unmount()
+
+    const bodyOf = (path: string) => {
+      const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith(path))
+      return call ? JSON.parse((call[1] as RequestInit).body as string) : undefined
+    }
+    expect(bodyOf('/watch-history')).toEqual({ video_id: 'v1', progress_seconds: 300 })
+    expect(bodyOf('/watch-sessions/heartbeat')).toMatchObject({ position_seconds: 300 })
+    fetchSpy.mockRestore()
+  })
+
   it('returns to the library (not the previous player page) when clicking 返回片庫', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({
       ...base,

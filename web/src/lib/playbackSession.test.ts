@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startPlaybackSession, type SessionSender } from './playbackSession'
+import { startPlaybackSession, type PlaybackSessionSender } from './playbackSession'
 import { MAX_HEARTBEAT_DELTA } from './heartbeat'
 import type { SessionSummary } from '../utils/playbackStats'
 
@@ -15,7 +15,7 @@ type Call = { kind: 'progress' | 'heartbeat' | 'telemetry'; leaving: boolean; bo
 
 function recordingSender() {
   const calls: Call[] = []
-  const sender: SessionSender = {
+  const sender: PlaybackSessionSender = {
     saveProgress: (body, leaving) => calls.push({ kind: 'progress', leaving, body: { ...body } }),
     heartbeat: (body, leaving) => calls.push({ kind: 'heartbeat', leaving, body: { ...body } }),
     telemetry: (body) => calls.push({ kind: 'telemetry', leaving: true, body: { ...body } }),
@@ -57,7 +57,7 @@ describe('Watch Progress', () => {
     media.at(5, 'timeupdate')
     media.at(6, 'timeupdate') // within the throttle window
     vi.advanceTimersByTime(10_000)
-    media.at(6.4, 'timeupdate') // same second as last report? no — 6 was never reported
+    media.at(6.4, 'timeupdate') // throttle window passed: second 6 is reported
     vi.advanceTimersByTime(10_000)
     media.at(6.9, 'timeupdate') // same second as the last report
     expect(of('progress').map((c) => c.body.seconds)).toEqual([5, 6])
@@ -157,6 +157,19 @@ describe('Playback Telemetry', () => {
 })
 
 describe('lifecycle', () => {
+  // The Stream Source's own teardown resets currentTime (removes src + load())
+  // and may run before the session ends: the final reports must use where
+  // playback actually was, whatever order the cleanups run in.
+  it('ends with the last known position even if the media was reset first', () => {
+    const { media, session, of } = setup()
+    media.at(30, 'timeupdate')
+    media.at(40, 'timeupdate')
+    media.currentTime = 0
+    session.end()
+    expect(of('progress').at(-1)?.body.seconds).toBe(40)
+    expect(of('heartbeat').at(-1)?.body.position_seconds).toBe(40)
+  })
+
   it('stops listening and flushing after end', () => {
     const { media, session, calls } = setup()
     session.end()

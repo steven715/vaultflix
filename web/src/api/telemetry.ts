@@ -1,17 +1,9 @@
 import client from './client'
 import { postKeepalive } from './keepalive'
+import type { TelemetryReport } from '../lib/playbackSession'
 
-export interface PlaybackTelemetryPayload {
-  session_id: string
-  video_id: string
-  play_mode: string
-  ttff_ms: number | null
-  watched_ms: number
-  rebuffer_count: number
-  rebuffer_ms: number
-  avg_downlink_mbps: number | null
-  fatal_error_family: string | null
-}
+// The wire shape is owned by the Playback Session that produces it.
+export type PlaybackTelemetryPayload = TelemetryReport
 
 export async function postPlaybackTelemetry(payload: PlaybackTelemetryPayload): Promise<void> {
   await client.post('/playback/telemetry', payload)

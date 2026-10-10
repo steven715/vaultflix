@@ -17,7 +17,6 @@ import { useStreamSource } from '../hooks/useStreamSource'
 import { usePlaybackSession } from '../hooks/usePlaybackSession'
 import type { PositionReason, StreamFailure } from '../lib/streamSource'
 
-
 const streamFailureMessage: Record<StreamFailure, string> = {
   'media-error': '影片載入失敗',
   'stream-load-failed': '串流載入失敗',
