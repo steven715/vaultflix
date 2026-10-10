@@ -33,6 +33,9 @@ _Avoid_: 用「掃描」稱呼 Import 或 Backfill
 **Backfill**（補齊）:
 對既有 Video 一次性補算衍生資料的 admin 工作；目前有 Preview、codec、Keyframe Index、番號四種。
 
+**Backfill Job**:
+一次 Backfill 的執行；在背景逐部處理 Video，每部結果為成功、略過（如 Media Source 停用）或失敗，可於兩部之間取消。同一時間全域只有一個 Backfill Job。
+
 ### 作品資訊
 
 **Metadata**:

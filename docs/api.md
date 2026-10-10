@@ -108,18 +108,15 @@ Role enforcement is Casbin, driven by [`casbin/policy.csv`](../casbin/policy.csv
 | POST | `/api/enrich-jobs` | Start a batch enrichment job | admin |
 | GET | `/api/enrich-jobs/active` | Get the running batch job | admin |
 | DELETE | `/api/enrich-jobs/:jid` | Cancel a batch job | admin |
-| POST | `/api/enrich-jobs/backfill-codes` | Backfill video codes from filenames | admin |
 
 ## Admin: Analytics & Backfill
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/admin/analytics` | Library and viewing analytics | admin |
-| POST | `/api/admin/videos/backfill-previews` | Start preview-clip backfill | admin |
-| GET | `/api/admin/backfill-jobs/active` | Get the running backfill job | admin |
-| POST | `/api/admin/backfill-jobs/:id/cancel` | Cancel a backfill job | admin |
-| POST | `/api/admin/videos/backfill-codecs` | Probe and store missing codec metadata | admin |
-| POST | `/api/admin/videos/backfill-keyframes` | Index keyframes for seeking | admin |
+| POST | `/api/admin/backfill-jobs` | Start a Backfill Job: body `{"kind": "preview" \| "codec" \| "keyframe" \| "code"}` → 202 `{job_id, kind}`; 400 unknown kind; 409 while any Backfill Job runs (one at a time across kinds). Progress over WS `backfill_*` with `kind` | admin |
+| GET | `/api/admin/backfill-jobs/active` | Get the latest Backfill Job (any kind; running or finished) | admin |
+| POST | `/api/admin/backfill-jobs/:id/cancel` | Cancel a Backfill Job after its current Video | admin |
 
 ## WebSocket
 

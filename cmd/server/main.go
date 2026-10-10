@@ -19,6 +19,7 @@ import (
 	"github.com/steven/vaultflix/internal/config"
 	"github.com/steven/vaultflix/internal/handler"
 	"github.com/steven/vaultflix/internal/middleware"
+	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
@@ -148,7 +149,6 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	importService := service.NewImportService(videoRepo, minioService, hub)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
-	backfillService := service.NewBackfillService(videoRepo, mediaSourceService, minioService, hub)
 	videoService := service.NewVideoService(videoRepo, mediaSourceService, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
 	favoriteService := service.NewFavoriteService(favoriteRepo, minioService)
@@ -187,10 +187,9 @@ func main() {
 	segmentCache.StartSweeper(ctx)
 
 	keyframeIndexRepo := repository.NewKeyframeIndexRepository(pool)
-	keyframeService := service.NewKeyframeService(keyframeIndexRepo, videoRepo, mediaSourceService)
+	keyframeService := service.NewKeyframeService(keyframeIndexRepo)
 	hlsService := service.NewHLSService(videoService, keyframeService, segmentCache)
 	hlsHandler := handler.NewHLSHandler(hlsService)
-	keyframeBackfillHandler := handler.NewKeyframeBackfillHandler(keyframeService)
 	importService.SetKeyframeProber(keyframeService)
 
 	authHandler := handler.NewAuthHandler(authService)
@@ -202,12 +201,16 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 	mediaSourceHandler := handler.NewMediaSourceHandler(mediaSourceService)
 	watchSessionHandler := handler.NewWatchSessionHandler(watchSessionService)
-	backfillHandler := handler.NewBackfillHandler(backfillService)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
-	codecBackfillService := service.NewCodecBackfillService(videoRepo, mediaSourceService)
-	codecBackfillHandler := handler.NewCodecBackfillHandler(codecBackfillService)
+	backfillRunner := service.NewBackfillRunner(hub, map[model.BackfillKind]service.BackfillTask{
+		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, minioService),
+		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService),
+		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
+		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
+	})
+	backfillHandler := handler.NewBackfillHandler(backfillRunner)
 
 	wsHandler := handler.NewWSHandler(hub)
 
@@ -290,11 +293,9 @@ func main() {
 		api.DELETE("/media-sources/:id", mediaSourceHandler.Delete)
 
 		// Backfill endpoints (admin only, enforced by Casbin)
-		api.POST("/admin/videos/backfill-previews", backfillHandler.Start)
+		api.POST("/admin/backfill-jobs", backfillHandler.Start)
 		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
 		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
-		api.POST("/admin/videos/backfill-codecs", codecBackfillHandler.Run)
-		api.POST("/admin/videos/backfill-keyframes", keyframeBackfillHandler.Run)
 
 		// Analytics (admin only, enforced by Casbin)
 		api.GET("/admin/analytics", analyticsHandler.Get)
@@ -307,7 +308,6 @@ func main() {
 		api.POST("/enrich-jobs", enrichHandler.StartBatch)
 		api.GET("/enrich-jobs/active", enrichHandler.ActiveJob)
 		api.DELETE("/enrich-jobs/:jid", enrichHandler.CancelBatch)
-		api.POST("/enrich-jobs/backfill-codes", enrichHandler.BackfillCodes)
 
 		// WebSocket endpoint
 		api.GET("/ws", wsHandler.HandleWebSocket)

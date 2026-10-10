@@ -92,7 +92,7 @@ func (s *EnrichmentService) EnrichVideo(ctx context.Context, videoID, userID str
 }
 
 // resolveCode returns the Code to enrich by. A stored Code (set at import,
-// by BackfillCodes, or by a manual correction) takes precedence; the filename
+// by the Code Backfill, or by a manual correction) takes precedence; the filename
 // is parsed only when none is stored.
 func resolveCode(video *model.Video) (string, bool) {
 	if video.Code != "" {

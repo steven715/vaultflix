@@ -2,11 +2,22 @@ package model
 
 import "time"
 
-// BackfillJob 代表一次 preview 補生成作業的狀態（in-memory，不持久化）。
-// 與 ImportJob 並列、語意各自獨立：import 處理新檔案，backfill 處理既有
-// 影片的缺漏 preview。
+// BackfillKind 是 Backfill 的種類（見 CONTEXT.md「Backfill」）。
+type BackfillKind string
+
+const (
+	BackfillPreview  BackfillKind = "preview"  // 補 Preview
+	BackfillCodec    BackfillKind = "codec"    // 補 Media Info 的 video/audio codec
+	BackfillKeyframe BackfillKind = "keyframe" // 補 remux Video 的 Keyframe Index
+	BackfillCode     BackfillKind = "code"     // 由檔名補 Code
+)
+
+// BackfillJob 是一次 Backfill 的執行狀態（in-memory，不持久化，ADR-0003）。
+// 與 ImportJob 並列、語意各自獨立：Import 登錄新檔案，Backfill 對既有
+// Video 補算衍生資料。同一時間全域只有一個 BackfillJob 在跑。
 type BackfillJob struct {
 	ID             string          `json:"id"`
+	Kind           BackfillKind    `json:"kind"`
 	Status         string          `json:"status"` // running | completed | failed | cancelled
 	Total          int             `json:"total"`
 	Processed      int             `json:"processed"`
@@ -19,7 +30,7 @@ type BackfillJob struct {
 	FinishedAt     *time.Time      `json:"finished_at,omitempty"`
 }
 
-// BackfillError 記錄單一影片補 preview 失敗資訊。
+// BackfillError 記錄單一 Video 在 Backfill 中失敗的資訊。
 type BackfillError struct {
 	VideoID          string `json:"video_id"`
 	OriginalFilename string `json:"original_filename"`
@@ -28,11 +39,12 @@ type BackfillError struct {
 
 // BackfillProgress 是透過 WebSocket 推送的逐影片進度訊息。
 type BackfillProgress struct {
-	JobID            string `json:"job_id"`
-	VideoID          string `json:"video_id"`
-	OriginalFilename string `json:"original_filename"`
-	Current          int    `json:"current"`
-	Total            int    `json:"total"`
-	Status           string `json:"status"` // processing | success | skipped | error
-	Error            string `json:"error,omitempty"`
+	JobID            string       `json:"job_id"`
+	Kind             BackfillKind `json:"kind"`
+	VideoID          string       `json:"video_id"`
+	OriginalFilename string       `json:"original_filename"`
+	Current          int          `json:"current"`
+	Total            int          `json:"total"`
+	Status           string       `json:"status"` // processing | success | skipped | error
+	Error            string       `json:"error,omitempty"`
 }

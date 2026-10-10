@@ -120,8 +120,11 @@ export interface BackfillError {
   error: string
 }
 
+export type BackfillKind = 'preview' | 'codec' | 'keyframe' | 'code'
+
 export interface BackfillJob {
   id: string
+  kind: BackfillKind
   status: 'running' | 'completed' | 'failed' | 'cancelled'
   total: number
   processed: number
@@ -136,6 +139,7 @@ export interface BackfillJob {
 
 export interface BackfillProgress {
   job_id: string
+  kind: BackfillKind
   video_id: string
   original_filename: string
   current: number

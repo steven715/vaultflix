@@ -6,7 +6,7 @@ import {
   importVideos, updateVideo, deleteVideo, listMediaSources,
   getActiveImportJob, startBackfill, getActiveBackfill, addVideoTag,
 } from '../../api/admin'
-import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
+import type { VideoWithTags, TagWithCount, MediaSource, BackfillKind } from '../../types'
 import LibraryToolbar from '../../components/admin/LibraryToolbar'
 import LibraryTable from '../../components/admin/LibraryTable'
 import { BatchTagPicker, ImportModal, EditModal, DeleteConfirm } from '../../components/admin/LibraryModals'
@@ -44,6 +44,7 @@ export default function VideoManagePage() {
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
   const [backfillJobId, setBackfillJobId] = useState<string | null>(null)
   const [backfillStarting, setBackfillStarting] = useState(false)
+  const [backfillKind, setBackfillKind] = useState<BackfillKind>('preview')
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || 20
@@ -103,6 +104,7 @@ export default function VideoManagePage() {
     getActiveBackfill().then((job) => {
       if (cancelled || !job || job.status !== 'running') return
       setBackfillJobId(job.id)
+      setBackfillKind(job.kind)
     }).catch((err) => { console.warn('failed to detect active backfill job', err) })
     return () => { cancelled = true }
   }, [])
@@ -111,13 +113,17 @@ export default function VideoManagePage() {
     if (backfillStarting) return
     setBackfillStarting(true)
     try {
-      const { job_id } = await startBackfill()
+      const { job_id, kind } = await startBackfill('preview')
       setBackfillJobId(job_id)
+      setBackfillKind(kind)
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number } }
       if (axiosErr?.response?.status === 409) {
         const active = await getActiveBackfill().catch(() => null)
-        if (active && active.status === 'running') setBackfillJobId(active.id)
+        if (active && active.status === 'running') {
+          setBackfillJobId(active.id)
+          setBackfillKind(active.kind)
+        }
         toast.error('已有任務進行中')
       } else { toast.error('啟動 backfill 失敗') }
     } finally { setBackfillStarting(false) }
@@ -209,7 +215,7 @@ export default function VideoManagePage() {
 
       {backfillJobId && (
         <div className="mb-5">
-          <BackfillProgress jobId={backfillJobId} onComplete={() => {}} />
+          <BackfillProgress jobId={backfillJobId} kind={backfillKind} onComplete={() => {}} />
           <div className="text-right mt-1">
             <button onClick={() => setBackfillJobId(null)} className="text-xs text-faint hover:text-muted">關閉</button>
           </div>
