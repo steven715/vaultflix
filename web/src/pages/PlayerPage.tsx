@@ -17,9 +17,10 @@ import { ChevronLeft, HeartIcon, HeartFilled, CheckIcon, ShareIcon } from '../co
 import { clampDelta } from '../lib/heartbeat'
 import { usePlaybackStats } from '../hooks/usePlaybackStats'
 import { useStreamSource } from '../hooks/useStreamSource'
-import type { StreamFailure } from '../lib/streamSource'
+import type { PositionReason, StreamFailure } from '../lib/streamSource'
 
 const PROGRESS_THROTTLE_MS = 10_000
+const HEARTBEAT_INTERVAL_MS = 15_000
 
 const streamFailureMessage: Record<StreamFailure, string> = {
   'media-error': '影片載入失敗',
@@ -29,7 +30,6 @@ const streamFailureMessage: Record<StreamFailure, string> = {
   'token-refresh-failed': '影片串流憑證更新失敗',
   unsupported: '此瀏覽器不支援串流播放',
 }
-const HEARTBEAT_INTERVAL_MS = 15_000
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
@@ -307,7 +307,7 @@ export default function PlayerPage() {
   // Progress, or back to where a token-refresh reload interrupted): measure
   // heartbeat deltas from the new position, never across the jump.
   const handlePositionSet = useCallback(
-    (seconds: number, reason: 'resume' | 'recovery') => {
+    (seconds: number, reason: PositionReason) => {
       lastSampleSecondsRef.current = seconds
       if (reason === 'resume') toast.info(`從 ${formatDuration(seconds)} 繼續播放`)
     },

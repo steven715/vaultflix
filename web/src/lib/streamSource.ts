@@ -16,6 +16,9 @@ export type StreamFailure =
   | 'token-refresh-failed' // 出錯後換新 token 失敗
   | 'unsupported' // 瀏覽器既無 MSE 也無原生 HLS
 
+/** Why the Stream Source moved the playback position itself. */
+export type PositionReason = 'resume' | 'recovery'
+
 export type StreamState =
   | { status: 'loading' }
   | { status: 'preparing' }
@@ -54,7 +57,7 @@ export interface StreamSourceOptions {
   hls: HlsPort
   onState: (state: StreamState) => void
   /** Called whenever the Stream Source moves the playback position itself. */
-  onPositionSet: (seconds: number, reason: 'resume' | 'recovery') => void
+  onPositionSet: (seconds: number, reason: PositionReason) => void
 }
 
 export interface StreamSource {

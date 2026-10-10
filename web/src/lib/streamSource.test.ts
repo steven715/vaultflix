@@ -173,10 +173,13 @@ describe('startStreamSource: remux', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
+  // Under fake timers, settle the token fetch with an explicit tick rather than
+  // letting real time move the clock (docs/conventions/frontend.md).
+  const tick = () => vi.advanceTimersByTimeAsync(0)
 
   it('plays through hls.js when MSE is available', async () => {
     const { media, instances } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     expect(instances).toHaveLength(1)
     expect(instances[0].sources).toEqual(['/api/videos/v1/hls/index.m3u8?token=t1'])
     expect(instances[0].media).toBe(media)
@@ -185,7 +188,7 @@ describe('startStreamSource: remux', () => {
 
   it('polls while the Keyframe Index is being prepared, then plays', async () => {
     const { instances, last } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     const hls = instances[0]
     hls.emit('error', { fatal: true, response: { code: 503 } })
     expect(last()).toEqual({ status: 'preparing' })
@@ -197,7 +200,7 @@ describe('startStreamSource: remux', () => {
 
   it('gives up preparing after the retry limit', async () => {
     const { instances, last } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     const hls = instances[0]
     for (let i = 0; i <= MAX_PREPARING_RETRIES; i++) {
       hls.emit('error', { fatal: true, response: { code: 503 } })
@@ -208,40 +211,61 @@ describe('startStreamSource: remux', () => {
 
   it('treats any other fatal hls.js error as a stream load failure', async () => {
     const { instances, last } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     instances[0].emit('error', { fatal: true, response: { code: 500 } })
     expect(last()).toEqual({ status: 'failed', reason: 'stream-load-failed' })
   })
 
   it('ignores non-fatal hls.js errors', async () => {
     const { instances, last } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     instances[0].emit('error', { fatal: false })
     expect(last()).toEqual({ status: 'loading' })
   })
 
   it('falls back to native HLS without MSE', async () => {
     const { media, instances } = setup({ playMode: 'remux', hlsSupported: false, nativeHls: true })
-    await flush()
+    await tick()
     expect(instances).toHaveLength(0)
     expect(media.src).toBe('/api/videos/v1/hls/index.m3u8?token=t1')
   })
 
   it('reports an unsupported browser', async () => {
     const { last } = setup({ playMode: 'remux', hlsSupported: false })
-    await flush()
+    await tick()
     expect(last()).toEqual({ status: 'failed', reason: 'unsupported' })
   })
 
   it('dispose tears down hls.js and the pending retry', async () => {
     const { instances, source } = setup({ playMode: 'remux' })
-    await flush()
+    await tick()
     const hls = instances[0]
     hls.emit('error', { fatal: true, response: { code: 503 } })
     source.dispose()
     await vi.advanceTimersByTimeAsync(PREPARING_RETRY_DELAY_MS)
     expect(hls.destroyed).toBe(true)
     expect(hls.sources).toHaveLength(1)
+  })
+
+  it('a media error under hls.js refreshes the token and rebuilds hls.js at the same position', async () => {
+    const { media, instances, positions } = setup({ playMode: 'remux' })
+    await tick()
+    media.fire('loadedmetadata')
+    media.currentTime = 900
+    media.fire('error')
+    await tick()
+    expect(instances[0].destroyed).toBe(true)
+    expect(instances[1].sources).toEqual(['/api/videos/v1/hls/index.m3u8?token=t2'])
+    media.fire('loadedmetadata')
+    expect(positions).toEqual([[900, 'recovery']])
+  })
+
+  it('a media error on native HLS refreshes the token into the src', async () => {
+    const { media } = setup({ playMode: 'remux', hlsSupported: false, nativeHls: true })
+    await tick()
+    media.fire('error')
+    await tick()
+    expect(media.src).toBe('/api/videos/v1/hls/index.m3u8?token=t2')
   })
 })
 

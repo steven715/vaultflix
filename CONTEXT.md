@@ -138,6 +138,10 @@ _Avoid_: DirectPlay / DirectStream（只在與 Jellyfin 對照時使用）
 依 Media Info 決定 Play Mode 的判斷。
 _Avoid_: 裸用 classification, 相容性分類
 
+**Stream Source**（播放來源）:
+播放端把一部 Video 接到播放器的那一段：依 Play Mode 選擇直連或 HLS、Keyframe Index 準備中時輪詢、Stream Token 過期時換新並回到原位置、從 Watch Progress 繼續。
+_Avoid_: player source, 串流來源（指後端時用 HLS／Stream 端點）
+
 **Transcode Play Mode**:
 Play Mode = transcode，需即時轉碼才能播放；尚未實作。
 _Avoid_: 影片相容性 Phase 2
