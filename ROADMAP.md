@@ -61,6 +61,9 @@
 
 - [ ] **`videos.mime_type` 依 codec 重算全庫** — `mime_type` 在匯入時由 `MediaProcessor` 依容器 + codec 推得，但 codec Backfill 只補 codec、不改 MIME；在 codec 支援前匯入的舊 Video，MIME 仍是只看副檔名的舊值。**目前無影響**：唯一讀它的是直連 Stream 的 `http.ServeFile`（`video_handler.go`），而唯一的執行 stack 開著 X-Accel，Content-Type 由 nginx 依副檔名決定；前端只宣告此欄位、未使用。**觸發條件**：有任何正式環境路徑或前端開始讀 `mime_type`。屆時以 migration 或 Backfill 依 codec 重算**全庫**（不能只靠 codec Backfill，它只處理 codec 為空的 Video）。
 
+- [ ] **移除 Suggestion 的舊 key 相容讀取** — `stagedKey`（`enrichment_accept_reject.go`）仍會把舊 Suggestion 的 `cover_url`／`avatar_url` 中以 `covers/`／`actresses/` 開頭的值當成 key（`cover_key`／`avatar_key` 欄位出現前 staged 的列）。**觸發條件**：`metadata_suggestions` 已無 2026-10-10 以前 staged 的待審列。
+- [ ] **刻意清除 Cover / Avatar** — 接受 Suggestion 時空的 key 一律代表「保留既有圖片」，目前沒有清除圖片的途徑。**觸發條件**：前端 Enrichment UI 需要「移除這張圖」的操作。
+
 - [ ] **孤兒檔案清理排程 / MinIO 刪除失敗追蹤** — 影片刪除時 MinIO 刪除為 best-effort（`internal/service/video_service.go` 三個刪除失敗只 log、仍回 nil），孤兒物件會靜默累積。需定期比對 MinIO 與 DB 清理不一致物件。**觸發條件**：實際觀察到孤兒物件累積，或 MinIO 刪除失敗重複發生。
 
 ---

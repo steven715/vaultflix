@@ -173,10 +173,18 @@ func TestSuggestionRepository_Apply_ImageKeys(t *testing.T) {
 			if err := f.suggestions.Apply(ctx, app); err != nil {
 				t.Fatalf("Apply: %v", err)
 			}
-			if v, _ := f.videos.GetByID(ctx, f.videoID); v.CoverKey != tt.wantCover {
+			v, err := f.videos.GetByID(ctx, f.videoID)
+			if err != nil {
+				t.Fatalf("GetByID: %v", err)
+			}
+			if v.CoverKey != tt.wantCover {
 				t.Errorf("cover_key = %q, want %q", v.CoverKey, tt.wantCover)
 			}
-			if ps, _ := f.performers.GetByVideoID(ctx, f.videoID); len(ps) != 1 || ps[0].AvatarKey != tt.wantAvatar {
+			ps, err := f.performers.GetByVideoID(ctx, f.videoID)
+			if err != nil {
+				t.Fatalf("performers: %v", err)
+			}
+			if len(ps) != 1 || ps[0].AvatarKey != tt.wantAvatar {
 				t.Errorf("performers = %+v, want avatar %q", ps, tt.wantAvatar)
 			}
 		})

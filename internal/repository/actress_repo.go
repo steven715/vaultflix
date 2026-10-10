@@ -11,6 +11,7 @@ import (
 
 // ActressRepository defines the contract for actress data access.
 // Upsert inserts or updates an actress by name_ja and backfills ID and CreatedAt.
+// An empty AvatarKey keeps the avatar_key the Performer already has.
 // AddVideoActress links an actress to a video; silently ignores duplicate links.
 // GetByVideoID returns all actresses for a video, ordered by name_ja.
 type ActressRepository interface {

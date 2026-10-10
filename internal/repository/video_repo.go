@@ -18,7 +18,8 @@ import (
 // Update returns model.ErrNotFound when the video does not exist.
 // Delete returns model.ErrNotFound when the video does not exist.
 // UpdatePreviewKey returns model.ErrNotFound when the video does not exist.
-// UpdateMetadata applies enriched scalar fields to a video and sets enrichment_status='enriched'.
+// UpdateMetadata applies enriched scalar fields to a video and sets enrichment_status='enriched';
+// an empty CoverKey keeps the cover_key the Video already has.
 // SetEnrichmentStatus updates the enrichment_status column for the given video.
 // ListByEnrichmentStatus returns videos matching the given enrichment_status, ordered by created_at.
 type VideoRepository interface {
@@ -37,6 +38,7 @@ type VideoRepository interface {
 	// UpdatePreviewKey persists the given preview object key for the video.
 	UpdatePreviewKey(ctx context.Context, id string, previewKey string) error
 	// UpdateMetadata applies enriched scalar fields to a video and marks it as 'enriched'.
+	// An empty CoverKey keeps the existing cover_key.
 	UpdateMetadata(ctx context.Context, id string, m model.VideoMetadataUpdate) error
 	// SetEnrichmentStatus updates the enrichment_status column for the given video.
 	SetEnrichmentStatus(ctx context.Context, id, status string) error
