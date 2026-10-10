@@ -79,22 +79,15 @@ const queryCreateVideo = `
 `
 
 const queryGetVideoByID = `
-    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
-           duration_seconds, resolution, file_size_bytes, mime_type,
-           COALESCE(video_codec, '') AS video_codec, COALESCE(audio_codec, '') AS audio_codec,
-           original_filename, created_at, updated_at, source_id, file_path,
-           COALESCE(code, '') AS code
-    FROM videos
-    WHERE id = $1
+    SELECT ` + videoColumns + `
+    FROM videos v
+    WHERE v.id = $1
 `
 
 const queryFindBySourceAndPath = `
-    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
-           duration_seconds, resolution, file_size_bytes, mime_type,
-           COALESCE(video_codec, '') AS video_codec, COALESCE(audio_codec, '') AS audio_codec,
-           original_filename, created_at, updated_at, source_id, file_path
-    FROM videos
-    WHERE source_id = $1 AND file_path = $2
+    SELECT ` + videoColumns + `
+    FROM videos v
+    WHERE v.source_id = $1 AND v.file_path = $2
 `
 
 const queryUpdateVideo = `
@@ -108,13 +101,10 @@ const queryDeleteVideo = `
 `
 
 const queryListMissingPreviews = `
-    SELECT id, title, description, minio_object_key, thumbnail_key, preview_key,
-           duration_seconds, resolution, file_size_bytes, mime_type,
-           COALESCE(video_codec, '') AS video_codec, COALESCE(audio_codec, '') AS audio_codec,
-           original_filename, created_at, updated_at, source_id, file_path
-    FROM videos
-    WHERE preview_key IS NULL OR preview_key = ''
-    ORDER BY created_at ASC
+    SELECT ` + videoColumns + `
+    FROM videos v
+    WHERE v.preview_key IS NULL OR v.preview_key = ''
+    ORDER BY v.created_at ASC
 `
 
 const queryUpdateVideoPreviewKey = `
@@ -156,14 +146,7 @@ func (r *videoRepository) Create(ctx context.Context, video *model.Video) error 
 }
 
 func (r *videoRepository) GetByID(ctx context.Context, id string) (*model.Video, error) {
-	var video model.Video
-	err := r.pool.QueryRow(ctx, queryGetVideoByID, id).Scan(
-		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey, &video.PreviewKey,
-		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
-		&video.VideoCodec, &video.AudioCodec,
-		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
-		&video.Code,
-	)
+	video, err := scanVideo(r.pool.QueryRow(ctx, queryGetVideoByID, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, model.ErrNotFound
@@ -207,11 +190,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	offset := (filter.Page - 1) * filter.PageSize
 	nextArg := len(args) + 1
 
-	selectClause := "SELECT DISTINCT v.id, v.title, v.description, v.minio_object_key, v.thumbnail_key, v.preview_key, " +
-		"v.duration_seconds, v.resolution, v.file_size_bytes, v.mime_type, " +
-		"COALESCE(v.video_codec, '') AS video_codec, COALESCE(v.audio_codec, '') AS audio_codec, " +
-		"v.original_filename, v.created_at, v.updated_at, v.source_id, v.file_path " +
-		"FROM videos v" + whereClause
+	selectClause := "SELECT DISTINCT " + videoColumns + " FROM videos v" + whereClause
 
 	limitOffset := " LIMIT $" + strconv.Itoa(nextArg) + " OFFSET $" + strconv.Itoa(nextArg+1)
 
@@ -238,24 +217,9 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list videos: %w", err)
 	}
-	defer rows.Close()
-
-	var videos []model.Video
-	for rows.Next() {
-		var v model.Video
-		if err := rows.Scan(
-			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey, &v.PreviewKey,
-			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
-			&v.VideoCodec, &v.AudioCodec,
-			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt, &v.SourceID, &v.FilePath,
-		); err != nil {
-			return nil, 0, fmt.Errorf("failed to scan video: %w", err)
-		}
-		videos = append(videos, v)
-	}
-
-	if videos == nil {
-		videos = []model.Video{}
+	videos, err := collectVideos(rows)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list videos: %w", err)
 	}
 
 	return videos, total, nil
@@ -266,26 +230,10 @@ func (r *videoRepository) ListMissingPreviews(ctx context.Context) ([]model.Vide
 	if err != nil {
 		return nil, fmt.Errorf("failed to list videos missing previews: %w", err)
 	}
-	defer rows.Close()
-
-	var videos []model.Video
-	for rows.Next() {
-		var v model.Video
-		if err := rows.Scan(
-			&v.ID, &v.Title, &v.Description, &v.MinIOObjectKey, &v.ThumbnailKey, &v.PreviewKey,
-			&v.DurationSeconds, &v.Resolution, &v.FileSizeBytes, &v.MimeType,
-			&v.VideoCodec, &v.AudioCodec,
-			&v.OriginalFilename, &v.CreatedAt, &v.UpdatedAt, &v.SourceID, &v.FilePath,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan video missing preview: %w", err)
-		}
-		videos = append(videos, v)
+	videos, err := collectVideos(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list videos missing previews: %w", err)
 	}
-
-	if videos == nil {
-		videos = []model.Video{}
-	}
-
 	return videos, nil
 }
 
@@ -301,13 +249,7 @@ func (r *videoRepository) UpdatePreviewKey(ctx context.Context, id string, previ
 }
 
 func (r *videoRepository) FindBySourceAndPath(ctx context.Context, sourceID string, filePath string) (*model.Video, error) {
-	var video model.Video
-	err := r.pool.QueryRow(ctx, queryFindBySourceAndPath, sourceID, filePath).Scan(
-		&video.ID, &video.Title, &video.Description, &video.MinIOObjectKey, &video.ThumbnailKey, &video.PreviewKey,
-		&video.DurationSeconds, &video.Resolution, &video.FileSizeBytes, &video.MimeType,
-		&video.VideoCodec, &video.AudioCodec,
-		&video.OriginalFilename, &video.CreatedAt, &video.UpdatedAt, &video.SourceID, &video.FilePath,
-	)
+	video, err := scanVideo(r.pool.QueryRow(ctx, queryFindBySourceAndPath, sourceID, filePath))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, model.ErrNotFound

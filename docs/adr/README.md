@@ -24,5 +24,6 @@ Short, **immutable** notes capturing *why* a non-obvious architectural choice wa
 | [0009](0009-jellyfin-scale-on-the-fly-streaming.md) | Position streaming as Jellyfin-scale on-the-fly, not YouTube-scale pre-processing | Accepted |
 | [0010](0010-performer-maker-entities-enrichment-suggestions.md) | Performers and Makers are entities, not Tags; Enrichment only produces Suggestions | Accepted |
 | [0011](0011-single-stack-local-build.md) | One local-build stack; drop the GHCR artifact and the dev/prod split | Accepted (supersedes 0005) |
+| [0012](0012-repository-tests-against-real-postgres.md) | Test repository SQL against the integration stack's real Postgres | Accepted |
 
 > Other living docs: [ROADMAP.md](../../ROADMAP.md) (what's next), [README.md](../../README.md) (what's built, how to run it), [CONTEXT.md](../../CONTEXT.md) (domain vocabulary).

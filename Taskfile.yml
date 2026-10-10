@@ -76,7 +76,7 @@ tasks:
       # isolated stack would be left running. -v removes only this project's volumes.
       - defer: "{{.COMPOSE_TEST}} --profile test down -v --remove-orphans"
       - "{{.COMPOSE_TEST}} --profile test up -d --build vaultflix-api"
-      # ffmpeg-dependent Go tests; see the go-test service in docker-compose.test.yml.
+      # ffmpeg- and Postgres-dependent Go tests; see the go-test service in docker-compose.test.yml.
       - "{{.COMPOSE_TEST}} --profile test run --rm --build go-test"
       - "{{.COMPOSE_TEST}} --profile test run --rm test-runner"
 

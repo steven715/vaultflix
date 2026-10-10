@@ -14,7 +14,7 @@ const queryUpdateCodecs = `
 `
 
 const queryListMissingCodecs = `
-	SELECT v.id, v.original_filename, v.source_id, v.file_path
+	SELECT ` + videoColumns + `
 	FROM videos v
 	WHERE (v.video_codec IS NULL OR v.video_codec = '')
 	  AND v.source_id IS NOT NULL AND v.file_path IS NOT NULL
@@ -40,23 +40,9 @@ func (r *videoRepository) ListMissingCodecs(ctx context.Context, limit int) ([]m
 	if err != nil {
 		return nil, fmt.Errorf("failed to list videos missing codecs: %w", err)
 	}
-	defer rows.Close()
-
-	var videos []model.Video
-	for rows.Next() {
-		var v model.Video
-		if err := rows.Scan(&v.ID, &v.OriginalFilename, &v.SourceID, &v.FilePath); err != nil {
-			return nil, fmt.Errorf("failed to scan video missing codec: %w", err)
-		}
-		videos = append(videos, v)
+	videos, err := collectVideos(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list videos missing codecs: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate videos missing codecs: %w", err)
-	}
-
-	if videos == nil {
-		videos = []model.Video{}
-	}
-
 	return videos, nil
 }
