@@ -20,8 +20,8 @@ const querySetEnrichmentStatus = `
 `
 
 const queryVideosByEnrichmentStatus = `
-    SELECT id, title, enrichment_status, COALESCE(code, '') AS code, original_filename, source_id, file_path
-    FROM videos WHERE enrichment_status = $1 ORDER BY created_at
+    SELECT ` + videoColumns + `
+    FROM videos v WHERE v.enrichment_status = $1 ORDER BY v.created_at
 `
 
 const querySeedVideoCode = `
@@ -58,27 +58,10 @@ func (r *videoRepository) ListByEnrichmentStatus(ctx context.Context, status str
 	if err != nil {
 		return nil, fmt.Errorf("failed to list videos by enrichment status %s: %w", status, err)
 	}
-	defer rows.Close()
-
-	var videos []model.Video
-	for rows.Next() {
-		var v model.Video
-		if err := rows.Scan(
-			&v.ID, &v.Title, &v.EnrichmentStatus, &v.Code, &v.OriginalFilename, &v.SourceID, &v.FilePath,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan video by enrichment status: %w", err)
-		}
-		videos = append(videos, v)
+	videos, err := collectVideos(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list videos by enrichment status %s: %w", status, err)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate videos by enrichment status: %w", err)
-	}
-
-	if videos == nil {
-		videos = []model.Video{}
-	}
-
 	return videos, nil
 }
 

@@ -284,7 +284,8 @@ import (
 - 測試檔案與被測檔案同目錄：`video_service.go` → `video_service_test.go`
 - Table-driven tests 為主
 - Mock struct 手寫，放在 `internal/mock/` 目錄，不引入第三方 mock 框架
-- Repository 與外部服務（MinIO）透過 interface mock，不連真實 DB 或外部服務
+- Service 層測試中，Repository 與外部服務（MinIO）透過 interface mock，不連真實 DB 或外部服務
+- Repository 自己的 SQL 例外：以 `openTestPool` 對整合測試 stack 的真 Postgres 測試，未設 DB 時 skip，在 `task test-integration` 執行（ADR-0012）
 - 命名：`Test<Function>_<Scenario>`，如 `TestGetVideoByID_NotFound`
 - 每個端點或 service method 實作完成後立即補測試，不事後批次補寫
 - 測試必須覆蓋：正常路徑、資源不存在（404）、權限不足（403）、參數驗證失敗（400）
