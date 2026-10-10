@@ -55,6 +55,14 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+// The Playback Session (and the Stream Source) attach their media listeners in
+// an effect, which may not have run yet when the first render's text appears.
+// Both start in the same commit, so a stream-token request proves the session
+// is listening — wait for that before firing media events.
+async function sessionListening() {
+  await waitFor(() => expect(videosApi.getStreamToken).toHaveBeenCalled())
+}
+
 describe('PlayerPage play_mode', () => {
   beforeEach(() => {
     vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })
@@ -134,6 +142,7 @@ describe('PlayerPage play_mode', () => {
 
     const { container, unmount } = renderPlayer()
     await screen.findByText('T')
+    await sessionListening()
     const el = container.querySelector('video') as HTMLVideoElement
     expect(el).toBeTruthy()
 
@@ -167,6 +176,33 @@ describe('PlayerPage play_mode', () => {
     // Without the onSeeking resync this would be 10 + min(4990, 22) = 32.
     expect(body.played_delta).toBe(10)
 
+    fetchSpy.mockRestore()
+  })
+
+  // On main the unmount cleanup read videoRef.current, which React had already
+  // cleared, so leaving the page never sent the final Watch Progress.
+  it('sends the final Watch Progress and position when leaving the page', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct', duration_seconds: 6000 } as never)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const { container, unmount } = renderPlayer()
+    await screen.findByText('T')
+    await sessionListening()
+    const el = container.querySelector('video') as HTMLVideoElement
+    let ct = 0
+    Object.defineProperty(el, 'currentTime', { get: () => ct, set: (v: number) => { ct = v }, configurable: true })
+
+    ct = 12
+    fireEvent.timeUpdate(el)
+    ct = 300
+    fireEvent.seeking(el)
+    unmount()
+
+    const bodyOf = (path: string) => {
+      const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith(path))
+      return call ? JSON.parse((call[1] as RequestInit).body as string) : undefined
+    }
+    expect(bodyOf('/watch-history')).toEqual({ video_id: 'v1', progress_seconds: 300 })
+    expect(bodyOf('/watch-sessions/heartbeat')).toMatchObject({ position_seconds: 300 })
     fetchSpy.mockRestore()
   })
 

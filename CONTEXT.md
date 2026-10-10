@@ -94,7 +94,7 @@ _Avoid_: poster（poster 只是 UI 元件名，不是領域詞）
 ### 觀看
 
 **Playback Session**（播放場次）:
-一次開啟播放頁觀看一部 Video、直到離開為止；Watch Session 與 Playback Telemetry 都附屬於它。
+在播放頁觀看一部 Video 的一段期間：從該 Video 載入開始，到換成另一部 Video 或離開播放頁為止（同一部 Video 重新導航不算新的場次）。Watch Progress 回報、Watch Session 與 Playback Telemetry 都附屬於它。
 _Avoid_: 裸用 session
 
 **Watch Session**:
