@@ -22,15 +22,11 @@ Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/s
 | GET | `/api/videos` | List videos (paginated, searchable, filterable) | viewer+ |
 | GET | `/api/videos/:id` | Video detail: stream URL, play mode, presigned thumbnail/preview URLs | viewer+ |
 | GET | `/api/videos/:id/stream` | Stream bytes (HTTP Range; X-Accel-Redirect in production; 409 `source_unavailable` when the Media Source is disabled) | viewer+ |
-| GET | `/api/videos/:id/hls/index.m3u8` | HLS playlist for `remux` play mode (other modes → 404; 409 `source_unavailable` when the Media Source is disabled; 503 `stream_not_ready` — and only that — while the Keyframe Index is probed) | admin |
-| GET | `/api/videos/:id/hls/:segment` | HLS Segment (ffmpeg-generated, disk-cached; same 404/409/503 rules as the playlist) | admin |
+| GET | `/api/videos/:id/hls/index.m3u8` | HLS playlist for `remux` play mode (other modes → 404; 409 `source_unavailable` when the Media Source is disabled; 503 `stream_not_ready` — and only that — while the Keyframe Index is probed) | viewer+ |
+| GET | `/api/videos/:id/hls/:segment` | HLS Segment (ffmpeg-generated, disk-cached; same 404/409/503 rules as the playlist) | viewer+ |
 | POST | `/api/videos/import` | Import videos from a mounted directory | admin |
 | PUT | `/api/videos/:id` | Update video metadata | admin |
 | DELETE | `/api/videos/:id` | Delete video (DB + MinIO) | admin |
-
-> The HLS routes are currently reachable by admin only — the route table grants `viewer`
-> the progressive `/api/videos/:id/stream` route but not the HLS pair, so a viewer-role
-> account can play `direct`-mode videos only.
 
 ## Tags
 
