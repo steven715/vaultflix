@@ -127,6 +127,7 @@ export interface BackfillJob {
   processed: number
   succeeded: number
   failed: number
+  skipped: number
   current_video_id?: string
   errors: BackfillError[]
   started_at: string
@@ -139,7 +140,7 @@ export interface BackfillProgress {
   original_filename: string
   current: number
   total: number
-  status: 'processing' | 'success' | 'error'
+  status: 'processing' | 'success' | 'skipped' | 'error'
   error?: string
 }
 

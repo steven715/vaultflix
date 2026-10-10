@@ -12,6 +12,7 @@ type BackfillJob struct {
 	Processed      int             `json:"processed"`
 	Succeeded      int             `json:"succeeded"`
 	Failed         int             `json:"failed"`
+	Skipped        int             `json:"skipped"` // Media Source 停用而略過
 	CurrentVideoID string          `json:"current_video_id,omitempty"`
 	Errors         []BackfillError `json:"errors"`
 	StartedAt      time.Time       `json:"started_at"`
@@ -32,6 +33,6 @@ type BackfillProgress struct {
 	OriginalFilename string `json:"original_filename"`
 	Current          int    `json:"current"`
 	Total            int    `json:"total"`
-	Status           string `json:"status"` // processing | success | error
+	Status           string `json:"status"` // processing | success | skipped | error
 	Error            string `json:"error,omitempty"`
 }

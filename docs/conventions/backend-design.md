@@ -74,7 +74,22 @@ if cleaned != path {
 info, err := os.Stat(cleaned)
 ```
 
+### Video 檔案路徑一律經 `MediaSourceService.ResolveFile`
+
+把 Video 的 `(source_id, file_path)` 變成磁碟路徑，只能呼叫 `ResolveFile`，不可自己 `filepath.Join(source.MountPath, ...)`。它一次做完：查 Media Source、拒絕停用的 source、檢查路徑落在該 source 的 mount 內**且**在注入的 mount prefix 內、`os.Stat` 確認存在。
+
+```go
+// ✅ 正確：所有規則在 seam 後面
+abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+
+// ❌ 錯誤：手接路徑，漏掉 enabled / traversal / 存在檢查
+abs := filepath.Join(source.MountPath, *v.FilePath)
+```
+
+依賴它的 service 使用 `mediaFileResolver` interface；測試用 `mock.ResolveUnder` / `mock.ResolveFailing`。Backfill 遇到 `ErrMediaSourceDisabled` 視為**略過**（不算失敗）。
+
 ### Sentinel Errors
 
 - `model.ErrPathNotAllowed` — 路徑不在允許前綴內，或包含非法組件
 - `model.ErrPathNotExist` — 路徑不存在於檔案系統
+- `model.ErrMediaSourceDisabled` — Video 所屬的 Media Source 已停用

@@ -188,7 +188,7 @@ func (h *HLSHandler) writePathError(c *gin.Context, videoID string, err error) {
 	switch {
 	case errors.Is(err, model.ErrNotFound), errors.Is(err, model.ErrPathNotExist):
 		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video not playable"})
-	case errors.Is(err, model.ErrConflict):
+	case errors.Is(err, model.ErrMediaSourceDisabled):
 		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{Error: "source_unavailable", Message: "media source disabled"})
 	case errors.Is(err, model.ErrPathNotAllowed):
 		c.JSON(http.StatusForbidden, model.ErrorResponse{Error: "path_not_allowed", Message: "path outside allowed area"})

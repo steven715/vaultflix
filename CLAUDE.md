@@ -296,7 +296,7 @@ import (
 - 所有跨層依賴透過 interface 定義契約，不直接依賴 concrete type
 - Interface 定義在使用端的 package 中（例如 service 依賴的 repository interface 定義在 repository package）
 - Service struct 的欄位型別是 interface，不是 concrete struct
-- 共用的 sentinel errors 定義在 `internal/model/errors.go`：`ErrNotFound`、`ErrAlreadyExists`、`ErrConflict`
+- 共用的 sentinel errors 定義在 `internal/model/errors.go`：`ErrNotFound`、`ErrAlreadyExists`、`ErrConflict`、`ErrMediaSourceDisabled`
 - 每個 interface method 的 godoc 須標註錯誤回傳語意（找不到回 ErrNotFound，不允許回 nil error + nil result 的模糊狀態）
 - 新的 service 或 repository 一律先定義 interface 再寫實作
 

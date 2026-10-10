@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steven/vaultflix/internal/mock"
 	"github.com/steven/vaultflix/internal/model"
 )
 
@@ -48,19 +49,10 @@ func (f *fakeKfVideoRepo) ListKeyframeCandidates(ctx context.Context, limit int)
 	return f.videos, nil
 }
 
-type fakeKfSourceRepo struct{ source *model.MediaSource }
-
-func (f *fakeKfSourceRepo) FindByID(ctx context.Context, id string) (*model.MediaSource, error) {
-	if f.source == nil {
-		return nil, model.ErrNotFound
-	}
-	return f.source, nil
-}
-
 func strPtr(s string) *string { return &s }
 
 func TestGetSegments_NotFoundPassthrough(t *testing.T) {
-	s := NewKeyframeService(newFakeKeyframeRepo(), &fakeKfVideoRepo{}, &fakeKfSourceRepo{})
+	s := NewKeyframeService(newFakeKeyframeRepo(), &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
 	_, err := s.GetSegments(context.Background(), "missing")
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
@@ -73,7 +65,7 @@ func TestGetSegments_ReturnsStored(t *testing.T) {
 		VideoID:  "v1",
 		Segments: []model.SegmentBoundary{{Start: 0, Duration: 8}},
 	}
-	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, &fakeKfSourceRepo{})
+	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
 	segs, err := s.GetSegments(context.Background(), "v1")
 	if err != nil || len(segs) != 1 {
 		t.Errorf("segs = %v, err = %v", segs, err)
@@ -82,7 +74,7 @@ func TestGetSegments_ReturnsStored(t *testing.T) {
 
 func TestTriggerProbe_DedupesConcurrentTriggers(t *testing.T) {
 	repo := newFakeKeyframeRepo()
-	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, &fakeKfSourceRepo{})
+	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
 
 	probeStarted := make(chan struct{})
 	probeRelease := make(chan struct{})
@@ -137,9 +129,7 @@ func TestRunBackfill_FiltersNonRemuxAndCounts(t *testing.T) {
 		{ID: "transcode1", OriginalFilename: "c.wmv", VideoCodec: "wmv3", AudioCodec: "wmav2",
 			SourceID: strPtr("s1"), FilePath: strPtr("c.wmv")}, // transcode → 跳過
 	}}
-	s := NewKeyframeService(repo, videoRepo, &fakeKfSourceRepo{
-		source: &model.MediaSource{ID: "s1", MountPath: "/mnt/host/D"},
-	})
+	s := NewKeyframeService(repo, videoRepo, mock.ResolveUnder("/mnt/host/D"))
 	s.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
 		return []float64{0, 8}, 16, nil
 	}
@@ -162,9 +152,7 @@ func TestRunBackfill_ProbeFailureCountsFailed(t *testing.T) {
 		{ID: "remux1", OriginalFilename: "a.avi", VideoCodec: "h264", AudioCodec: "aac",
 			SourceID: strPtr("s1"), FilePath: strPtr("a.avi")},
 	}}
-	s := NewKeyframeService(repo, videoRepo, &fakeKfSourceRepo{
-		source: &model.MediaSource{ID: "s1", MountPath: "/mnt/host/D"},
-	})
+	s := NewKeyframeService(repo, videoRepo, mock.ResolveUnder("/mnt/host/D"))
 	s.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
 		return nil, 0, errors.New("boom")
 	}
@@ -175,5 +163,30 @@ func TestRunBackfill_ProbeFailureCountsFailed(t *testing.T) {
 	}
 	if processed != 0 || failed != 1 {
 		t.Errorf("processed=%d failed=%d, want 0/1", processed, failed)
+	}
+}
+
+func TestRunBackfill_SkipsDisabledMediaSource(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	videoRepo := &fakeKfVideoRepo{videos: []model.Video{
+		{ID: "remux1", OriginalFilename: "a.avi", VideoCodec: "h264", AudioCodec: "aac",
+			SourceID: strPtr("s1"), FilePath: strPtr("a.avi")},
+	}}
+	s := NewKeyframeService(repo, videoRepo, mock.ResolveFailing(model.ErrMediaSourceDisabled))
+	probed := false
+	s.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
+		probed = true
+		return []float64{0, 8}, 16, nil
+	}
+
+	processed, failed, err := s.RunBackfill(context.Background())
+	if err != nil {
+		t.Fatalf("RunBackfill: %v", err)
+	}
+	if processed != 0 || failed != 0 {
+		t.Errorf("processed=%d failed=%d, want 0/0", processed, failed)
+	}
+	if probed {
+		t.Error("ffprobe ran for a video on a disabled Media Source")
 	}
 }

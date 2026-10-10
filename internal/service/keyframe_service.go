@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -31,30 +32,25 @@ type keyframeVideoRepo interface {
 	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
-// keyframeSourceRepo 是 KeyframeService 所需的 media source 查詢子集。
-type keyframeSourceRepo interface {
-	FindByID(ctx context.Context, id string) (*model.MediaSource, error)
-}
-
 // KeyframeService 提供邊界表查詢、非同步探測(去重)與 backfill。
 type KeyframeService struct {
-	repo       keyframeIndexRepo
-	videoRepo  keyframeVideoRepo
-	sourceRepo keyframeSourceRepo
-	probe      keyframeProbeFunc
+	repo      keyframeIndexRepo
+	videoRepo keyframeVideoRepo
+	files     mediaFileResolver
+	probe     keyframeProbeFunc
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
 }
 
 // NewKeyframeService 建立 KeyframeService(使用真實 ffprobe 探測)。
-func NewKeyframeService(repo keyframeIndexRepo, videoRepo keyframeVideoRepo, sourceRepo keyframeSourceRepo) *KeyframeService {
+func NewKeyframeService(repo keyframeIndexRepo, videoRepo keyframeVideoRepo, files mediaFileResolver) *KeyframeService {
 	return &KeyframeService{
-		repo:       repo,
-		videoRepo:  videoRepo,
-		sourceRepo: sourceRepo,
-		probe:      streaming.ProbeKeyframes,
-		inflight:   make(map[string]struct{}),
+		repo:      repo,
+		videoRepo: videoRepo,
+		files:     files,
+		probe:     streaming.ProbeKeyframes,
+		inflight:  make(map[string]struct{}),
 	}
 }
 
@@ -130,13 +126,16 @@ func (s *KeyframeService) RunBackfill(ctx context.Context) (int, int, error) {
 			continue
 		}
 		// ListKeyframeCandidates 的 SQL 已保證 source_id/file_path 非 NULL,故可安全解參考。
-		source, err := s.sourceRepo.FindByID(ctx, *v.SourceID)
+		abs, err := s.files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
+		if errors.Is(err, model.ErrMediaSourceDisabled) {
+			slog.Info("keyframe backfill: skipped, media source disabled", "video_id", v.ID)
+			continue
+		}
 		if err != nil {
-			slog.Warn("keyframe backfill: source lookup failed", "video_id", v.ID, "error", err)
+			slog.Warn("keyframe backfill: resolve file failed", "video_id", v.ID, "error", err)
 			failed++
 			continue
 		}
-		abs := filepath.Clean(filepath.Join(source.MountPath, *v.FilePath))
 		if err := s.probeAndStore(ctx, v.ID, abs); err != nil {
 			slog.Warn("keyframe backfill: probe failed", "video_id", v.ID, "error", err)
 			failed++

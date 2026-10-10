@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -279,54 +277,18 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	source, err := h.mediaSourceService.GetByID(ctx, *video.SourceID)
+	cleanPath, err := h.mediaSourceService.ResolveFile(ctx, *video.SourceID, *video.FilePath)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			slog.Error("media source not found for video",
-				"video_id", videoID, "source_id", *video.SourceID)
-			c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-				Error:   "internal_error",
-				Message: "media source not found",
-			})
-			return
-		}
-		slog.Error("failed to get media source", "error", err, "source_id", *video.SourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get media source",
-		})
-		return
-	}
-
-	if !source.Enabled {
-		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{
-			Error:   "source_unavailable",
-			Message: "media source is currently disabled",
-		})
-		return
-	}
-
-	fullPath := filepath.Join(source.MountPath, *video.FilePath)
-	cleanPath := filepath.Clean(fullPath)
-
-	// Path traversal protection: resolved path must stay within the source's mount path.
-	// Append separator to prevent prefix collision (e.g. /mnt/videos vs /mnt/videos-extra).
-	cleanMount := filepath.Clean(source.MountPath)
-	if !strings.HasPrefix(cleanPath, cleanMount+string(filepath.Separator)) && cleanPath != cleanMount {
-		c.JSON(http.StatusForbidden, model.ErrorResponse{
-			Error:   "path_not_allowed",
-			Message: "resolved file path is outside allowed area",
-		})
+		writeStreamResolveError(c, videoID, err)
 		return
 	}
 
 	// Offload mode: hand the byte path to nginx via X-Accel-Redirect so video
-	// bytes never traverse this process. Go has already done auth + path safety;
-	// nginx owns existence, Content-Type (by extension), and native Range. We
-	// deliberately skip os.Stat here — checking existence is part of serving the
-	// file, which is nginx's job now.
+	// bytes never traverse this process. Go has already done auth, path safety
+	// and the existence check (ResolveFile); nginx owns Content-Type (by
+	// extension) and native Range.
 	if h.xaccelPrefix != "" {
-		rel := strings.TrimPrefix(cleanPath, service.AllowedMountPrefix)
+		rel := strings.TrimPrefix(cleanPath, h.mediaSourceService.MountPrefix())
 		if rel == cleanPath {
 			// Defensive: path is not under the shared mount prefix, so nginx's
 			// `alias /mnt/host/` could not resolve it. Fall back to direct serve.
@@ -336,22 +298,6 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 			c.Status(http.StatusOK) // empty body, nginx takes over
 			return
 		}
-	}
-
-	if _, err := os.Stat(cleanPath); err != nil {
-		if os.IsNotExist(err) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "file_not_found",
-				Message: "video file not found on disk (may have been moved or drive unmounted)",
-			})
-			return
-		}
-		slog.Error("failed to stat video file", "error", err, "path", cleanPath)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to access video file",
-		})
-		return
 	}
 
 	c.Header("Content-Type", video.MimeType)
@@ -449,4 +395,32 @@ func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
 	}
 
 	return filter, nil
+}
+
+// writeStreamResolveError maps MediaSourceService.ResolveFile errors to the
+// Stream endpoint's HTTP responses.
+func writeStreamResolveError(c *gin.Context, videoID string, err error) {
+	switch {
+	case errors.Is(err, model.ErrMediaSourceDisabled):
+		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{
+			Error:   "source_unavailable",
+			Message: "media source is currently disabled",
+		})
+	case errors.Is(err, model.ErrPathNotAllowed):
+		c.JSON(http.StatusForbidden, model.ErrorResponse{
+			Error:   "path_not_allowed",
+			Message: "resolved file path is outside allowed area",
+		})
+	case errors.Is(err, model.ErrPathNotExist):
+		c.JSON(http.StatusNotFound, model.ErrorResponse{
+			Error:   "file_not_found",
+			Message: "video file not found on disk (may have been moved or drive unmounted)",
+		})
+	default:
+		slog.Error("failed to resolve video file", "error", err, "video_id", videoID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to access video file",
+		})
+	}
 }

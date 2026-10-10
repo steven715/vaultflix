@@ -13,6 +13,9 @@ var (
 	ErrInvalidInput       = errors.New("invalid input")
 )
 
+// ErrMediaSourceDisabled 表示 Video 所屬的 Media Source 已停用，不可讀取其檔案。
+var ErrMediaSourceDisabled = errors.New("media source is disabled")
+
 // ErrCodeNotFound 表示來源站找不到該番號的頁面。
 var ErrCodeNotFound = errors.New("code not found at source")
 
