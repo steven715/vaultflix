@@ -82,6 +82,20 @@ describe('PlayerPage play_mode', () => {
     expect(await screen.findByText(/尚未支援|Phase 2|無法播放/)).toBeInTheDocument()
   })
 
+  it('does not start a stream (no stream token) for transcode videos', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'transcode' } as never)
+    renderPlayer()
+    await screen.findByText(/尚未支援|Phase 2|無法播放/)
+    expect(videosApi.getStreamToken).not.toHaveBeenCalled()
+  })
+
+  it('shows the Stream Source failure as the page error', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct' } as never)
+    vi.mocked(videosApi.getStreamToken).mockRejectedValue(new Error('403'))
+    renderPlayer()
+    expect(await screen.findByText('無法載入影片')).toBeInTheDocument()
+  })
+
   it('does not count a forward seek as watch time (heartbeat delta excludes the jump)', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({
       ...base,
