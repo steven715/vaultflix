@@ -98,4 +98,6 @@ Stream Source 與 Playback Session 是在 `useEffect` 裡對 `<video>` 掛 liste
 
 關閉分頁或瀏覽器**不會**觸發 React unmount，只靠 effect cleanup 送出的最後回報會整段遺失。離開時必須送出的資料（Watch Progress、心跳、遙測）同時掛在 `pagehide` 上，並用 keepalive 請求送出（`api/keepalive.ts`）。
 
+手機（Android Chrome／PWA）上把 App 滑掉或系統殺掉背景分頁時常常**不觸發** `pagehide`，最後可靠的訊號是 `document` 的 `visibilitychange` 轉為 hidden：此時也送出 Watch Progress 與心跳。切到別的 App 很常見、之後可能繼續播放，所以遙測只在 `pagehide` 或真正結束時送。
+
 `pagehide` 也會在頁面進入 back/forward cache 時觸發，頁面之後可能原樣回來：`pagehide` 只送出「離開時的回報」，不要結束 session；一次性的回報（遙測）自己防重送。

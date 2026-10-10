@@ -50,10 +50,14 @@ export interface PlaybackSessionSender {
 export interface PlaybackSessionOptions {
   media: PlaybackSessionMedia
   /**
-   * Where `pagehide` fires (window). Closing a tab or the browser never
-   * unmounts React, so this is the last chance to send the leaving reports.
+   * The page lifecycle. Closing a tab or the browser never unmounts React, so
+   * `pagehide` (window) and turning hidden (document `visibilitychange`, the
+   * last reliable signal on mobile) are the chances to send leaving reports.
    */
-  page?: EventTarget
+  page: {
+    window: EventTarget
+    document: EventTarget & { visibilityState: DocumentVisibilityState }
+  }
   video: { id: string; playMode: VideoDetail['play_mode'] }
   sender: PlaybackSessionSender
   /** The quality summary to report at the end (from usePlaybackStats). */
@@ -142,15 +146,24 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
   // The leaving reports. Sent on end, and also on pagehide without ending: a
   // hidden page may come back from the back/forward cache and keep playing.
   function leave() {
+    sendLeavingWatchReports()
+    sendTelemetry()
+  }
+  function sendLeavingWatchReports() {
     if (lastPosition >= 1) reportProgress(lastPosition, { leaving: true, throttled: false })
     flushHeartbeat(lastPosition, true)
-    sendTelemetry()
+  }
+  // Turning hidden is often just an app/tab switch and playback may go on, so
+  // telemetry waits for pagehide or the real end.
+  const onVisibilityChange = () => {
+    if (opts.page.document.visibilityState === 'hidden') sendLeavingWatchReports()
   }
 
   media.addEventListener('timeupdate', onTimeUpdate)
   media.addEventListener('seeking', onSeeking)
   media.addEventListener('pause', onPause)
-  opts.page?.addEventListener('pagehide', leave)
+  opts.page.window.addEventListener('pagehide', leave)
+  opts.page.document.addEventListener('visibilitychange', onVisibilityChange)
   const timer = setInterval(() => flushHeartbeat(media.currentTime, false), HEARTBEAT_INTERVAL_MS)
 
   return {
@@ -166,7 +179,8 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
       media.removeEventListener('timeupdate', onTimeUpdate)
       media.removeEventListener('seeking', onSeeking)
       media.removeEventListener('pause', onPause)
-      opts.page?.removeEventListener('pagehide', leave)
+      opts.page.window.removeEventListener('pagehide', leave)
+      opts.page.document.removeEventListener('visibilitychange', onVisibilityChange)
       leave()
     },
   }

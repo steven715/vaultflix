@@ -33,16 +33,21 @@ const neverPlayed: SessionSummary = {
 function setup(summary: SessionSummary = played) {
   const media = new FakeMedia()
   const page = new EventTarget()
+  const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' as DocumentVisibilityState })
   const rec = recordingSender()
   const session = startPlaybackSession({
     media,
-    page,
+    page: { window: page, document: doc },
     video: { id: 'v1', playMode: 'direct' },
     sender: rec.sender,
     summary: () => summary,
     newSessionId: () => 'sess-1',
   })
-  return { media, page, session, ...rec }
+  const hide = () => {
+    doc.visibilityState = 'hidden'
+    doc.dispatchEvent(new Event('visibilitychange'))
+  }
+  return { media, page, hide, session, ...rec }
 }
 
 beforeEach(() => {
@@ -194,6 +199,30 @@ describe('page hide (tab / browser close)', () => {
     session.end()
     const before = calls.length
     page.dispatchEvent(new Event('pagehide'))
+    expect(calls.length).toBe(before)
+  })
+})
+
+// On Android Chrome / the PWA, swiping the app away or the OS killing a
+// background tab often skips pagehide; turning hidden is the last reliable
+// signal. Switching away is common and playback may resume, so it sends
+// progress and the heartbeat but keeps telemetry for the real end.
+describe('page turns hidden (app switch, mobile)', () => {
+  it('sends progress and the heartbeat, but not telemetry', () => {
+    const { media, hide, of } = setup()
+    media.at(5, 'timeupdate')
+    media.at(33, 'seeking')
+    hide()
+    expect(of('progress').at(-1)).toEqual({ kind: 'progress', leaving: true, body: { videoId: 'v1', seconds: 33 } })
+    expect(of('heartbeat').at(-1)?.leaving).toBe(true)
+    expect(of('telemetry')).toEqual([])
+  })
+
+  it('ignores turning visible again', () => {
+    const { media, page, calls } = setup()
+    media.at(5, 'timeupdate')
+    const before = calls.length
+    page.dispatchEvent(new Event('visibilitychange'))
     expect(calls.length).toBe(before)
   })
 })
