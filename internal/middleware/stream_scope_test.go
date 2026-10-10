@@ -16,13 +16,16 @@ import (
 // both behind JWTAuth, so scope enforcement can be exercised end to end.
 func setupStreamScopeRouter() *gin.Engine {
 	r := gin.New()
-	r.Use(JWTAuth(testJWTSecret))
+	api := r.Group("/api")
+	api.Use(JWTAuth(testJWTSecret))
 	ok := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) }
-	r.GET("/api/videos/:id/stream", ok)
-	r.GET("/api/videos/:id/hls/index.m3u8", ok)
-	r.GET("/api/videos/:id/hls/:segment", ok)
-	r.GET("/api/videos/:id/other", ok)
-	r.GET("/api/users", ok)
+	RegisterRoutes(api, []Route{
+		{Method: http.MethodGet, Path: "/videos/:id/stream", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/hls/index.m3u8", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/hls/:segment", Handler: ok, Viewer: true, StreamToken: true},
+		{Method: http.MethodGet, Path: "/videos/:id/other", Handler: ok, Viewer: true},
+		{Method: http.MethodGet, Path: "/users", Handler: ok, Viewer: true},
+	})
 	return r
 }
 

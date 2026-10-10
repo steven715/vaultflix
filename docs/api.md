@@ -4,7 +4,7 @@ All endpoints live under `/api` and require a valid JWT, except `POST /api/auth/
 `POST /api/auth/login`, and `GET /health` (unauthenticated, used by the Docker healthcheck).
 The token is read from the `Authorization: Bearer <token>` header, falling back to a `?token=`
 query parameter for contexts that cannot set headers (`<video src>`, WebSocket upgrade).
-Role enforcement is Casbin, driven by [`casbin/policy.csv`](../casbin/policy.csv).
+Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/server/routes.go): admin may call every route, viewer only the routes marked for it, and a stream token only the stream routes for its own Video (ADR-0013).
 
 ## Authentication
 
@@ -28,9 +28,9 @@ Role enforcement is Casbin, driven by [`casbin/policy.csv`](../casbin/policy.csv
 | PUT | `/api/videos/:id` | Update video metadata | admin |
 | DELETE | `/api/videos/:id` | Delete video (DB + MinIO) | admin |
 
-> The HLS routes are currently reachable by admin only — `casbin/policy.csv` grants `viewer`
-> the progressive `/api/videos/:id/stream` route but has no entry for the HLS pair, so a
-> viewer-role account can play `direct`-mode videos only.
+> The HLS routes are currently reachable by admin only — the route table grants `viewer`
+> the progressive `/api/videos/:id/stream` route but not the HLS pair, so a viewer-role
+> account can play `direct`-mode videos only.
 
 ## Tags
 

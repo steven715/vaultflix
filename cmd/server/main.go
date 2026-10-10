@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
@@ -60,7 +59,7 @@ func main() {
 	}
 	slog.Info("connected to postgresql")
 
-	// Maintenance mode: needs the DB only, so short-circuit before MinIO/casbin.
+	// Maintenance mode: needs the DB only, so short-circuit before MinIO.
 	if *resetAdminPassword {
 		runAdminPasswordReset(context.Background(), pool, cfg)
 		return
@@ -116,14 +115,6 @@ func main() {
 		}
 		slog.Info("minio presign client created", "public_endpoint", cfg.MinIOPublicEndpoint)
 	}
-
-	// Initialize Casbin enforcer
-	enforcer, err := casbin.NewEnforcer("casbin/model.conf", "casbin/policy.csv")
-	if err != nil {
-		slog.Error("failed to initialize casbin enforcer", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("casbin enforcer initialized")
 
 	// Initialize WebSocket hub (before services, since ImportService depends on it)
 	hub := websocket.NewHub()
@@ -231,88 +222,23 @@ func main() {
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuth(cfg.JWTSecret))
 	api.Use(middleware.RequireActiveUser(userRepo))
-	api.Use(middleware.CasbinRBAC(enforcer))
-	{
-		api.GET("/me", authHandler.Me)
-
-		// Video endpoints
-		api.GET("/videos", videoHandler.List)
-		api.GET("/videos/:id", videoHandler.GetByID)
-		api.PUT("/videos/:id", videoHandler.Update)
-		api.DELETE("/videos/:id", videoHandler.Delete)
-		api.POST("/videos/import", videoHandler.Import)
-		// Import job endpoints
-		api.GET("/import-jobs/active", videoHandler.GetActiveImportJob)
-		api.GET("/import-jobs/:id", videoHandler.GetImportJob)
-		api.GET("/videos/:id/stream", videoHandler.Stream)
-		api.GET("/videos/:id/hls/index.m3u8", hlsHandler.Playlist)
-		api.GET("/videos/:id/hls/:segment", hlsHandler.Segment)
-		api.GET("/videos/:id/stream-token", authHandler.StreamToken)
-		api.POST("/videos/:id/tags", tagHandler.AddVideoTag)
-		api.DELETE("/videos/:id/tags/:tagId", tagHandler.RemoveVideoTag)
-
-		// Tag endpoints
-		api.GET("/tags", tagHandler.List)
-		api.POST("/tags", tagHandler.Create)
-
-		// Watch history endpoints
-		api.POST("/watch-history", historyHandler.SaveProgress)
-		api.GET("/watch-history", historyHandler.List)
-		api.DELETE("/watch-history", historyHandler.ClearHistory)
-
-		// Watch session heartbeat (accumulated real watch time)
-		api.POST("/watch-sessions/heartbeat", watchSessionHandler.Heartbeat)
-
-		// Playback telemetry (viewer ingest; admin-only aggregate read)
-		api.POST("/playback/telemetry", playbackTelemetryHandler.Record)
-		api.GET("/admin/playback/telemetry", playbackTelemetryHandler.Summary)
-
-		// Favorite endpoints
-		api.GET("/favorites", favoriteHandler.List)
-		api.POST("/favorites", favoriteHandler.Add)
-		api.DELETE("/favorites/:videoId", favoriteHandler.Remove)
-
-		// User management endpoints (admin only, enforced by Casbin)
-		api.GET("/users", userHandler.List)
-		api.POST("/users", userHandler.Create)
-		api.DELETE("/users/:id", userHandler.Delete)
-		api.PUT("/users/:id/enable", userHandler.Enable)
-		api.PUT("/users/:id/password", userHandler.ResetPassword)
-
-		// Recommendation endpoints
-		api.GET("/recommendations/today", recHandler.GetToday)
-		api.GET("/recommendations", recHandler.ListByDate)
-		api.POST("/recommendations", recHandler.Create)
-		api.PUT("/recommendations/:id", recHandler.UpdateSortOrder)
-		api.DELETE("/recommendations/:id", recHandler.Delete)
-
-		// Media source endpoints (admin only, enforced by Casbin)
-		api.GET("/media-sources", mediaSourceHandler.List)
-		api.POST("/media-sources", mediaSourceHandler.Create)
-		api.PUT("/media-sources/:id", mediaSourceHandler.Update)
-		api.DELETE("/media-sources/:id", mediaSourceHandler.Delete)
-
-		// Backfill endpoints (admin only, enforced by Casbin)
-		api.POST("/admin/backfill-jobs", backfillHandler.Start)
-		api.GET("/admin/backfill-jobs/active", backfillHandler.GetActive)
-		api.POST("/admin/backfill-jobs/:id/cancel", backfillHandler.Cancel)
-
-		// Analytics (admin only, enforced by Casbin)
-		api.GET("/admin/analytics", analyticsHandler.Get)
-
-		// Enrichment endpoints
-		api.POST("/videos/:id/enrich", enrichHandler.EnrichVideo)
-		api.GET("/videos/:id/suggestions", enrichHandler.ListSuggestions)
-		api.POST("/videos/:id/suggestions/:sid/accept", enrichHandler.AcceptSuggestion)
-		api.DELETE("/videos/:id/suggestions/:sid", enrichHandler.RejectSuggestion)
-		api.POST("/enrich-jobs", enrichHandler.StartBatch)
-		api.GET("/enrich-jobs/active", enrichHandler.ActiveJob)
-		api.DELETE("/enrich-jobs/:jid", enrichHandler.CancelBatch)
-
-		// WebSocket endpoint
-		api.GET("/ws", wsHandler.HandleWebSocket)
-
-	}
+	middleware.RegisterRoutes(api, apiRoutes(apiHandlers{
+		auth:              authHandler,
+		video:             videoHandler,
+		hls:               hlsHandler,
+		tag:               tagHandler,
+		history:           historyHandler,
+		watchSession:      watchSessionHandler,
+		playbackTelemetry: playbackTelemetryHandler,
+		favorite:          favoriteHandler,
+		user:              userHandler,
+		recommendation:    recHandler,
+		mediaSource:       mediaSourceHandler,
+		backfill:          backfillHandler,
+		analytics:         analyticsHandler,
+		enrichment:        enrichHandler,
+		ws:                wsHandler,
+	}))
 
 	// Graceful shutdown: cancel Hub context on SIGINT/SIGTERM
 	go func() {

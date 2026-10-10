@@ -10,13 +10,12 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// streamRoutePaths is the set of routes a scope=stream token may be used on.
-// Every entry binds to :id, so the token's video_id must still match c.Param("id").
-var streamRoutePaths = map[string]bool{
-	"/api/videos/:id/stream":         true,
-	"/api/videos/:id/hls/index.m3u8": true,
-	"/api/videos/:id/hls/:segment":   true,
-}
+// Context keys JWTAuth sets for the route guard (routes.go): which Token Scope
+// the request's token has, and the Video a stream token was issued for.
+const (
+	ctxTokenScope   = "token_scope"
+	ctxTokenVideoID = "token_video_id"
+)
 
 func JWTAuth(jwtSecret string) gin.HandlerFunc {
 	secret := []byte(jwtSecret)
@@ -70,20 +69,13 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// Scope-limited stream tokens may be used ONLY on the allowed streaming routes
-		// and ONLY for the video they were issued for. This bounds the damage
-		// if such a token leaks via the URL: it cannot reach any other endpoint
-		// nor stream a different video, and it expires quickly.
-		if scope, _ := claims["scope"].(string); scope == model.StreamTokenScope {
-			boundVideoID, _ := claims["video_id"].(string)
-			if !streamRoutePaths[c.FullPath()] || boundVideoID == "" || boundVideoID != c.Param("id") {
-				c.AbortWithStatusJSON(http.StatusForbidden, model.ErrorResponse{
-					Error:   "forbidden",
-					Message: "stream token cannot access this resource",
-				})
-				return
-			}
-		}
+		// A scope-limited stream token may be used only on stream routes and only
+		// for the Video it was issued for; the route guard enforces that, since
+		// the route table is what knows which routes accept one.
+		scope, _ := claims["scope"].(string)
+		videoID, _ := claims["video_id"].(string)
+		c.Set(ctxTokenScope, scope)
+		c.Set(ctxTokenVideoID, videoID)
 
 		c.Set("user_id", claims["user_id"])
 		c.Set("username", claims["username"])
