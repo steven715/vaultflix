@@ -5,7 +5,7 @@
 
 ## Context
 
-Every read of a Video built its own column list and scan, and they drifted: some read Code and some didn't, and none read back the Metadata Enrichment writes (Maker, Label, Series, release date, runtime, Cover key, enriched_at). Fix cb2d039 patched one of those queries after a shell integration script happened to notice.
+Every read of a Video built its own column list and scan, and they drifted: some read Code and some didn't, and none read back the Metadata that Enrichment writes (Maker, Label, Series, release date, runtime, Cover key, enriched_at). Fix cb2d039 patched one of those queries after a shell integration script happened to notice.
 
 That class of bug — "the SQL doesn't select a column" — cannot be caught by the service tests, because they replace the repository with hand-written mocks that return whatever the test wrote. The repository package itself had no Go tests that touched a database. `watch_session_repo_test.go` had explicitly declined to invent a Go DB harness "without precedent", leaving SQL coverage to the HTTP-level `scripts/test_*.sh` suites. Those suites only see what an endpoint happens to expose.
 
@@ -28,4 +28,5 @@ Since then, `task test-integration` gained a `go-test` service. It runs Go tests
 
 - Repository tests don't run in `task verify`. They run in `task test-integration` and CI.
 - The `go-test` container now needs the Go modules for pgx. On a network that can't reach `proxy.golang.org`, the step fails at module download — it doesn't skip.
+- `RecommendationRepository.GetRandomUnwatched` also reads through `videoColumns`; any repository returning `model.Video` must.
 - A model field added without reading it back fails `TestVideoRepository_GetByID_ReadsEveryColumn`, which checks every `model.Video` field by reflection.

@@ -23,7 +23,11 @@ func seedFullVideo(t *testing.T, repo VideoRepository, sources MediaSourceReposi
 	if err := sources.Create(ctx, source); err != nil {
 		t.Fatalf("create media source: %v", err)
 	}
-	t.Cleanup(func() { _ = sources.Delete(context.Background(), source.ID) })
+	t.Cleanup(func() {
+		if err := sources.Delete(context.Background(), source.ID); err != nil {
+			t.Errorf("cleanup media source %s: %v", source.ID, err)
+		}
+	})
 
 	filePath := "dir/" + tag + ".mkv"
 	v := &model.Video{
@@ -39,7 +43,11 @@ func seedFullVideo(t *testing.T, repo VideoRepository, sources MediaSourceReposi
 	if err := repo.Create(ctx, v); err != nil {
 		t.Fatalf("create video: %v", err)
 	}
-	t.Cleanup(func() { _ = repo.Delete(context.Background(), v.ID) })
+	t.Cleanup(func() {
+		if err := repo.Delete(context.Background(), v.ID); err != nil {
+			t.Errorf("cleanup video %s: %v", v.ID, err)
+		}
+	})
 
 	release := time.Date(2024, 5, 17, 0, 0, 0, 0, time.UTC)
 	if err := repo.UpdateMetadata(ctx, v.ID, model.VideoMetadataUpdate{
@@ -62,7 +70,9 @@ func normalizeTimes(v *model.Video) {
 }
 
 // Every model.Video field must come back from the database: a column added to
-// the struct but missing from the shared column list fails here.
+// the struct but missing from the shared column list fails here. The fixture
+// therefore gives every field a non-zero value; a future field whose only
+// valid value can be zero needs an explicit exemption below.
 func TestVideoRepository_GetByID_ReadsEveryColumn(t *testing.T) {
 	pool := openTestPool(t)
 	repo, sources := NewVideoRepository(pool), NewMediaSourceRepository(pool)
@@ -86,9 +96,28 @@ func TestVideoRepository_GetByID_ReadsEveryColumn(t *testing.T) {
 	}
 }
 
-// Every reader returns the same complete row GetByID does.
-func TestVideoRepository_ReadersReturnCompleteRows(t *testing.T) {
+// Every reader of Videos returns the same complete row GetByID does.
+func TestVideoReaders_ReturnCompleteRows(t *testing.T) {
 	ctx := context.Background()
+	pool := openTestPool(t)
+	repo, sources := NewVideoRepository(pool), NewMediaSourceRepository(pool)
+	recs, tags := NewRecommendationRepository(pool), NewTagRepository(pool)
+	tagged := func(t *testing.T, videoID string) int {
+		t.Helper()
+		tag := &model.Tag{Name: "rowtest-" + uuid.NewString()[:8], Category: "custom"}
+		if err := tags.Create(ctx, tag); err != nil {
+			t.Fatalf("create tag: %v", err)
+		}
+		t.Cleanup(func() {
+			if _, err := pool.Exec(context.Background(), "DELETE FROM tags WHERE id = $1", tag.ID); err != nil {
+				t.Errorf("cleanup tag %d: %v", tag.ID, err)
+			}
+		})
+		if err := tags.AddVideoTag(ctx, videoID, tag.ID); err != nil {
+			t.Fatalf("tag video: %v", err)
+		}
+		return tag.ID
+	}
 	findIn := func(videos []model.Video, id string) *model.Video {
 		for i := range videos {
 			if videos[i].ID == id {
@@ -100,38 +129,44 @@ func TestVideoRepository_ReadersReturnCompleteRows(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*model.Video)
-		read   func(repo VideoRepository, want *model.Video) (*model.Video, error)
+		read   func(t *testing.T, repo VideoRepository, want *model.Video) (*model.Video, error)
 	}{
-		{"FindBySourceAndPath", nil, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"FindBySourceAndPath", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			return r.FindBySourceAndPath(ctx, *w.SourceID, *w.FilePath)
 		}},
-		{"List", nil, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"List", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, _, err := r.List(ctx, model.VideoFilter{Page: 1, PageSize: 50, Query: w.Title})
 			return findIn(vs, w.ID), err
 		}},
-		{"List random", nil, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"List by tag", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
+			vs, _, err := r.List(ctx, model.VideoFilter{Page: 1, PageSize: 50, TagIDs: []int{tagged(t, w.ID)}})
+			return findIn(vs, w.ID), err
+		}},
+		{"List random", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, _, err := r.List(ctx, model.VideoFilter{Page: 1, PageSize: 50, Query: w.Title, SortBy: "random"})
 			return findIn(vs, w.ID), err
 		}},
-		{"ListMissingPreviews", func(v *model.Video) { v.PreviewKey = "" }, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"ListMissingPreviews", func(v *model.Video) { v.PreviewKey = "" }, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, err := r.ListMissingPreviews(ctx)
 			return findIn(vs, w.ID), err
 		}},
-		{"ListByEnrichmentStatus", nil, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"ListByEnrichmentStatus", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, err := r.ListByEnrichmentStatus(ctx, "enriched")
 			return findIn(vs, w.ID), err
 		}},
-		{"ListMissingCodecs", func(v *model.Video) { v.VideoCodec, v.AudioCodec = "", "" }, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"ListMissingCodecs", func(v *model.Video) { v.VideoCodec, v.AudioCodec = "", "" }, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, err := r.ListMissingCodecs(ctx, 100000)
 			return findIn(vs, w.ID), err
 		}},
-		{"ListKeyframeCandidates", nil, func(r VideoRepository, w *model.Video) (*model.Video, error) {
+		{"RecommendationRepository.GetRandomUnwatched", nil, func(t *testing.T, _ VideoRepository, w *model.Video) (*model.Video, error) {
+			vs, err := recs.GetRandomUnwatched(ctx, uuid.NewString(), 100000)
+			return findIn(vs, w.ID), err
+		}},
+		{"ListKeyframeCandidates", nil, func(t *testing.T, r VideoRepository, w *model.Video) (*model.Video, error) {
 			vs, err := r.ListKeyframeCandidates(ctx, 100000)
 			return findIn(vs, w.ID), err
 		}},
 	}
-	pool := openTestPool(t)
-	repo, sources := NewVideoRepository(pool), NewMediaSourceRepository(pool)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			id := seedFullVideo(t, repo, sources, tt.mutate)
@@ -139,7 +174,7 @@ func TestVideoRepository_ReadersReturnCompleteRows(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetByID: %v", err)
 			}
-			got, err := tt.read(repo, want)
+			got, err := tt.read(t, repo, want)
 			if err != nil {
 				t.Fatalf("%s: %v", tt.name, err)
 			}

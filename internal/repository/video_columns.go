@@ -34,7 +34,10 @@ func scanVideo(row pgx.Row) (model.Video, error) {
 		&v.Maker, &v.Label, &v.Series,
 		&v.CoverKey, &v.EnrichmentStatus, &v.EnrichedAt,
 	)
-	return v, err
+	if err != nil {
+		return model.Video{}, fmt.Errorf("failed to scan video row: %w", err)
+	}
+	return v, nil
 }
 
 // collectVideos drains rows selected with videoColumns. It closes rows and
@@ -45,7 +48,7 @@ func collectVideos(rows pgx.Rows) ([]model.Video, error) {
 	for rows.Next() {
 		v, err := scanVideo(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan video: %w", err)
+			return nil, err
 		}
 		videos = append(videos, v)
 	}
