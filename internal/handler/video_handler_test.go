@@ -442,7 +442,7 @@ func TestStreamVideo(t *testing.T) {
 				MountPath: tmpDir,
 				Enabled:   false,
 			},
-			expectedStatus: http.StatusServiceUnavailable,
+			expectedStatus: http.StatusConflict,
 		},
 		{
 			name:    "file not on disk",
