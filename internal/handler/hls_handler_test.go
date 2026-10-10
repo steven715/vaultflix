@@ -77,7 +77,7 @@ func TestWriteHLSError_MapsSentinelsToHTTP(t *testing.T) {
 	}{
 		{model.ErrInvalidInput, http.StatusBadRequest, "bad_request"},
 		{model.ErrStreamPreparing, http.StatusServiceUnavailable, "stream_not_ready"},
-		{model.ErrMediaSourceDisabled, http.StatusServiceUnavailable, "source_unavailable"},
+		{model.ErrMediaSourceDisabled, http.StatusConflict, "source_unavailable"},
 		{model.ErrNotRemux, http.StatusNotFound, "not_found"},
 		{model.ErrNotFound, http.StatusNotFound, "not_found"},
 		{model.ErrPathNotExist, http.StatusNotFound, "not_found"},

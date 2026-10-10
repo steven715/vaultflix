@@ -21,8 +21,8 @@ Role enforcement is Casbin, driven by [`casbin/policy.csv`](../casbin/policy.csv
 |--------|------|-------------|------|
 | GET | `/api/videos` | List videos (paginated, searchable, filterable) | viewer+ |
 | GET | `/api/videos/:id` | Video detail: stream URL, play mode, presigned thumbnail/preview URLs | viewer+ |
-| GET | `/api/videos/:id/stream` | Stream bytes (HTTP Range; X-Accel-Redirect in production) | viewer+ |
-| GET | `/api/videos/:id/hls/index.m3u8` | HLS playlist for `remux` play mode (other modes → 404; 503 `stream_not_ready` while the Keyframe Index is probed) | admin |
+| GET | `/api/videos/:id/stream` | Stream bytes (HTTP Range; X-Accel-Redirect in production; 409 `source_unavailable` when the Media Source is disabled) | viewer+ |
+| GET | `/api/videos/:id/hls/index.m3u8` | HLS playlist for `remux` play mode (other modes → 404; 409 `source_unavailable` when the Media Source is disabled; 503 `stream_not_ready` — and only that — while the Keyframe Index is probed) | admin |
 | GET | `/api/videos/:id/hls/:segment` | HLS Segment (ffmpeg-generated, disk-cached; same 404/503 rules as the playlist) | admin |
 | POST | `/api/videos/import` | Import videos from a mounted directory | admin |
 | PUT | `/api/videos/:id` | Update video metadata | admin |

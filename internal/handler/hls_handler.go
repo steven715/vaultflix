@@ -66,7 +66,8 @@ func rewritePlaylistTokens(raw []byte, token string) []byte {
 }
 
 // Playlist 回傳 VOD manifest，segment URI 內嵌 token。
-// Keyframe Index 準備中時回 503 stream_not_ready（播放器稍後重試）。
+// Keyframe Index 準備中時回 503 stream_not_ready（播放器稍後重試）；
+// 503 只保留給「準備中」，其他狀態一律不可用 503。
 // GET /api/videos/:id/hls/index.m3u8
 func (h *HLSHandler) Playlist(c *gin.Context) {
 	videoID := c.Param("id")
@@ -101,7 +102,8 @@ func writeHLSError(c *gin.Context, videoID string, err error) {
 	case errors.Is(err, model.ErrStreamPreparing):
 		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{Error: "stream_not_ready", Message: "preparing stream for first playback, please retry"})
 	case errors.Is(err, model.ErrMediaSourceDisabled):
-		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{Error: "source_unavailable", Message: "media source disabled"})
+		// 409，不是 503：播放器把 503 一律當「準備中」輪詢重試（hlsError.ts）。
+		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_unavailable", Message: "media source disabled"})
 	case errors.Is(err, model.ErrNotRemux):
 		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video is not served over HLS"})
 	case errors.Is(err, model.ErrNotFound), errors.Is(err, model.ErrPathNotExist):

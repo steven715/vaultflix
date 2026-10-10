@@ -33,6 +33,11 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 並回 `ErrStreamPreparing`）→ 檔名文法（`streaming.SegmentName` / `ParseSegmentName` 成對）與範圍檢查 →
 `SegmentCache.EnsureSegment`。HLS handler 只做 token 改寫與 error → HTTP 對映。
 
+**HLS 的 503 只代表「準備中」。** hls.js 的錯誤只帶狀態碼、拿不到 body，播放器（`web/src/lib/hlsError.ts`）
+因此把任何 503 都當「Keyframe Index 探測中」輪詢重試（上限 20 次 ≈ 80s）。其他無法播放的狀態必須用別的狀態碼
+（Media Source 停用 → 409 `source_unavailable`），否則播放器會白等到重試上限才報錯。新增 HLS 錯誤時先決定它是否該被重試，
+再選狀態碼。
+
 片庫分布（2026-08-24 快照）：direct 285 部 / 521GB、remux 124 部 / 200GB、transcode 89 部 / 143GB。
 
 ## 3. 緩衝策略：執行在客戶端，策略是業務參數

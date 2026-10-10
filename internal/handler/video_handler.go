@@ -402,7 +402,7 @@ func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
 func writeStreamResolveError(c *gin.Context, videoID string, err error) {
 	switch {
 	case errors.Is(err, model.ErrMediaSourceDisabled):
-		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{
+		c.JSON(http.StatusConflict, model.ErrorResponse{
 			Error:   "source_unavailable",
 			Message: "media source is currently disabled",
 		})

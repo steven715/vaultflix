@@ -15,6 +15,10 @@ describe('classifyHlsError', () => {
     expect(classifyHlsError({ fatal: true, response: { code: 503 } }, MAX_PREPARING_RETRIES)).toBe('fatal')
   })
 
+  it('fatal 409 (Media Source disabled) → fatal immediately, never retried as preparing', () => {
+    expect(classifyHlsError({ fatal: true, response: { code: 409 } }, 0)).toBe('fatal')
+  })
+
   it('fatal non-503 → fatal', () => {
     expect(classifyHlsError({ fatal: true, response: { code: 404 } }, 0)).toBe('fatal')
     expect(classifyHlsError({ fatal: true }, 0)).toBe('fatal')
