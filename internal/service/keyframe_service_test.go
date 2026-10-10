@@ -51,7 +51,7 @@ func (f *fakeKfVideoRepo) ListKeyframeCandidates(ctx context.Context, limit int)
 
 func strPtr(s string) *string { return &s }
 
-func TestLookup_MissTriggersProbeAndReportsPreparing(t *testing.T) {
+func TestLookupOrProbe_MissTriggersProbeAndReportsPreparing(t *testing.T) {
 	repo := newFakeKeyframeRepo()
 	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
 	probedPath := make(chan string, 1)
@@ -60,7 +60,7 @@ func TestLookup_MissTriggersProbeAndReportsPreparing(t *testing.T) {
 		return []float64{0, 8}, 16, nil
 	}
 
-	_, err := s.Lookup(context.Background(), "v1", "/mnt/host/D/a.avi")
+	_, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
 	if !errors.Is(err, model.ErrStreamPreparing) {
 		t.Fatalf("err = %v, want ErrStreamPreparing", err)
 	}
@@ -74,7 +74,7 @@ func TestLookup_MissTriggersProbeAndReportsPreparing(t *testing.T) {
 	}
 }
 
-func TestLookup_ReturnsStoredWithoutProbing(t *testing.T) {
+func TestLookupOrProbe_ReturnsStoredWithoutProbing(t *testing.T) {
 	repo := newFakeKeyframeRepo()
 	repo.stored["v1"] = &model.KeyframeIndex{
 		VideoID:  "v1",
@@ -86,18 +86,18 @@ func TestLookup_ReturnsStoredWithoutProbing(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	segs, err := s.Lookup(context.Background(), "v1", "/mnt/host/D/a.avi")
+	segs, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
 	if err != nil || len(segs) != 1 {
 		t.Errorf("segs = %v, err = %v", segs, err)
 	}
 }
 
-func TestLookup_RepoErrorIsNotPreparing(t *testing.T) {
+func TestLookupOrProbe_RepoErrorIsNotPreparing(t *testing.T) {
 	repo := newFakeKeyframeRepo()
 	repo.getErr = errors.New("db down")
 	s := NewKeyframeService(repo, &fakeKfVideoRepo{}, mock.ResolveUnder("/mnt/host/D"))
 
-	_, err := s.Lookup(context.Background(), "v1", "/mnt/host/D/a.avi")
+	_, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.avi")
 	if err == nil || errors.Is(err, model.ErrStreamPreparing) {
 		t.Errorf("err = %v, want a non-preparing error", err)
 	}

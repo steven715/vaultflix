@@ -18,20 +18,22 @@ type playbackResolver interface {
 // segmentIndex returns a Video's Segment Boundary table (implemented by
 // *KeyframeService).
 type segmentIndex interface {
-	// Lookup returns model.ErrStreamPreparing (wrapped) while the Keyframe
+	// LookupOrProbe returns model.ErrStreamPreparing (wrapped) while the Keyframe
 	// Index is still being probed.
-	Lookup(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error)
+	LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error)
 }
 
 // segmentStore produces and caches HLS Segment files (implemented by
 // *streaming.SegmentCache).
 type segmentStore interface {
+	// EnsureSegment returns the path of the cached HLS Segment file, or a
+	// wrapped ffmpeg/filesystem error (or ctx.Err()) if it cannot be produced.
 	EnsureSegment(ctx context.Context, videoID, inputPath string, idx int, seg model.SegmentBoundary) (string, error)
 }
 
 // HLSService serves remux Videos as VOD HLS: a manifest built from the
 // Keyframe Index, and HLS Segments cut on demand. Callers only name a Video
-// and, for a segment, the file name the manifest listed.
+// and, for an HLS Segment, the file name the manifest listed.
 type HLSService struct {
 	videos   playbackResolver
 	index    segmentIndex
@@ -52,7 +54,7 @@ func NewHLSService(videos playbackResolver, index segmentIndex, segments segment
 func (s *HLSService) Manifest(ctx context.Context, videoID string) ([]byte, error) {
 	_, segs, err := s.boundaries(ctx, videoID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build manifest: %w", err)
 	}
 	return streaming.BuildVODManifest(segs), nil
 }
@@ -60,8 +62,8 @@ func (s *HLSService) Manifest(ctx context.Context, videoID string) ([]byte, erro
 // Segment returns the path of a ready HLS Segment file, cutting it first if
 // it is not cached. name is a file name listed by Manifest.
 //
-// Returns model.ErrInvalidInput (wrapped) if name is not a segment name;
-// model.ErrNotFound (wrapped) if the index is past the last segment;
+// Returns model.ErrInvalidInput (wrapped) if name is not an HLS Segment name;
+// model.ErrNotFound (wrapped) if the index is past the last HLS Segment;
 // otherwise the same errors as Manifest, or a wrapped generation error.
 func (s *HLSService) Segment(ctx context.Context, videoID, name string) (string, error) {
 	idx, ok := streaming.ParseSegmentName(name)
@@ -70,7 +72,7 @@ func (s *HLSService) Segment(ctx context.Context, videoID, name string) (string,
 	}
 	inputPath, segs, err := s.boundaries(ctx, videoID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to serve hls segment %q: %w", name, err)
 	}
 	if idx >= len(segs) {
 		return "", fmt.Errorf("segment %d of video %s (has %d): %w", idx, videoID, len(segs), model.ErrNotFound)
@@ -91,7 +93,7 @@ func (s *HLSService) boundaries(ctx context.Context, videoID string) (string, []
 	if mode != model.PlayModeRemux {
 		return "", nil, fmt.Errorf("video %s is %s: %w", videoID, mode, model.ErrNotRemux)
 	}
-	segs, err := s.index.Lookup(ctx, videoID, inputPath)
+	segs, err := s.index.LookupOrProbe(ctx, videoID, inputPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to look up segments of video %s: %w", videoID, err)
 	}

@@ -21,8 +21,8 @@ type hlsStreamer interface {
 	// Manifest returns ErrNotRemux, ErrStreamPreparing or a
 	// VideoService.ResolvePlayback error (all wrapped) on failure.
 	Manifest(ctx context.Context, videoID string) ([]byte, error)
-	// Segment additionally returns ErrInvalidInput for a malformed name and
-	// ErrNotFound for an index past the last segment.
+	// Segment additionally returns ErrInvalidInput for a malformed HLS Segment
+	// name and ErrNotFound for an index past the last HLS Segment.
 	Segment(ctx context.Context, videoID, name string) (string, error)
 }
 

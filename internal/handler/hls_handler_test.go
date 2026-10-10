@@ -69,7 +69,7 @@ func TestHLSSegment_ServesFile(t *testing.T) {
 	}
 }
 
-func TestHLS_ErrorMapping(t *testing.T) {
+func TestWriteHLSError_MapsSentinelsToHTTP(t *testing.T) {
 	tests := []struct {
 		err        error
 		wantStatus int

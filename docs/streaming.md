@@ -29,7 +29,7 @@
 
 remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`），只開兩個呼叫：
 `Manifest(videoID)` 與 `Segment(videoID, name)`。它在 seam 後面依序做：`VideoService.ResolvePlayback`
-（路徑 + Play Mode，非 remux 回 `ErrNotRemux`）→ `KeyframeService.Lookup`（Keyframe Index 不存在時觸發背景探測
+（路徑 + Play Mode，非 remux 回 `ErrNotRemux`）→ `KeyframeService.LookupOrProbe`（Keyframe Index 不存在時觸發背景探測
 並回 `ErrStreamPreparing`）→ 檔名文法（`streaming.SegmentName` / `ParseSegmentName` 成對）與範圍檢查 →
 `SegmentCache.EnsureSegment`。HLS handler 只做 token 改寫與 error → HTTP 對映。
 

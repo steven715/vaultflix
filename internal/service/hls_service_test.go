@@ -83,7 +83,7 @@ func TestHLSSegment_EveryManifestNameIsServable(t *testing.T) {
 	}
 }
 
-func TestHLS_RejectsNonRemuxWithoutTouchingIndex(t *testing.T) {
+func TestHLSService_RejectsNonRemuxWithoutTouchingIndex(t *testing.T) {
 	for _, mode := range []model.PlayMode{model.PlayModeDirect, model.PlayModeTranscode} {
 		t.Run(string(mode), func(t *testing.T) {
 			index := &mock.KeyframeLookup{Segments: threeSegments}
@@ -123,7 +123,7 @@ func TestHLSSegment_OutOfRange(t *testing.T) {
 	}
 }
 
-func TestHLS_PropagatesUpstreamErrors(t *testing.T) {
+func TestHLSService_PropagatesUpstreamErrors(t *testing.T) {
 	tests := []struct {
 		name   string
 		videos *mock.PlaybackResolver
