@@ -103,7 +103,6 @@ func TestEnrichmentHandler_AcceptSuggestion_HappyPath(t *testing.T) {
 			return nil
 		},
 	}
-	// No actresses or genres in payload, so actressRepo/tagRepo won't be called.
 	r, _ := buildEnrichmentRouter(videoRepo, suggestionRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/videos/vid-1/suggestions/sid-1/accept", nil)

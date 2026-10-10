@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAssetKeys_Formats(t *testing.T) {
 	tests := []struct {
@@ -24,10 +27,10 @@ func TestAssetKeys_Formats(t *testing.T) {
 // Every Cover/Avatar key carries its kind's prefix: stagedKey relies on it to
 // recognise keys in legacy Suggestions.
 func TestAssetKeys_PrefixesMatchKeys(t *testing.T) {
-	if k := coverKey("X-1", "s"); k[:len(coverKeyPrefix)] != coverKeyPrefix {
+	if k := coverKey("X-1", "s"); !strings.HasPrefix(k, coverKeyPrefix) {
 		t.Errorf("cover key %q lacks prefix %q", k, coverKeyPrefix)
 	}
-	if k := avatarKey("A", "X-1", "s"); k[:len(avatarKeyPrefix)] != avatarKeyPrefix {
+	if k := avatarKey("A", "X-1", "s"); !strings.HasPrefix(k, avatarKeyPrefix) {
 		t.Errorf("avatar key %q lacks prefix %q", k, avatarKeyPrefix)
 	}
 }

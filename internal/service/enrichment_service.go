@@ -156,16 +156,16 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 		}
 		if res.CoverURL != "" {
 			key := coverKey(code, source)
-			if coverKey, ok := s.downloadAndUploadCover(ctx, videoID, res.CoverURL, key); ok {
-				res.CoverKey = coverKey
+			if uploaded, ok := s.downloadAndUploadCover(ctx, videoID, res.CoverURL, key); ok {
+				res.CoverKey = uploaded
 			}
 		}
 		for j := range res.Actresses {
 			a := &res.Actresses[j]
 			if a.AvatarURL != "" {
 				key := avatarKey(a.NameJa, code, source)
-				if avatarKey, ok := s.downloadAndUploadAvatar(ctx, videoID, a.AvatarURL, key); ok {
-					a.AvatarKey = avatarKey
+				if uploaded, ok := s.downloadAndUploadAvatar(ctx, videoID, a.AvatarURL, key); ok {
+					a.AvatarKey = uploaded
 				}
 			}
 		}
