@@ -101,3 +101,10 @@ abs := filepath.Join(source.MountPath, *v.FilePath)
 - 交易內沿用同 package 既有的 query 常數；只有語意真的不同時才另寫一句（例如下一條）
 - 「把已存在的關聯再連一次」是合法操作時，用 `ON CONFLICT DO NOTHING` 的版本（如 `queryLinkGenreTag`），不要回 `ErrConflict` 讓整個動作失敗；使用者手動加 Tag 時「重複」仍是錯誤，所以 `AddVideoTag` 維持 `ErrConflict`
 - 以 `openTestPool`（ADR-0012）對真 Postgres 測：成功路徑 + 中途失敗後**什麼都沒寫入**
+
+## 外部網址與 object key 分欄
+
+從外部抓來的圖片（Cover、Avatar）在 payload 裡用兩個欄位：`*_url` 永遠是來源網址，`*_key` 只在上傳 MinIO 成功時才填。寫入 DB 的 `cover_key`／`avatar_key` 只讀 `*_key`，**外部網址絕不當成 object key**。
+
+- 上傳失敗 → key 留空，不要「保留原網址」
+- 寫入時 key 為空代表「這次沒有新圖」，以 `COALESCE(NULLIF($n, ''), 原欄位)` 保留既有圖片，不要覆寫成空值

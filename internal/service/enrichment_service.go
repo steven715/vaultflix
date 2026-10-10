@@ -150,9 +150,10 @@ func (s *EnrichmentService) handleAllFailed(ctx context.Context, videoID, userID
 	return fmt.Errorf("enrich %s: no scrapers configured", code)
 }
 
-// uploadImages downloads and uploads cover/avatar images for each source result,
-// swapping CoverURL/AvatarURL to MinIO keys in-place.
-// Empty URLs are skipped; failures are logged and the URL is left as-is.
+// uploadImages downloads and uploads the Cover and Avatars of each source
+// result, recording each uploaded object key in CoverKey/AvatarKey. Source URLs
+// are never modified. Empty URLs are skipped; a failed download or upload is
+// logged and leaves the key empty.
 func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code string, results []scraper.SourceResult) {
 	for i := range results {
 		res := results[i].Data
@@ -163,7 +164,7 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 		if res.CoverURL != "" {
 			key := fmt.Sprintf("covers/%s-%s.jpg", code, source)
 			if coverKey, ok := s.downloadAndUploadCover(ctx, videoID, res.CoverURL, key); ok {
-				res.CoverURL = coverKey
+				res.CoverKey = coverKey
 			}
 		}
 		for j := range res.Actresses {
@@ -174,7 +175,7 @@ func (s *EnrichmentService) uploadImages(ctx context.Context, videoID, code stri
 				// before this Suggestion is accepted (ADR-0010).
 				key := fmt.Sprintf("actresses/%s-%s-%s.jpg", sanitizeName(a.NameJa), code, source)
 				if avatarKey, ok := s.downloadAndUploadAvatar(ctx, videoID, a.AvatarURL, key); ok {
-					a.AvatarURL = avatarKey
+					a.AvatarKey = avatarKey
 				}
 			}
 		}

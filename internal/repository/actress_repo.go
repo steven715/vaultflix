@@ -24,7 +24,8 @@ const queryUpsertActress = `
     VALUES ($1, $2, $3)
     ON CONFLICT (name_ja) DO UPDATE
         SET name_romaji = EXCLUDED.name_romaji,
-            avatar_key  = EXCLUDED.avatar_key
+            -- an empty key means no Avatar was staged: keep the Performer's
+            avatar_key  = COALESCE(NULLIF(EXCLUDED.avatar_key, ''), actresses.avatar_key)
     RETURNING id, created_at
 `
 

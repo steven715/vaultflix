@@ -123,8 +123,9 @@ func TestAcceptSuggestion_AppliesEverythingInOneCall(t *testing.T) {
 	payload := model.EnrichedMetadata{
 		Code: "DASD-626", Title: "原標題", Maker: "M",
 		Genres:    []string{"巨乳"},
-		Actresses: []model.ActressMeta{{NameJa: "女優A", NameRomaji: "Joyu A", AvatarURL: "actresses/k.jpg"}},
-		CoverURL:  "covers/DASD-626-javbus.jpg",
+		Actresses: []model.ActressMeta{{NameJa: "女優A", NameRomaji: "Joyu A", AvatarURL: "https://x/a.jpg", AvatarKey: "actresses/k.jpg"}},
+		CoverURL:  "https://x/cover.jpg",
+		CoverKey:  "covers/DASD-626-javbus.jpg",
 	}
 	var applied *model.SuggestionApplication
 	sugRepo := &mock.SuggestionRepository{
@@ -174,6 +175,34 @@ func TestAcceptSuggestion_UsesPayloadGenresWithoutOverride(t *testing.T) {
 	}
 	if len(applied.Genres) != 2 || applied.Metadata.Title != "T" {
 		t.Errorf("applied = %+v, want the payload's title and both genres", applied)
+	}
+}
+
+func TestSuggestionApplication_ObjectKeys(t *testing.T) {
+	tests := []struct {
+		name            string
+		cover, coverKey string
+		avatar, avKey   string
+		wantCover       string
+		wantAvatar      string
+	}{
+		{"keys win", "https://x/c.jpg", "covers/c.jpg", "https://x/a.jpg", "actresses/a.jpg", "covers/c.jpg", "actresses/a.jpg"},
+		{"failed download: source URL is never a key", "https://x/c.jpg", "", "http://x/a.jpg", "", "", ""},
+		// Suggestions staged before cover_key/avatar_key existed kept the key in the URL field.
+		{"legacy row with key in URL field", "covers/c.jpg", "", "actresses/a.jpg", "", "covers/c.jpg", "actresses/a.jpg"},
+		{"nothing scraped", "", "", "", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sug := &model.MetadataSuggestion{ID: "s1", VideoID: "v1", Payload: model.EnrichedMetadata{
+				CoverURL: tt.cover, CoverKey: tt.coverKey,
+				Actresses: []model.ActressMeta{{NameJa: "A", AvatarURL: tt.avatar, AvatarKey: tt.avKey}},
+			}}
+			app := suggestionApplication(sug, model.SuggestionOverride{})
+			if app.Metadata.CoverKey != tt.wantCover || app.Performers[0].AvatarKey != tt.wantAvatar {
+				t.Errorf("cover %q avatar %q, want %q / %q", app.Metadata.CoverKey, app.Performers[0].AvatarKey, tt.wantCover, tt.wantAvatar)
+			}
+		})
 	}
 }
 
@@ -265,6 +294,7 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 				Code:      code,
 				Title:     "T",
 				Actresses: []model.ActressMeta{{NameJa: "山田 花子", AvatarURL: "https://example.com/a.jpg"}},
+				CoverURL:  "https://example.com/cover.jpg",
 			}, nil
 		},
 	}
@@ -285,6 +315,7 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 				avatarKeys = append(avatarKeys, key)
 				return nil
 			},
+			UploadCoverFunc: func(context.Context, string, string) error { return nil },
 		},
 		&mock.Notifier{},
 	)
@@ -305,8 +336,46 @@ func TestEnrichVideo_AvatarUploadDoesNotOverwriteSharedKey(t *testing.T) {
 	if len(avatarKeys) != 1 || avatarKeys[0] != want {
 		t.Fatalf("avatar keys = %v, want [%s]", avatarKeys, want)
 	}
-	if got := staged.Payload.Actresses[0].AvatarURL; got != want {
-		t.Errorf("staged avatar key = %q, want %q", got, want)
+	a := staged.Payload.Actresses[0]
+	if a.AvatarKey != want || a.AvatarURL != "https://example.com/a.jpg" {
+		t.Errorf("staged avatar key %q / url %q, want key %q and the source URL kept", a.AvatarKey, a.AvatarURL, want)
+	}
+	if p := staged.Payload; p.CoverKey != "covers/DASD-626-javbus.jpg" || p.CoverURL != "https://example.com/cover.jpg" {
+		t.Errorf("staged cover key %q / url %q", p.CoverKey, p.CoverURL)
+	}
+}
+
+// A failed download stages no key: the source URL must never stand in for one.
+func TestEnrichVideo_FailedImageDownloadStagesNoKey(t *testing.T) {
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(_ context.Context, id string) (*model.Video, error) {
+			return &model.Video{ID: id, OriginalFilename: "DASD-626.mp4"}, nil
+		},
+		SetEnrichmentStatusFunc: func(context.Context, string, string) error { return nil },
+	}
+	fakeScraper := &mock.Scraper{
+		SourceValue: "javbus",
+		ScrapeByCodeFunc: func(_ context.Context, code string) (*model.EnrichedMetadata, error) {
+			return &model.EnrichedMetadata{
+				Code: code, Title: "T", CoverURL: "https://example.com/cover.jpg",
+				Actresses: []model.ActressMeta{{NameJa: "山田 花子", AvatarURL: "https://example.com/a.jpg"}},
+			}, nil
+		},
+	}
+	var staged *model.MetadataSuggestion
+	sugRepo := &mock.SuggestionRepository{CreateFunc: func(_ context.Context, s *model.MetadataSuggestion) error { staged = s; return nil }}
+	svc := NewEnrichmentService([]scraper.MetadataScraper{fakeScraper}, videoRepo, &mock.ActressRepository{}, sugRepo, &mock.TagRepository{}, &mock.MinIOClient{}, &mock.Notifier{})
+	svc.downloadImage = func(context.Context, string) (string, error) { return "", errors.New("404") }
+
+	if err := svc.EnrichVideo(context.Background(), "v1", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	p := staged.Payload
+	if p.CoverKey != "" || p.Actresses[0].AvatarKey != "" {
+		t.Errorf("keys staged for failed downloads: cover %q avatar %q", p.CoverKey, p.Actresses[0].AvatarKey)
+	}
+	if p.CoverURL != "https://example.com/cover.jpg" || p.Actresses[0].AvatarURL != "https://example.com/a.jpg" {
+		t.Errorf("source URLs changed: %+v", p)
 	}
 }
 

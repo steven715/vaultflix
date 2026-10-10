@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 )
@@ -45,11 +46,11 @@ func suggestionApplication(sug *model.MetadataSuggestion, override model.Suggest
 		VideoID:      sug.VideoID,
 		Metadata: model.VideoMetadataUpdate{
 			Code: p.Code, Title: title, ReleaseDate: p.ReleaseDate, RuntimeMinutes: p.RuntimeMinutes,
-			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: p.CoverURL,
+			Maker: p.Maker, Label: p.Label, Series: p.Series, CoverKey: stagedKey(p.CoverKey, p.CoverURL),
 		},
 	}
 	for _, a := range p.Actresses {
-		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: a.AvatarURL})
+		app.Performers = append(app.Performers, model.Actress{NameJa: a.NameJa, NameRomaji: a.NameRomaji, AvatarKey: stagedKey(a.AvatarKey, a.AvatarURL)})
 	}
 	for _, g := range genres {
 		if g != "" {
@@ -57,6 +58,21 @@ func suggestionApplication(sug *model.MetadataSuggestion, override model.Suggest
 		}
 	}
 	return app
+}
+
+// stagedKey returns the object key staged for an image, or "" when none was
+// uploaded. Suggestions staged before cover_key/avatar_key existed stored the
+// key in the URL field on success and left the source URL there on failure,
+// so a non-HTTP value in the URL field is still read as a key; an HTTP URL
+// never is. Drop the fallback once no such Suggestions remain pending.
+func stagedKey(key, sourceURL string) string {
+	if key != "" {
+		return key
+	}
+	if sourceURL == "" || strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://") {
+		return ""
+	}
+	return sourceURL
 }
 
 // autoAcceptHighestPriority accepts the suggestion from the highest-priority

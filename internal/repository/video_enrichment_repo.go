@@ -10,7 +10,9 @@ import (
 const queryUpdateVideoMetadata = `
     UPDATE videos
     SET code = $2, title = $3, release_date = $4, runtime_minutes = $5,
-        maker = $6, label = $7, series = $8, cover_key = $9,
+        maker = $6, label = $7, series = $8,
+        -- an empty key means no Cover was staged: keep the one the Video has
+        cover_key = COALESCE(NULLIF($9, ''), cover_key),
         enrichment_status = 'enriched', enriched_at = NOW(), updated_at = NOW()
     WHERE id = $1
 `
