@@ -265,6 +265,16 @@ describe('startStreamSource: remux', () => {
     expect(positions).toEqual([[3700, 'recovery']])
   })
 
+  it('a 401 before the first load still resumes from Watch Progress', async () => {
+    const { media, instances, positions } = setup({ playMode: 'remux', startAt: 600 })
+    await tick()
+    instances[0].emit('error', { fatal: true, response: { code: 401 } })
+    await tick()
+    media.fire('loadedmetadata')
+    expect(media.currentTime).toBe(600)
+    expect(positions).toEqual([[600, 'resume']])
+  })
+
   it('a second 401 before playback recovers fails instead of looping', async () => {
     const { instances, fetchToken, last } = setup({ playMode: 'remux' })
     await tick()
