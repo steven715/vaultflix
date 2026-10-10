@@ -28,7 +28,6 @@ Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/s
 | PUT | `/api/videos/:id` | Update video metadata | admin |
 | DELETE | `/api/videos/:id` | Delete video (DB + MinIO) | admin |
 
-
 ## Tags
 
 | Method | Path | Description | Auth |
