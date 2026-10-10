@@ -31,6 +31,7 @@ export function usePlaybackSession({ mediaRef, video, ready, summary }: UsePlayb
     if (!ready || !id || !playMode || !media) return
     const session = startPlaybackSession({
       media,
+      page: window,
       video: { id, playMode },
       sender: playbackSessionSender,
       summary: () => summaryRef.current(),

@@ -206,6 +206,26 @@ describe('PlayerPage play_mode', () => {
     fetchSpy.mockRestore()
   })
 
+  it('sends the final Watch Progress when the tab is closed (pagehide, no unmount)', async () => {
+    vi.mocked(videosApi.getVideo).mockResolvedValue({ ...base, play_mode: 'direct', duration_seconds: 6000 } as never)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const { container, unmount } = renderPlayer()
+    await screen.findByText('T')
+    await sessionListening()
+    const el = container.querySelector('video') as HTMLVideoElement
+    let ct = 0
+    Object.defineProperty(el, 'currentTime', { get: () => ct, set: (v: number) => { ct = v }, configurable: true })
+
+    ct = 120
+    fireEvent.seeking(el)
+    window.dispatchEvent(new Event('pagehide'))
+
+    const progress = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/watch-history'))
+    expect(progress && JSON.parse((progress[1] as RequestInit).body as string)).toEqual({ video_id: 'v1', progress_seconds: 120 })
+    unmount()
+    fetchSpy.mockRestore()
+  })
+
   it('returns to the library (not the previous player page) when clicking 返回片庫', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({
       ...base,

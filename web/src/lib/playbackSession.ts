@@ -49,6 +49,11 @@ export interface PlaybackSessionSender {
 
 export interface PlaybackSessionOptions {
   media: PlaybackSessionMedia
+  /**
+   * Where `pagehide` fires (window). Closing a tab or the browser never
+   * unmounts React, so this is the last chance to send the leaving reports.
+   */
+  page?: EventTarget
   video: { id: string; playMode: VideoDetail['play_mode'] }
   sender: PlaybackSessionSender
   /** The quality summary to report at the end (from usePlaybackStats). */
@@ -67,6 +72,7 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
   const { media, video, sender } = opts
   const sessionId = (opts.newSessionId ?? (() => crypto.randomUUID()))()
   let ended = false
+  let telemetrySent = false
   let lastReportAt = 0
   let lastReportSeconds = -1
   let lastSample = 0 // the currentTime the next heartbeat delta is measured from
@@ -99,8 +105,10 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
   }
 
   function sendTelemetry() {
+    if (telemetrySent) return
     const s = opts.summary()
     if (s.ttffMs == null && s.watchedMs <= 0) return // never played
+    telemetrySent = true
     sender.telemetry({
       session_id: sessionId,
       video_id: video.id,
@@ -131,9 +139,18 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
     reportProgress(lastPosition, { leaving: false, throttled: false })
   }
 
+  // The leaving reports. Sent on end, and also on pagehide without ending: a
+  // hidden page may come back from the back/forward cache and keep playing.
+  function leave() {
+    if (lastPosition >= 1) reportProgress(lastPosition, { leaving: true, throttled: false })
+    flushHeartbeat(lastPosition, true)
+    sendTelemetry()
+  }
+
   media.addEventListener('timeupdate', onTimeUpdate)
   media.addEventListener('seeking', onSeeking)
   media.addEventListener('pause', onPause)
+  opts.page?.addEventListener('pagehide', leave)
   const timer = setInterval(() => flushHeartbeat(media.currentTime, false), HEARTBEAT_INTERVAL_MS)
 
   return {
@@ -149,9 +166,8 @@ export function startPlaybackSession(opts: PlaybackSessionOptions): PlaybackSess
       media.removeEventListener('timeupdate', onTimeUpdate)
       media.removeEventListener('seeking', onSeeking)
       media.removeEventListener('pause', onPause)
-      if (lastPosition >= 1) reportProgress(lastPosition, { leaving: true, throttled: false })
-      flushHeartbeat(lastPosition, true)
-      sendTelemetry()
+      opts.page?.removeEventListener('pagehide', leave)
+      leave()
     },
   }
 }
