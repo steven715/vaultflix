@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from 'react'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
-import type { TagWithCount } from '../../types'
+import type { BackfillKind, TagWithCount } from '../../types'
 import { parseTagIds, serializeTagIds, toggleTagId, toggleSort } from '../../lib/libraryParams'
+import { backfillKindName, backfillMenu } from '../../lib/jobLabels'
 
 interface SortChip {
   label: string
@@ -21,11 +23,11 @@ interface LibraryToolbarProps {
   tagIdsStr: string
   allTags: TagWithCount[]
   selected: string[]
-  backfillStarting: boolean
-  backfillJobId: string | null
+  /** Why Backfill cannot start now (e.g. an Import holds the Media Lane); null when it can. */
+  backfillDisabledReason: string | null
   onSort: (params: { sort_by: string; sort_order: string }) => void
   onTagFilter: (tag_ids: string) => void
-  onStartBackfill: () => void
+  onStartBackfill: (kind: BackfillKind) => void
   onOpenImport: () => void
   onBatchTag: () => void
   onBatchDelete: () => void
@@ -39,8 +41,7 @@ export default function LibraryToolbar({
   tagIdsStr,
   allTags,
   selected,
-  backfillStarting,
-  backfillJobId,
+  backfillDisabledReason,
   onSort,
   onTagFilter,
   onStartBackfill,
@@ -92,13 +93,7 @@ export default function LibraryToolbar({
           })}
         </div>
         <div className="ml-auto flex gap-2 shrink-0">
-          <button
-            onClick={onStartBackfill}
-            disabled={backfillStarting || backfillJobId !== null}
-            className="bg-surface-2 text-muted hover:text-cream text-sm px-3 py-1.5 rounded-btn transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {backfillStarting ? '啟動中...' : '補齊預覽'}
-          </button>
+          <BackfillMenu disabledReason={backfillDisabledReason} onStart={onStartBackfill} />
           <button
             onClick={onOpenImport}
             className="bg-accent text-accent-ink hover:brightness-110 text-sm px-3 py-1.5 rounded-btn transition-colors"
@@ -162,6 +157,60 @@ export default function LibraryToolbar({
           >
             取消選取
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// BackfillMenu is the 補齊 button: it opens a menu of the Backfill kinds.
+function BackfillMenu({ disabledReason, onStart }: { disabledReason: string | null; onStart: (kind: BackfillKind) => void }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  // A busy lane shuts the menu even if it was open.
+  const shown = open && disabledReason === null
+
+  // Close on a press outside or Escape. Listens on the document: Safari does
+  // not focus a clicked button, so blur alone never fires there.
+  useEffect(() => {
+    if (!shown) return
+    const onPress = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onPress)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPress)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [shown])
+
+  return (
+    <div ref={rootRef} className="relative flex items-center gap-2">
+      {disabledReason && <span className="text-xs text-faint">{disabledReason}</span>}
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={disabledReason !== null}
+        title={disabledReason ?? undefined}
+        aria-haspopup="menu"
+        aria-expanded={shown}
+        className="bg-surface-2 text-muted hover:text-cream text-sm px-3 py-1.5 rounded-btn transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        補齊 ▾
+      </button>
+      {shown && (
+        <div role="menu" className="absolute right-0 mt-1 z-20 min-w-36 bg-surface border border-border rounded-btn py-1 shadow-lg">
+          {backfillMenu.map((kind) => (
+            <button
+              key={kind}
+              role="menuitem"
+              onClick={() => { setOpen(false); onStart(kind) }}
+              className="block w-full text-left text-sm text-muted hover:text-cream hover:bg-surface-2 px-3 py-1.5"
+            >
+              {backfillKindName(kind)}
+            </button>
+          ))}
         </div>
       )}
     </div>

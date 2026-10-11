@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import { wsHarness } from '../../test/wsHarness'
 import { listVideos } from '../../api/videos'
-import { importVideos, listMediaSources } from '../../api/admin'
+import { getActiveBackfill, getActiveImportJob, importVideos, listMediaSources, startBackfill } from '../../api/admin'
 import type { ImportJob } from '../../types'
 import VideoManagePage from './VideoManagePage'
 
@@ -75,5 +75,62 @@ describe('VideoManagePage (library)', () => {
     await screen.findByText('匯入失敗')
     await new Promise((r) => setTimeout(r, 50))
     expect(vi.mocked(listVideos).mock.calls.length).toBe(loads)
+  })
+
+  const backfillJob = (status: string) => ({
+    id: 'b1', kind: 'keyframe', status, total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, errors: [], started_at: '',
+  })
+
+  it('reloads the list on the same page when a Backfill Job ends', async () => {
+    vi.mocked(startBackfill).mockResolvedValue({ job_id: 'b1', kind: 'keyframe' })
+    const ws = wsHarness()
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library?page=2', ws })
+    await screen.findByText('片A')
+
+    fireEvent.click(screen.getByRole('button', { name: '補齊 ▾' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Keyframe Index' }))
+    await waitFor(() => expect(startBackfill).toHaveBeenCalledWith('keyframe'))
+    const loads = vi.mocked(listVideos).mock.calls.length
+    // The reload hangs: the rows must not wait for it.
+    vi.mocked(listVideos).mockImplementationOnce(() => new Promise(() => {}))
+
+    ws.send({ type: 'backfill_complete', payload: backfillJob('completed') })
+    await waitFor(() => expect(vi.mocked(listVideos).mock.calls.length).toBe(loads + 1))
+    // A quiet reload: the rows stay while it loads.
+    expect(screen.queryByText('載入中...')).toBeNull()
+    expect(screen.getByText('片A')).toBeInTheDocument()
+    expect(vi.mocked(listVideos).mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 })
+  })
+
+  it('disables 補齊 while an Import holds the Media Lane', async () => {
+    vi.mocked(getActiveImportJob).mockResolvedValue({
+      id: 'i1', source_id: 's1', source_label: 'D', status: 'running', total: 3, processed: 1,
+      imported: 1, skipped: 0, failed: 0, errors: [], started_at: '',
+    })
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '補齊 ▾' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: '補齊 ▾' })).toHaveAttribute('title', '匯入執行中')
+  })
+
+  it('disables 開始匯入 while a Backfill holds the Media Lane', async () => {
+    vi.mocked(getActiveBackfill).mockResolvedValue(backfillJob('running') as never)
+    vi.mocked(listMediaSources).mockResolvedValue([
+      { id: 's1', label: 'D槽', mount_path: '/mnt/D', enabled: true, video_count: 0, created_at: '', updated_at: '' },
+    ])
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+    await screen.findByText(/補齊 Keyframe Index 中/)
+
+    fireEvent.click(screen.getByRole('button', { name: '匯入影片' }))
+    await screen.findByRole('option', { name: /D槽/ })
+    expect(screen.getByRole('button', { name: '開始匯入' })).toBeDisabled()
+    expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
+  })
+
+  it('offers 關閉 on the Backfill panel only once the job has ended', async () => {
+    vi.mocked(getActiveBackfill).mockResolvedValue(backfillJob('running') as never)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+    await screen.findByText(/補齊 Keyframe Index 中/)
+    expect(screen.queryByRole('button', { name: '關閉' })).toBeNull()
   })
 })
