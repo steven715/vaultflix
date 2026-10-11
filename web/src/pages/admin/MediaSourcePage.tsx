@@ -6,10 +6,7 @@ import JobProgressPanel from '../../components/admin/JobProgressPanel'
 import { importLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
-import { getErrorMessage } from '../../utils/error'
-import { useJob } from '../../hooks/useJob'
-import { importJobs } from '../../lib/jobKinds'
-import { useJobCancel } from '../../hooks/useJobCancel'
+import { useMediaLane } from '../../hooks/useMediaLane'
 
 export default function MediaSourcePage() {
   const [sources, setSources] = useState<MediaSource[]>([])
@@ -18,9 +15,10 @@ export default function MediaSourcePage() {
   const toast = useToast()
 
   // Import Job (the panel shows under the Media Source it runs on)
-  const importJob = useJob(importJobs, { onFinished: () => refreshSources() })
-  const cancelImport = useJobCancel(importJob.cancel)
-  const importBusy = importJob.starting || importJob.view?.phase === 'running'
+  // The Media Lane: Import Jobs run here, and a Backfill started elsewhere
+  // holds the lane too, so 掃描匯入 waits for it (ADR-0014).
+  const lane = useMediaLane({ onImportFinished: () => refreshSources() })
+  const importJob = lane.import
   // The card whose Import Job is shown: it stays after the job ends, until closed.
   const shownSourceId = importJob.view?.subject ?? null
 
@@ -64,8 +62,7 @@ export default function MediaSourcePage() {
   }, [])
 
   async function handleImport(source: MediaSource) {
-    const { outcome, error } = await importJob.start(source.id)
-    if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
+    await importJob.start(source.id)
   }
 
 
@@ -83,7 +80,7 @@ export default function MediaSourcePage() {
     try {
       await deleteMediaSource(source.id)
       setConfirmAction(null)
-      if (shownSourceId === source.id && !importBusy) importJob.dismiss()
+      if (shownSourceId === source.id && importJob.view?.phase !== 'running') importJob.dismiss()
       fetchSources()
     } catch {
       toast.error('刪除失敗，請重試')
@@ -117,6 +114,7 @@ export default function MediaSourcePage() {
         </div>
       ) : (
         <div className="space-y-4">
+          {lane.importBlockedReason && <p className="text-xs text-faint">{lane.importBlockedReason}</p>}
           {sources.map((source) => (
             <div
               key={source.id}
@@ -151,7 +149,8 @@ export default function MediaSourcePage() {
                   </button>
                   <button
                     onClick={() => handleImport(source)}
-                    disabled={importBusy}
+                    disabled={lane.importBlockedReason !== null}
+                    title={lane.importBlockedReason ?? undefined}
                     className="text-xs text-accent hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-btn transition-colors"
                   >
                     掃描匯入
@@ -176,7 +175,7 @@ export default function MediaSourcePage() {
 
               {/* Import progress inline */}
               {shownSourceId === source.id && importJob.view && (
-                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onCancel={cancelImport} onDismiss={importJob.dismiss} />
+                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onCancel={importJob.cancel} onDismiss={importJob.dismiss} />
               )}
             </div>
           ))}

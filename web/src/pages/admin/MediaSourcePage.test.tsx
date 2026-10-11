@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { cancelImportJob, deleteMediaSource, importVideos, listMediaSources } from '../../api/admin'
+import { cancelImportJob, deleteMediaSource, getActiveBackfill, importVideos, listMediaSources } from '../../api/admin'
 import { wsHarness } from '../../test/wsHarness'
 import MediaSourcePage from './MediaSourcePage'
 
@@ -10,6 +10,7 @@ vi.mock('../../api/admin', () => ({
     { id: 's1', label: 'D槽', mount_path: '/mnt/host/D', enabled: true, video_count: 3, created_at: '', updated_at: '' },
   ])),
   getActiveImportJob: vi.fn(() => Promise.resolve(null)),
+  getActiveBackfill: vi.fn(() => Promise.resolve(null)),
   createMediaSource: vi.fn(), updateMediaSource: vi.fn(), deleteMediaSource: vi.fn(), importVideos: vi.fn(),
   cancelImportJob: vi.fn(() => Promise.resolve()),
 }))
@@ -72,5 +73,15 @@ describe('MediaSourcePage (reskin)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => expect(cancelImportJob).toHaveBeenCalledWith('j1'))
+  })
+
+  it('keeps 掃描匯入 shut, and says why, while a Backfill holds the Media Lane', async () => {
+    vi.mocked(getActiveBackfill).mockResolvedValue({
+      id: 'b1', kind: 'keyframe', status: 'running', total: 4, processed: 1, succeeded: 1, failed: 0, skipped: 0, errors: [], started_at: '',
+    })
+    renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '掃描匯入' })).toBeDisabled())
+    expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
   })
 })

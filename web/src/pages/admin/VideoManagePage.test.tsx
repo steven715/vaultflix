@@ -110,21 +110,7 @@ describe('VideoManagePage (library)', () => {
     renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
 
     await waitFor(() => expect(screen.getByRole('button', { name: '補齊 ▾' })).toBeDisabled())
-    expect(screen.getByRole('button', { name: '補齊 ▾' })).toHaveAttribute('title', '匯入執行中')
-  })
-
-  it('disables 開始匯入 while a Backfill holds the Media Lane', async () => {
-    vi.mocked(getActiveBackfill).mockResolvedValue(backfillJob('running') as never)
-    vi.mocked(listMediaSources).mockResolvedValue([
-      { id: 's1', label: 'D槽', mount_path: '/mnt/D', enabled: true, video_count: 0, created_at: '', updated_at: '' },
-    ])
-    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
-    await screen.findByText(/補齊 Keyframe Index 中/)
-
-    fireEvent.click(screen.getByRole('button', { name: '匯入影片' }))
-    await screen.findByRole('option', { name: /D槽/ })
-    expect(screen.getByRole('button', { name: '開始匯入' })).toBeDisabled()
-    expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '補齊 ▾' })).toHaveAttribute('title', '匯入執行中，完成或取消後再補齊')
   })
 
   it('offers 關閉 on the Backfill panel only once the job has ended', async () => {
