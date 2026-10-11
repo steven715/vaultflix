@@ -39,6 +39,8 @@ tasks:
       # gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
       - '"{{.GOLANGCI_LINT}}" run ./...'
       - go test ./...
+      # The pre-push hook's own filter (which commands get gated).
+      - bash scripts/hooks/verify-before-push_test.sh
       - task: web:typecheck
       - task: web:lint
       - task: web:test
