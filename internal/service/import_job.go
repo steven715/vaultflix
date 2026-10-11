@@ -18,7 +18,7 @@ type importItems struct {
 	source *model.MediaSource
 }
 
-func (im importItems) Items(ctx context.Context) ([]JobItem, error) {
+func (im *importItems) Items(ctx context.Context) ([]JobItem, error) {
 	files, err := im.svc.scanVideoFiles(im.source.MountPath)
 	if err != nil {
 		return nil, fmt.Errorf("scan media source %s: %w", im.source.ID, err)
@@ -51,9 +51,10 @@ func (im *importReport) ItemStarted(job Job, it JobItem, current int) {
 	})
 }
 
-func (im *importReport) ItemDone(job Job, it JobItem, current int, err error) {
+func (im *importReport) ItemDone(job Job, res JobItemResult) {
+	err := res.Err
 	p := model.ImportProgress{
-		JobID: job.ID, FileName: it.Name, Current: current, Total: job.Total, Status: "success",
+		JobID: job.ID, FileName: res.Item.Name, Current: res.Current, Total: job.Total, Status: "success",
 		Imported: job.Succeeded, Skipped: job.Skipped, Failed: job.Failed,
 	}
 	switch {

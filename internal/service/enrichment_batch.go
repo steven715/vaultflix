@@ -21,9 +21,10 @@ func (s *EnrichmentService) StartBatchAsync(ctx context.Context, req model.Enric
 	if req.Status == "" {
 		req.Status = model.EnrichmentPending
 	}
-	job, err := s.jobs.Start(jobKindEnrichment, nil,
-		enrichmentItems{svc: s, req: req, userID: userID},
-		&enrichmentReport{notifier: s.notifier, userID: userID})
+	job, err := s.jobs.Start(JobSpec{
+		Kind: jobKindEnrichment, Task: &enrichmentItems{svc: s, req: req, userID: userID},
+		Reporter: &enrichmentReport{notifier: s.notifier, userID: userID},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start enrichment job: %w", err)
 	}
@@ -57,7 +58,7 @@ type enrichmentItems struct {
 	userID string
 }
 
-func (e enrichmentItems) Items(ctx context.Context) ([]JobItem, error) {
+func (e *enrichmentItems) Items(ctx context.Context) ([]JobItem, error) {
 	videos, err := e.svc.videoRepo.ListByEnrichmentStatus(ctx, e.req.Status)
 	if err != nil {
 		return nil, fmt.Errorf("list videos with enrichment status %s: %w", e.req.Status, err)
@@ -75,7 +76,7 @@ func (e enrichmentItems) Items(ctx context.Context) ([]JobItem, error) {
 }
 
 // enrichOne enriches one Video and, when asked, accepts its best Suggestion.
-func (e enrichmentItems) enrichOne(ctx context.Context, videoID string) error {
+func (e *enrichmentItems) enrichOne(ctx context.Context, videoID string) error {
 	if err := e.svc.EnrichVideo(ctx, videoID, e.userID); err != nil {
 		return fmt.Errorf("enrich video %s: %w", videoID, err)
 	}
@@ -101,9 +102,9 @@ func (e *enrichmentReport) ItemStarted(job Job, it JobItem, current int) {
 	})
 }
 
-func (e *enrichmentReport) ItemDone(job Job, it JobItem, _ int, err error) {
-	if err != nil {
-		slog.Warn("enrich batch: video failed", "job_id", job.ID, "video_id", it.ID, "error", err)
+func (e *enrichmentReport) ItemDone(job Job, res JobItemResult) {
+	if res.Err != nil {
+		slog.Warn("enrich batch: video failed", "job_id", job.ID, "video_id", res.Item.ID, "error", res.Err)
 	}
 }
 

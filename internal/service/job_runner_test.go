@@ -42,7 +42,7 @@ func (r *recorder) ItemStarted(_ Job, it JobItem, _ int) {
 	r.started = append(r.started, it.ID)
 }
 
-func (r *recorder) ItemDone(j Job, _ JobItem, _ int, _ error) {
+func (r *recorder) ItemDone(j Job, _ JobItemResult) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.done = append(r.done, j)
@@ -76,7 +76,7 @@ func TestJobRunner_CountsEachOutcome(t *testing.T) {
 		item("c", func(context.Context) error { return errors.New("boom") }),
 	}}
 
-	started, err := r.Start("import", "src-1", task, rec)
+	started, err := r.Start(JobSpec{Kind: "import", Meta: "src-1", Task: task, Reporter: rec})
 	if err != nil || started.Status != "running" || started.Kind != "import" || started.Meta != "src-1" {
 		t.Fatalf("Start = %+v, %v", started, err)
 	}
@@ -105,21 +105,21 @@ func TestJobRunner_OneJobAtATime(t *testing.T) {
 	r := NewJobRunner()
 	release := make(chan struct{})
 	rec := newRecorder()
-	if _, err := r.Start("backfill", nil, listTask{items: []JobItem{item("a", func(context.Context) error {
+	if _, err := r.Start(JobSpec{Kind: "backfill", Task: listTask{items: []JobItem{item("a", func(context.Context) error {
 		<-release
 		return nil
-	})}}, rec); err != nil {
+	})}}, Reporter: rec}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := r.Start("import", nil, listTask{}, newRecorder()); !errors.Is(err, model.ErrConflict) {
+	if _, err := r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: newRecorder()}); !errors.Is(err, model.ErrConflict) {
 		t.Fatalf("second Start err = %v, want ErrConflict", err)
 	}
 	close(release)
 	rec.wait(t)
 
 	again := newRecorder()
-	if _, err := r.Start("import", nil, listTask{}, again); err != nil {
+	if _, err := r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: again}); err != nil {
 		t.Fatalf("Start after finish: %v", err)
 	}
 	again.wait(t)
@@ -129,10 +129,10 @@ func TestJobRunner_CancelStopsBetweenItems(t *testing.T) {
 	r := NewJobRunner()
 	rec := newRecorder()
 	inFirst, release := make(chan struct{}), make(chan struct{})
-	job, _ := r.Start("backfill", nil, listTask{items: []JobItem{
+	job, _ := r.Start(JobSpec{Kind: "backfill", Task: listTask{items: []JobItem{
 		item("a", func(context.Context) error { close(inFirst); <-release; return nil }),
 		item("b", ok),
-	}}, rec)
+	}}, Reporter: rec})
 
 	<-inFirst
 	if err := r.Cancel(job.ID); err != nil {
@@ -159,7 +159,7 @@ func TestJobRunner_CancelUnknownJob(t *testing.T) {
 func TestJobRunner_ListFailureFailsTheJob(t *testing.T) {
 	r := NewJobRunner()
 	rec := newRecorder()
-	_, _ = r.Start("import", nil, listTask{err: errors.New("walk failed")}, rec)
+	_, _ = r.Start(JobSpec{Kind: "import", Task: listTask{err: errors.New("walk failed")}, Reporter: rec})
 	j := rec.wait(t)
 
 	if j.Status != "failed" || j.ListError != "walk failed" {
@@ -176,7 +176,7 @@ func TestJobRunner_LatestIsASnapshot(t *testing.T) {
 		t.Fatal("Latest before any job should be nil")
 	}
 	rec := newRecorder()
-	_, _ = r.Start("import", nil, listTask{items: []JobItem{item("a", func(context.Context) error { return errors.New("x") })}}, rec)
+	_, _ = r.Start(JobSpec{Kind: "import", Task: listTask{items: []JobItem{item("a", func(context.Context) error { return errors.New("x") })}}, Reporter: rec})
 	rec.wait(t)
 
 	got := r.Latest()
@@ -184,5 +184,41 @@ func TestJobRunner_LatestIsASnapshot(t *testing.T) {
 	got.Failed = 99
 	if again := r.Latest(); again.Errors[0].Error != "x" || again.Failed != 1 {
 		t.Errorf("Latest leaked the live job: %+v", again)
+	}
+}
+
+// blockingFinish holds the Finished report until released.
+type blockingFinish struct {
+	recorder
+	inFinish, release chan struct{}
+}
+
+func (b *blockingFinish) Finished(Job) {
+	close(b.inFinish)
+	<-b.release
+}
+
+func TestJobRunner_NextJobWaitsForTheFinishedReport(t *testing.T) {
+	r := NewJobRunner()
+	rep := &blockingFinish{inFinish: make(chan struct{}), release: make(chan struct{})}
+	_, _ = r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: rep})
+	<-rep.inFinish
+
+	// The Job is already completed, but its complete message is still going out.
+	if _, err := r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: newRecorder()}); !errors.Is(err, model.ErrConflict) {
+		t.Errorf("Start during Finished = %v, want ErrConflict", err)
+	}
+	close(rep.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		next := newRecorder()
+		if _, err := r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: next}); err == nil {
+			next.wait(t)
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("runner stayed busy after Finished returned")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

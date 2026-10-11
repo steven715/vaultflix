@@ -33,7 +33,7 @@ type EnrichmentService struct {
 	downloadImage func(ctx context.Context, url string) (string, error)
 
 	// jobs runs Enrichment Jobs (one at a time).
-	jobs *JobRunner
+	jobs jobLane
 }
 
 // NewEnrichmentService constructs an EnrichmentService with real HTTP downloads.

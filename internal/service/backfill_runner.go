@@ -28,7 +28,7 @@ type BackfillTask interface {
 type BackfillRunner struct {
 	notifier websocket.Notifier
 	tasks    map[model.BackfillKind]BackfillTask
-	jobs     *JobRunner
+	jobs     jobLane
 }
 
 // NewBackfillRunner creates a BackfillRunner serving the given kinds.
@@ -50,7 +50,10 @@ func (r *BackfillRunner) Start(ctx context.Context, kind model.BackfillKind, use
 	if !ok {
 		return nil, fmt.Errorf("backfill kind %q: %w", kind, model.ErrInvalidInput)
 	}
-	job, err := r.jobs.Start(jobKindBackfill, kind, backfillItems{task}, &backfillReport{notifier: r.notifier, userID: userID})
+	job, err := r.jobs.Start(JobSpec{
+		Kind: jobKindBackfill, Meta: kind, Task: &backfillItems{task: task},
+		Reporter: &backfillReport{notifier: r.notifier, userID: userID},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start backfill %s: %w", kind, err)
 	}
@@ -81,7 +84,7 @@ func (r *BackfillRunner) Cancel(ctx context.Context, jobID string) error {
 // Source skips the Video.
 type backfillItems struct{ task BackfillTask }
 
-func (b backfillItems) Items(ctx context.Context) ([]JobItem, error) {
+func (b *backfillItems) Items(ctx context.Context) ([]JobItem, error) {
 	videos, err := b.task.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list videos to backfill: %w", err)
@@ -91,10 +94,13 @@ func (b backfillItems) Items(ctx context.Context) ([]JobItem, error) {
 		v := &videos[i]
 		items[i] = JobItem{ID: v.ID, Name: v.OriginalFilename, Run: func(ctx context.Context) error {
 			err := b.task.ProcessOne(ctx, v)
-			if errors.Is(err, model.ErrMediaSourceDisabled) {
+			switch {
+			case errors.Is(err, model.ErrMediaSourceDisabled):
 				return fmt.Errorf("%w: %w", model.ErrJobItemSkipped, err)
+			case err != nil:
+				return fmt.Errorf("backfill video %s: %w", v.ID, err)
 			}
-			return err
+			return nil
 		}}
 	}
 	return items, nil
@@ -117,8 +123,9 @@ func (b *backfillReport) ItemStarted(job Job, it JobItem, current int) {
 	b.send(websocket.TypeBackfillProgress, b.progress(job, it, current))
 }
 
-func (b *backfillReport) ItemDone(job Job, it JobItem, current int, err error) {
-	p := b.progress(job, it, current)
+func (b *backfillReport) ItemDone(job Job, res JobItemResult) {
+	it, err := res.Item, res.Err
+	p := b.progress(job, it, res.Current)
 	switch {
 	case errors.Is(err, model.ErrJobItemSkipped):
 		slog.Info("backfill skipped video, media source disabled", "job_id", job.ID, "kind", p.Kind, "video_id", it.ID)

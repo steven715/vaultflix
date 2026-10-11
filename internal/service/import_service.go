@@ -29,7 +29,7 @@ type ImportService struct {
 	videoRepo repository.VideoRepository
 	media     mediaDeriver
 	notifier  websocket.Notifier
-	jobs      *JobRunner     // runs Import Jobs, one at a time
+	jobs      jobLane        // runs Import Jobs, one at a time
 	keyframes keyframeProber // optional;nil 時不觸發
 }
 
@@ -59,8 +59,10 @@ const jobKindImport = "import"
 // a snapshot of it. Only one Import Job runs at a time; a second call returns
 // model.ErrConflict.
 func (s *ImportService) StartAsync(ctx context.Context, source *model.MediaSource, userID string) (*model.ImportJob, error) {
-	job, err := s.jobs.Start(jobKindImport, source, importItems{svc: s, source: source},
-		&importReport{notifier: s.notifier, userID: userID})
+	job, err := s.jobs.Start(JobSpec{
+		Kind: jobKindImport, Meta: source, Task: &importItems{svc: s, source: source},
+		Reporter: &importReport{notifier: s.notifier, userID: userID},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start import of media source %s: %w", source.ID, err)
 	}
