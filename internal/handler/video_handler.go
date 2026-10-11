@@ -237,19 +237,12 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 	// and none of them needs the detail page's Tags or image URLs.
 	src, err := h.videoService.ResolvePlayback(ctx, videoID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
 		writeStreamResolveError(c, videoID, err)
 		return
 	}
 
 	// Legacy mode: video stored in MinIO
-	if src.LegacyObjectKey != "" {
+	if src.IsLegacy() {
 		presignedURL, err := h.videoService.GetPresignedURL(ctx, src.LegacyObjectKey)
 		if err != nil {
 			slog.Error("failed to generate presigned url for legacy video",
@@ -354,10 +347,15 @@ func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
 	return filter, nil
 }
 
-// writeStreamResolveError maps MediaSourceService.ResolveFile errors to the
-// Stream endpoint's HTTP responses.
+// writeStreamResolveError maps VideoService.ResolvePlayback errors to the
+// Stream endpoint's HTTP responses; anything else is logged as a 500.
 func writeStreamResolveError(c *gin.Context, videoID string, err error) {
 	switch {
+	case errors.Is(err, model.ErrNotFound):
+		c.JSON(http.StatusNotFound, model.ErrorResponse{
+			Error:   "not_found",
+			Message: "video not found",
+		})
 	case errors.Is(err, model.ErrMediaSourceDisabled):
 		c.JSON(http.StatusConflict, model.ErrorResponse{
 			Error:   "source_unavailable",

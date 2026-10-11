@@ -90,7 +90,7 @@ func (s *HLSService) boundaries(ctx context.Context, videoID string) (string, []
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to resolve playback of video %s: %w", videoID, err)
 	}
-	if src.Path == "" {
+	if src.IsLegacy() {
 		// A legacy MinIO-stored Video has no file on disk to cut Segments from.
 		return "", nil, fmt.Errorf("video %s has no file on a media source: %w", videoID, model.ErrNotFound)
 	}

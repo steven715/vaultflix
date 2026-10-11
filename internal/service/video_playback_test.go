@@ -48,20 +48,30 @@ func TestResolvePlayback_LegacyVideoGivesItsObjectKey(t *testing.T) {
 	}
 }
 
-func TestResolvePlayback_NotFound(t *testing.T) {
+func TestResolvePlayback_VideoMissing(t *testing.T) {
+	svc := NewVideoService(playbackVideoRepo(nil), mock.ResolveUnder("/mnt/host/D"), &mock.TagRepository{}, &mock.MinIOClient{})
+	if _, err := svc.ResolvePlayback(context.Background(), "v1"); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// Broken data is an error worth logging, never a "Video not found".
+func TestResolvePlayback_IntegrityProblemsAreNotNotFound(t *testing.T) {
 	tests := []struct {
 		name  string
 		video *model.Video
+		files mediaFileResolver
 	}{
-		{"video missing", nil},
-		{"neither a Media Source nor a MinIO object", &model.Video{ID: "v1", OriginalFilename: "a.mkv"}},
+		{"neither a Media Source nor a MinIO object", &model.Video{ID: "v1", OriginalFilename: "a.mkv"}, mock.ResolveUnder("/mnt/host/D")},
+		{"its Media Source row is gone", &model.Video{ID: "v1", OriginalFilename: "a.mkv", SourceID: strPtr("s1"), FilePath: strPtr("a.mkv")},
+			mock.ResolveFailing(model.ErrNotFound)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewVideoService(playbackVideoRepo(tt.video), mock.ResolveUnder("/mnt/host/D"), &mock.TagRepository{}, &mock.MinIOClient{})
+			svc := NewVideoService(playbackVideoRepo(tt.video), tt.files, &mock.TagRepository{}, &mock.MinIOClient{})
 			_, err := svc.ResolvePlayback(context.Background(), "v1")
-			if !errors.Is(err, model.ErrNotFound) {
-				t.Errorf("err = %v, want ErrNotFound", err)
+			if err == nil || errors.Is(err, model.ErrNotFound) {
+				t.Errorf("err = %v, want an error that is not ErrNotFound", err)
 			}
 		})
 	}

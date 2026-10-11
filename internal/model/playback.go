@@ -11,3 +11,8 @@ type PlaybackSource struct {
 	PlayMode        PlayMode
 	MimeType        string
 }
+
+// IsLegacy reports whether the bytes are a MinIO object rather than a file.
+func (p *PlaybackSource) IsLegacy() bool {
+	return p.LegacyObjectKey != ""
+}

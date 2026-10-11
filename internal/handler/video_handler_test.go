@@ -499,7 +499,7 @@ func TestStreamVideo(t *testing.T) {
 				ID:       "vid-broken",
 				MimeType: "video/mp4",
 			},
-			expectedStatus: http.StatusNotFound,
+			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 
