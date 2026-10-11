@@ -9,8 +9,8 @@ function toolbar(over: Partial<Parameters<typeof LibraryToolbar>[0]> = {}) {
     onOpenImport: vi.fn(), onBatchTag: vi.fn(), onBatchDelete: vi.fn(), onClearSelection: vi.fn(),
     ...over,
   }
-  render(<LibraryToolbar {...props} />)
-  return props
+  const view = render(<LibraryToolbar {...props} />)
+  return { ...props, rerender: (o: Partial<typeof props>) => view.rerender(<LibraryToolbar {...props} {...o} />) }
 }
 
 describe('LibraryToolbar backfill menu', () => {
@@ -31,5 +31,21 @@ describe('LibraryToolbar backfill menu', () => {
     const button = screen.getByRole('button', { name: '補齊 ▾' })
     expect(button).toBeDisabled()
     expect(button).toHaveAttribute('title', '匯入執行中')
+    // Visible too: some browsers show no tooltip on a disabled button.
+    expect(screen.getByText('匯入執行中')).toBeInTheDocument()
+  })
+
+  it('closes on a click outside it', () => {
+    toolbar()
+    fireEvent.click(screen.getByRole('button', { name: '補齊 ▾' }))
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('closes when the lane becomes busy while it is open', () => {
+    const t = toolbar()
+    fireEvent.click(screen.getByRole('button', { name: '補齊 ▾' }))
+    t.rerender({ backfillDisabledReason: '匯入執行中' })
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

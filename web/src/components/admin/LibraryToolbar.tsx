@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
 import type { BackfillKind, TagWithCount } from '../../types'
 import { parseTagIds, serializeTagIds, toggleTagId, toggleSort } from '../../lib/libraryParams'
@@ -166,23 +166,40 @@ export default function LibraryToolbar({
 // BackfillMenu is the 補齊 button: it opens a menu of the Backfill kinds.
 function BackfillMenu({ disabledReason, onStart }: { disabledReason: string | null; onStart: (kind: BackfillKind) => void }) {
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  // A busy lane shuts the menu even if it was open.
+  const shown = open && disabledReason === null
+
+  // Close on a press outside or Escape. Listens on the document: Safari does
+  // not focus a clicked button, so blur alone never fires there.
+  useEffect(() => {
+    if (!shown) return
+    const onPress = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onPress)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPress)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [shown])
+
   return (
-    <div
-      className="relative"
-      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}
-      onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
-    >
+    <div ref={rootRef} className="relative flex items-center gap-2">
+      {disabledReason && <span className="text-xs text-faint">{disabledReason}</span>}
       <button
         onClick={() => setOpen(!open)}
         disabled={disabledReason !== null}
         title={disabledReason ?? undefined}
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={shown}
         className="bg-surface-2 text-muted hover:text-cream text-sm px-3 py-1.5 rounded-btn transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         補齊 ▾
       </button>
-      {open && (
+      {shown && (
         <div role="menu" className="absolute right-0 mt-1 z-20 min-w-36 bg-surface border border-border rounded-btn py-1 shadow-lg">
           {backfillMenu.map((kind) => (
             <button

@@ -60,9 +60,14 @@ export default function VideoManagePage() {
     })
   }, [setSearchParams])
 
+  // A quiet reload (after a Job) keeps the rows on screen while it loads.
+  const quietReloadRef = useRef(false)
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setLoadError(false)
+    const quiet = quietReloadRef.current
+    quietReloadRef.current = false
+    if (!quiet) setLoading(true)
+    setLoadError(false)
     listVideos({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsStr || undefined })
       .then((res) => { if (!cancelled) { setVideos(res.data); setTotal(res.total) } })
       .catch(() => { if (!cancelled) { setVideos([]); setTotal(0); setLoadError(true) } })
@@ -91,17 +96,17 @@ export default function VideoManagePage() {
   // An adopted job keeps the dialog open until its summary is closed.
   const importModalOpen = showImport || importJob.view !== null
   // A Backfill changes Videos in place: reload the page being looked at.
-  const backfillJob = useJob(backfillJobs, { onFinished: () => setReloadKey((k) => k + 1) })
+  const backfillJob = useJob(backfillJobs, {
+    onFinished: () => { quietReloadRef.current = true; setReloadKey((k) => k + 1) },
+  })
   const cancelImport = useJobCancel(importJob.cancel)
   const cancelBackfill = useJobCancel(backfillJob.cancel)
 
   // Import and Backfill share the Media Lane: while one runs, the other's
   // start control says so instead of drawing a 409.
-  const importRunning = importJob.view?.phase === 'running'
-  const backfillRunning = backfillJob.view?.phase === 'running'
-  const backfillDisabledReason = importRunning ? '匯入執行中'
-    : backfillRunning ? '補齊執行中'
-      : backfillJob.starting ? '啟動中...' : null
+  const importBusy = importJob.starting || importJob.view?.phase === 'running'
+  const backfillBusy = backfillJob.starting || backfillJob.view?.phase === 'running'
+  const backfillDisabledReason = importBusy ? '匯入執行中' : backfillBusy ? '補齊執行中' : null
 
   async function handleStartBackfill(kind: BackfillKind) {
     const { outcome, error } = await backfillJob.start(kind)
@@ -191,10 +196,8 @@ export default function VideoManagePage() {
             view={backfillJob.view}
             labels={backfillLabels(backfillJob.view.subject as BackfillKind)}
             onCancel={cancelBackfill}
+            onDismiss={backfillJob.dismiss}
           />
-          <div className="text-right mt-1">
-            <button onClick={backfillJob.dismiss} className="text-xs text-faint hover:text-muted">關閉</button>
-          </div>
         </div>
       )}
 
@@ -223,7 +226,7 @@ export default function VideoManagePage() {
         <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
           onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
           onStartImport={handleStartImport} onCancelImport={cancelImport} onResetImport={importJob.dismiss}
-          startDisabledReason={backfillRunning ? '補齊執行中，完成或取消後再匯入' : null} />
+          startDisabledReason={backfillBusy ? '補齊執行中，完成或取消後再匯入' : null} />
       )}
 
       {editingVideo && (

@@ -48,9 +48,14 @@ describe('VideoManagePage (library)', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Keyframe Index' }))
     await waitFor(() => expect(startBackfill).toHaveBeenCalledWith('keyframe'))
     const loads = vi.mocked(listVideos).mock.calls.length
+    // The reload hangs: the rows must not wait for it.
+    vi.mocked(listVideos).mockImplementationOnce(() => new Promise(() => {}))
 
     ws.send({ type: 'backfill_complete', payload: backfillJob('completed') })
     await waitFor(() => expect(vi.mocked(listVideos).mock.calls.length).toBe(loads + 1))
+    // A quiet reload: the rows stay while it loads.
+    expect(screen.queryByText('載入中...')).toBeNull()
+    expect(screen.getByText('片A')).toBeInTheDocument()
     expect(vi.mocked(listVideos).mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 })
   })
 
@@ -77,5 +82,12 @@ describe('VideoManagePage (library)', () => {
     await screen.findByRole('option', { name: /D槽/ })
     expect(screen.getByRole('button', { name: '開始匯入' })).toBeDisabled()
     expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
+  })
+
+  it('offers 關閉 on the Backfill panel only once the job has ended', async () => {
+    vi.mocked(getActiveBackfill).mockResolvedValue(backfillJob('running') as never)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+    await screen.findByText(/補齊 Keyframe Index 中/)
+    expect(screen.queryByRole('button', { name: '關閉' })).toBeNull()
   })
 })
