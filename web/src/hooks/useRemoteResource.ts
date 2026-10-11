@@ -12,7 +12,8 @@ export interface RemoteResource<T> {
   /**
    * Fetch again quietly, e.g. after an edit: the current data stays shown and
    * is replaced when the new data arrives. Rejects when the fetch fails,
-   * leaving the current data; the page says so (usually a toast).
+   * leaving the current data; the page says so (usually a toast). With no
+   * data shown yet (still loading), a failure ends in error instead.
    */
   reload(): Promise<void>
   /** Fetch again through loading, e.g. the retry button of an error. */
@@ -21,8 +22,11 @@ export interface RemoteResource<T> {
   mutate(update: (prev: T) => T): void
 }
 
+/** What the data depends on; a primitive, so that a new render's key equals the last one's. */
+export type ResourceKey = string | number | undefined
+
 interface State<T> {
-  key: unknown
+  key: ResourceKey
   status: ResourceStatus
   data?: T
   error?: unknown
@@ -33,7 +37,7 @@ interface State<T> {
 // fetch may land: a response overtaken by a newer key, retry or reload, or
 // arriving after unmount, is dropped. The data is never kept across keys, so a
 // page cannot show one key's data under another.
-export function useRemoteResource<T>(load: () => Promise<T>, key?: unknown): RemoteResource<T> {
+export function useRemoteResource<T>(load: () => Promise<T>, key?: ResourceKey): RemoteResource<T> {
   const [state, setState] = useState<State<T>>({ key, status: 'loading' })
   const loadRef = useRef(load)
   useEffect(() => {
@@ -45,13 +49,16 @@ export function useRemoteResource<T>(load: () => Promise<T>, key?: unknown): Rem
   const keyRef = useRef(key)
 
   const dropPending = useCallback(() => { generationRef.current++ }, [])
-  const fetchLatest = useCallback((forKey: unknown) => {
+  // A failure keeps the data shown when there is some for this key, and
+  // otherwise ends in error; either way it rejects, for reload's caller.
+  const fetchLatest = useCallback((forKey: ResourceKey) => {
     const generation = ++generationRef.current
     const isLatest = () => generation === generationRef.current
     return loadRef.current().then(
       (data) => { if (isLatest()) setState({ key: forKey, status: 'ready', data }) },
       (error: unknown) => {
         if (!isLatest()) return
+        setState((s) => (s.key === forKey && s.status === 'ready' ? s : { key: forKey, status: 'error', error }))
         throw error
       },
     )
@@ -59,7 +66,7 @@ export function useRemoteResource<T>(load: () => Promise<T>, key?: unknown): Rem
 
   useEffect(() => {
     keyRef.current = key
-    fetchLatest(key).catch((error: unknown) => setState({ key, status: 'error', error }))
+    fetchLatest(key).catch(() => {}) // the state shows it
     return dropPending
   }, [key, fetchLatest, dropPending])
 
@@ -67,13 +74,13 @@ export function useRemoteResource<T>(load: () => Promise<T>, key?: unknown): Rem
   const retry = useCallback(() => {
     const forKey = keyRef.current
     setState({ key: forKey, status: 'loading' })
-    fetchLatest(forKey).catch((error: unknown) => setState({ key: forKey, status: 'error', error }))
+    fetchLatest(forKey).catch(() => {}) // the state shows it
   }, [fetchLatest])
   const mutate = useCallback((update: (prev: T) => T) => {
     setState((s) => (s.status === 'ready' ? { ...s, data: update(s.data as T) } : s))
   }, [])
 
   // Until the new key's first fetch lands, the previous key's state is stale.
-  const current: State<T> = Object.is(state.key, key) ? state : { key, status: 'loading' }
+  const current: State<T> = state.key === key ? state : { key, status: 'loading' }
   return { status: current.status, data: current.data, error: current.error, reload, retry, mutate }
 }

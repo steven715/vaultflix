@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import RecommendationManagePage from './RecommendationManagePage'
 import { listRecommendationsByDate, updateRecommendationSortOrder } from '../../api/admin'
@@ -41,8 +41,7 @@ describe('RecommendationManagePage (reskin)', () => {
     fireEvent.change(screen.getByDisplayValue(/^\d{4}-\d{2}-\d{2}$/), { target: { value: '2030-01-02' } })
     expect(await screen.findByText('明天的片')).toBeInTheDocument()
 
-    resolveLateReload([rec('r1', '片A')])
-    await new Promise((r) => setTimeout(r, 0))
+    await act(async () => resolveLateReload([rec('r1', '片A')]))
     expect(screen.getByText('明天的片')).toBeInTheDocument()
     expect(screen.queryByText('片A')).toBeNull()
   })

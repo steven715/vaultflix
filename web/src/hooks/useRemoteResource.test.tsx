@@ -68,6 +68,20 @@ describe('useRemoteResource', () => {
     expect(result.current.data).toEqual(['a'])
   })
 
+  // A reload can overtake the first load (e.g. an Import ends while the page
+  // is still loading); if it then fails, the page must show the error, not
+  // stay on loading for good.
+  it('ends in error when a reload overtakes the first load and fails', async () => {
+    const first = deferred<string[]>()
+    const load = vi.fn().mockReturnValueOnce(first.promise).mockRejectedValueOnce(new Error('down'))
+    const { result } = renderHook(() => useRemoteResource(load))
+
+    await act(async () => { await expect(result.current.reload()).rejects.toThrow('down') })
+    await act(async () => first.resolve(['a']))
+
+    expect(result.current.status).toBe('error')
+  })
+
   it('loads again from scratch when the key changes', async () => {
     const loads: Record<string, ReturnType<typeof deferred<string>>> = { d1: deferred(), d2: deferred() }
     const { result, rerender } = renderHook(({ day }) => useRemoteResource(() => loads[day].promise, day), {
