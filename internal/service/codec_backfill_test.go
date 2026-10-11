@@ -84,6 +84,22 @@ func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 	}
 }
 
+// The codecs are the Codec Backfill's product: a Keyframe Index that can't be
+// built leaves the item a success, and the first play probes it again.
+func TestCodecBackfill_ProcessOne_KeyframeIndexFailureKeepsCodecs(t *testing.T) {
+	repo := &fakeCodecRepo{}
+	svc, _, indexes := newTestCodecBackfillWithIndexes(repo, mock.ResolveUnder("/mnt/host/D"))
+	svc.keyframes.(*KeyframeService).probe = func(context.Context, string) ([]float64, float64, error) { return nil, 0, errors.New("boom") }
+	v := &model.Video{ID: "v1", SourceID: strPtr("s1"), FilePath: strPtr("movie.mkv"), OriginalFilename: "movie.mkv"}
+
+	if err := svc.ProcessOne(context.Background(), v); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+	if repo.updated["v1"] != [2]string{"h264", "aac"} || len(indexes.stored) != 0 {
+		t.Errorf("codecs %v, indexes %v, want codecs stored without a Keyframe Index", repo.updated["v1"], indexes.stored)
+	}
+}
+
 func TestCodecBackfill_ProcessOne_Failures(t *testing.T) {
 	src, fp := "s1", "movie.mkv"
 	tests := []struct {

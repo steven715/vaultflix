@@ -14,14 +14,6 @@ type keyframeVideoRepo interface {
 	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
-// keyframeIndexer builds a Video's Keyframe Index when its Play Mode needs
-// one (implemented by *KeyframeService).
-type keyframeIndexer interface {
-	// EnsureIndex probes absPath and stores v's Keyframe Index if v plays by
-	// remux, and does nothing otherwise. Returns a wrapped probe/store error.
-	EnsureIndex(ctx context.Context, v *model.Video, absPath string) error
-}
-
 // KeyframeBackfill is the Keyframe Index kind of Backfill: it probes every
 // remux Video that has no Keyframe Index yet. BackfillRunner drives it.
 type KeyframeBackfill struct {

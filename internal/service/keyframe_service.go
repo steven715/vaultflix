@@ -25,6 +25,14 @@ type keyframeIndexRepo interface {
 	Upsert(ctx context.Context, idx *model.KeyframeIndex) error
 }
 
+// keyframeIndexer builds a Video's Keyframe Index when its Play Mode needs
+// one (implemented by *KeyframeService).
+type keyframeIndexer interface {
+	// EnsureIndex probes absPath and stores v's Keyframe Index if v plays by
+	// remux, and does nothing otherwise. Returns a wrapped probe/store error.
+	EnsureIndex(ctx context.Context, v *model.Video, absPath string) error
+}
+
 // KeyframeService 擁有 Keyframe Index:何種 Video 需要它、何時建立。
 // Media Lane 上的 Job(Import、Codec/Keyframe Backfill)以 EnsureIndex 同步建立;
 // 播放時仍缺少的,由 LookupOrProbe 觸發非同步探測(去重)。
@@ -69,7 +77,7 @@ func (s *KeyframeService) EnsureIndex(ctx context.Context, v *model.Video, absPa
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	if err := s.IndexFile(ctx, v.ID, absPath); err != nil {
+	if err := s.indexFile(ctx, v.ID, absPath); err != nil {
 		return fmt.Errorf("failed to build keyframe index of video %s: %w", v.ID, err)
 	}
 	return nil
@@ -99,15 +107,15 @@ func (s *KeyframeService) triggerProbe(videoID, absPath string) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
-		if err := s.IndexFile(ctx, videoID, absPath); err != nil {
+		if err := s.indexFile(ctx, videoID, absPath); err != nil {
 			slog.Warn("keyframe probe failed", "video_id", videoID, "error", err)
 		}
 	}()
 }
 
-// IndexFile 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
+// indexFile 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
 // 失敗回 wrapped error(探測、空表或寫入失敗)。
-func (s *KeyframeService) IndexFile(ctx context.Context, videoID, absPath string) error {
+func (s *KeyframeService) indexFile(ctx context.Context, videoID, absPath string) error {
 	start := time.Now()
 	kf, total, err := s.probe(ctx, absPath)
 	if err != nil {
