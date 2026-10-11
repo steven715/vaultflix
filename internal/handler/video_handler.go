@@ -233,7 +233,9 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 	ctx := c.Request.Context()
 	videoID := c.Param("id")
 
-	video, err := h.videoService.GetByID(ctx, videoID, "")
+	// Only where the bytes are: a playing <video> makes many Range requests,
+	// and none of them needs the detail page's Tags or image URLs.
+	src, err := h.videoService.ResolvePlayback(ctx, videoID)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
@@ -242,17 +244,13 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 			})
 			return
 		}
-		slog.Error("failed to get video for streaming", "error", err, "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get video",
-		})
+		writeStreamResolveError(c, videoID, err)
 		return
 	}
 
-	// Legacy mode: video stored in MinIO (no source_id, has minio_object_key)
-	if video.SourceID == nil && video.MinIOObjectKey != "" {
-		presignedURL, err := h.videoService.GetPresignedURL(ctx, video.MinIOObjectKey)
+	// Legacy mode: video stored in MinIO
+	if src.LegacyObjectKey != "" {
+		presignedURL, err := h.videoService.GetPresignedURL(ctx, src.LegacyObjectKey)
 		if err != nil {
 			slog.Error("failed to generate presigned url for legacy video",
 				"error", err, "video_id", videoID)
@@ -265,22 +263,7 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, presignedURL)
 		return
 	}
-
-	// New mode: video stored on local disk via media source
-	if video.SourceID == nil || video.FilePath == nil {
-		slog.Error("video has no source and no minio key", "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "video has no playable source",
-		})
-		return
-	}
-
-	cleanPath, err := h.mediaSourceService.ResolveFile(ctx, *video.SourceID, *video.FilePath)
-	if err != nil {
-		writeStreamResolveError(c, videoID, err)
-		return
-	}
+	cleanPath := src.Path
 
 	// Offload mode: hand the byte path to nginx via X-Accel-Redirect so video
 	// bytes never traverse this process. Go has already done auth, path safety
@@ -299,7 +282,7 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 		}
 	}
 
-	c.Header("Content-Type", video.MimeType)
+	c.Header("Content-Type", src.MimeType)
 	http.ServeFile(c.Writer, c.Request, cleanPath)
 }
 

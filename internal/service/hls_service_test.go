@@ -133,6 +133,7 @@ func TestHLSService_PropagatesUpstreamErrors(t *testing.T) {
 		{"Keyframe Index preparing", remuxVideo(), &mock.KeyframeLookup{Err: model.ErrStreamPreparing}, model.ErrStreamPreparing},
 		{"Media Source disabled", &mock.PlaybackResolver{Err: model.ErrMediaSourceDisabled}, &mock.KeyframeLookup{}, model.ErrMediaSourceDisabled},
 		{"Video missing", &mock.PlaybackResolver{Err: model.ErrNotFound}, &mock.KeyframeLookup{}, model.ErrNotFound},
+		{"legacy MinIO-stored Video", &mock.PlaybackResolver{LegacyObjectKey: "videos/v1/a.mkv", Mode: model.PlayModeRemux}, &mock.KeyframeLookup{}, model.ErrNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

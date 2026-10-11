@@ -180,17 +180,3 @@ func toBackfillJob(j *Job) *model.BackfillJob {
 		CurrentVideoID: j.Current.ID, Errors: errs, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt,
 	}
 }
-
-// resolveVideoFile turns v into its on-disk path for a Backfill, failing (not
-// panicking) for a Video without a Media Source. Errors carry the Video id and
-// keep model.ErrMediaSourceDisabled visible to errors.Is.
-func resolveVideoFile(ctx context.Context, files mediaFileResolver, v *model.Video) (string, error) {
-	if v.SourceID == nil || v.FilePath == nil {
-		return "", fmt.Errorf("video %s has no media source (legacy MinIO-stored video)", v.ID)
-	}
-	abs, err := files.ResolveFile(ctx, *v.SourceID, *v.FilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve file of video %s: %w", v.ID, err)
-	}
-	return abs, nil
-}

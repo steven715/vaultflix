@@ -52,7 +52,7 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
 	}
 
-	if s.keyframes != nil && ClassifyPlayMode(filepath.Ext(filename), video.VideoCodec, video.AudioCodec) == model.PlayModeRemux {
+	if s.keyframes != nil && videoPlayMode(video) == model.PlayModeRemux {
 		s.keyframes.TriggerProbe(video.ID, filePath)
 	}
 	slog.Info("video imported",
