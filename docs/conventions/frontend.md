@@ -101,3 +101,7 @@ Stream Source 與 Playback Session 是在 `useEffect` 裡對 `<video>` 掛 liste
 手機（Android Chrome／PWA）上把 App 滑掉或系統殺掉背景分頁時常常**不觸發** `pagehide`，最後可靠的訊號是 `document` 的 `visibilitychange` 轉為 hidden：此時也送出 Watch Progress 與心跳。切到別的 App 很常見、之後可能繼續播放，所以遙測只在 `pagehide` 或真正結束時送。
 
 `pagehide` 也會在頁面進入 back/forward cache 時觸發，頁面之後可能原樣回來：`pagehide` 只送出「離開時的回報」，不要結束 session；一次性的回報（遙測）自己防重送。
+
+## 作業面板跟著「有沒有 job」顯示，不跟著「是否執行中」
+
+Import Job、Backfill Job 這類背景作業的進度面板，條件寫成 `view !== null`（或比對 job 的對象，如 Media Source id），不要寫成 `phase === 'running'`。用 running 當條件，job 一結束面板就消失，使用者永遠看不到完成摘要與失敗清單（MediaSourcePage 曾經如此）。結束後的摘要留著，由使用者按「關閉」（`useJob` 的 `dismiss`）收掉；「執行中」只拿來決定按鈕是否 disabled、能不能關閉。

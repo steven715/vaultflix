@@ -19,6 +19,8 @@ export default function MediaSourcePage() {
   // Import Job (the panel shows under the Media Source it runs on)
   const importJob = useJob(importJobs, { onFinished: () => fetchSources() })
   const importingSourceId = importJob.view?.phase === 'running' ? importJob.view.subject ?? null : null
+  // The card whose Import Job is shown: it stays after the job ends, until closed.
+  const shownSourceId = importJob.view?.subject ?? null
 
   // Modal state
   const [showCreate, setShowCreate] = useState(false)
@@ -159,8 +161,15 @@ export default function MediaSourcePage() {
               </div>
 
               {/* Import progress inline */}
-              {importingSourceId === source.id && importJob.view && (
-                <JobProgressPanel view={importJob.view} labels={importLabels} />
+              {shownSourceId === source.id && importJob.view && (
+                <>
+                  <JobProgressPanel view={importJob.view} labels={importLabels} />
+                  {importJob.view.phase !== 'running' && (
+                    <div className="flex justify-end mt-2">
+                      <button onClick={importJob.dismiss} className="text-xs text-faint hover:text-muted">關閉</button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ))}
