@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/steven/vaultflix/internal/mock"
@@ -362,6 +365,48 @@ func TestEnrichVideo_PrefersStoredCode(t *testing.T) {
 			}
 			if scrapedCode != tt.wantCode {
 				t.Errorf("scraped code = %q, want %q", scrapedCode, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestDefaultDownloadImage_StatusCodes(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{"ok saves the body", http.StatusOK, false},
+		{"not found is an error", http.StatusNotFound, true},
+		{"server error is an error", http.StatusInternalServerError, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte("body"))
+			}))
+			defer srv.Close()
+			t.Setenv("TMPDIR", t.TempDir())
+
+			path, err := defaultDownloadImage(context.Background(), srv.URL)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("err = nil, want an error for status %d (path %q)", tt.status, path)
+				}
+				// An error page must never be left behind as an "image".
+				if leftover, _ := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "vaultflix-img-*")); len(leftover) > 0 {
+					t.Errorf("temp files left: %v", leftover)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			got, readErr := os.ReadFile(path)
+			if readErr != nil || string(got) != "body" {
+				t.Errorf("file = %q, %v; want %q", got, readErr, "body")
 			}
 		})
 	}

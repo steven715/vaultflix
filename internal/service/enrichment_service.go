@@ -253,6 +253,10 @@ func defaultDownloadImage(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}
 	defer resp.Body.Close()
+	// An error page is not an image: keep it out of MinIO.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+	}
 
 	tmp, err := os.CreateTemp("", "vaultflix-img-*.jpg")
 	if err != nil {
@@ -263,6 +267,10 @@ func defaultDownloadImage(ctx context.Context, url string) (string, error) {
 		os.Remove(tmp.Name())
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
-	tmp.Close()
+	// A failed Close can mean the image never fully reached disk.
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
 	return tmp.Name(), nil
 }
