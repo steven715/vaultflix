@@ -314,7 +314,7 @@ import (
 
 | 指令 | 用途 | 跑在哪 |
 |---|---|---|
-| `task verify` | 快層 gate（= `test-fast`），Stop hook 自動跑 | 原生 |
+| `task verify` | 快層 gate（= `test-fast`），Stop hook 與 `git push` 前的 hook 自動跑 | 原生 |
 | `task test-fast` | `go vet` + `gofmt` 檢查 + `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest` | 原生 |
 | `task lint` | `go vet` + 前端 `eslint`（手動 lint-only 便捷指令；eslint 也已含在 `test-fast` gate 內） | 原生 |
 | `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
@@ -327,7 +327,7 @@ import (
 - **Bug Fix / Feature / Refactor done** = `task verify` 綠 + 相關範圍的 `task test-integration`（或 `task test-full`）綠 + PR 的 CI 綠。
 - 純前端改動：至少 `task test-fast`（含 vitest）綠。
 - 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
-- Stop hook 會在收工前強制 `task verify`；別繞過它，紅燈就修到綠。
+- Stop hook（收工前）與 PreToolUse hook（agent 執行 `git push` 前，`scripts/hooks/verify-before-push.sh`）都會強制 `task verify`；紅燈時 push 會被擋下，修到綠再推。
 
 ### 執行 stack 與部署（ADR-0011）
 
