@@ -250,7 +250,7 @@ const queryGetVideoByID = `
 
 所有 build / test / deploy 透過 `Taskfile.yml` 的單一入口執行。agent 本機、開發者本機、CI 呼叫**同一個 target**，不存在「CI 那邊做法不一樣」。
 
-前置工具（`task`、Go 1.25+、golangci-lint（版本釘在 Taskfile，`task golangci-lint:install`）、Node.js 20+、Docker、`gh`）的安裝方式見 README 的 Prerequisites。`task verify` 需要原生 Go 與 Node；整合測試需要 Docker。
+前置工具（`task`、Go 1.25+、Node.js 20+、Docker、`gh`；golangci-lint 版本釘在 Taskfile，首次跑會自動裝進 `.bin/`）的安裝方式見 README 的 Prerequisites。`task verify` 需要原生 Go 與 Node；整合測試需要 Docker。
 
 ### 入口指令清單
 
@@ -302,7 +302,7 @@ type 可選值：
 ## 禁止事項
 
 - ❌ 不使用 `init()` function（除了 driver registration 等不可避免的場景）
-- ❌ 不使用全域可變狀態（global mutable state）。`gochecknoglobals` 擋所有全域變數；查表寫成帶 `switch` 的函式
+- ❌ 不使用全域可變狀態（global mutable state）。map、slice、陣列都可變，所以 `gochecknoglobals` 擋下全域變數（`Err` 開頭的 sentinel error 例外）；查表寫成帶 `switch` 的函式
 - ❌ 不使用 `panic` 做流程控制（只用於真正不可恢復的程式錯誤）
 - ❌ 不引入未在計畫文件中列出的第三方依賴（需先討論）
 - ❌ 不在 handler 層直接寫 SQL

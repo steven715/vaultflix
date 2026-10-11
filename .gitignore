@@ -9,6 +9,8 @@
 *.out
 /tmp/
 vendor/
+# Pinned dev tools (task golangci-lint:install)
+/.bin/
 
 # Node / React
 web/node_modules/

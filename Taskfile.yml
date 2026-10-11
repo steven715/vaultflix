@@ -3,8 +3,11 @@ version: '3'
 vars:
   GIT_SHA:
     sh: git rev-parse --short HEAD
-  # The one golangci-lint version local runs and CI use (task golangci-lint:install).
+  # golangci-lint is pinned and lives in the repo's .bin/, so local runs and CI
+  # use the same binary whatever else is on PATH (installed on first use).
   GOLANGCI_LINT_VERSION: 2.14.0
+  GOLANGCI_LINT_INSTALLER_SHA: 114493f9b3e7257d29e4130f2b4a4aadefbb6845 # commit of tag v2.14.0
+  GOLANGCI_LINT: '{{.ROOT_DIR}}/.bin/golangci-lint'
   # Integration tests run under a DEDICATED compose project (-p vaultflix-inttest)
   # so they are fully isolated from the everyday `vaultflix` stack: the test stack
   # gets its own ephemeral postgres/minio volumes and never recreates the running
@@ -29,11 +32,12 @@ tasks:
 
   test-fast:
     desc: "Fast checks (lint/type/unit) - native"
-    deps: [golangci-lint:version]
+    deps: [golangci-lint:install]
     cmds:
+      # Kept beside golangci's govet, which runs a different analyzer set.
       - go vet ./...
       # gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
-      - golangci-lint run ./...
+      - '{{.GOLANGCI_LINT}} run ./...'
       - go test ./...
       - task: web:typecheck
       - task: web:lint
@@ -57,30 +61,27 @@ tasks:
     cmds:
       - npm run test
 
-  golangci-lint:version:
-    desc: "Require the golangci-lint version CI runs"
-    internal: true
-    preconditions:
-      - sh: '[ "$(golangci-lint version --short 2>/dev/null)" = "{{.GOLANGCI_LINT_VERSION}}" ]'
-        msg: "golangci-lint {{.GOLANGCI_LINT_VERSION}} required (local and CI must match); run `task golangci-lint:install`"
-
   golangci-lint:install:
-    desc: "Install the pinned golangci-lint into $(go env GOPATH)/bin"
+    desc: "Install the pinned golangci-lint into .bin/ (skipped when already there)"
+    status:
+      - '[ "$({{.GOLANGCI_LINT}} version --short 2>/dev/null)" = "{{.GOLANGCI_LINT_VERSION}}" ]'
     cmds:
-      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v{{.GOLANGCI_LINT_VERSION}}/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v{{.GOLANGCI_LINT_VERSION}}
+      # The installer script is fetched by commit, not by tag, and checks the
+      # release archive's checksum itself.
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/{{.GOLANGCI_LINT_INSTALLER_SHA}}/install.sh | sh -s -- -b "{{.ROOT_DIR}}/.bin" v{{.GOLANGCI_LINT_VERSION}}
 
   fmt:
     desc: "Format Go code (gofmt + import groups)"
-    deps: [golangci-lint:version]
+    deps: [golangci-lint:install]
     cmds:
-      - golangci-lint fmt ./...
+      - '{{.GOLANGCI_LINT}} fmt ./...'
 
   lint:
     desc: "Static checks (go vet + golangci-lint + eslint)"
-    deps: [golangci-lint:version]
+    deps: [golangci-lint:install]
     cmds:
       - go vet ./...
-      - golangci-lint run ./...
+      - '{{.GOLANGCI_LINT}} run ./...'
       - task: web:lint
 
   test-integration:
