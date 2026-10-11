@@ -1,20 +1,20 @@
 import { type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { render, type RenderResult } from '@testing-library/react'
-import type { WSHarness } from './wsHarness'
+import { wsHarness, type WSHarness } from './wsHarness'
 
-// 包 MemoryRouter，讓需要 router context 的元件可被測試；給 ws 時再包一層
-// 可由測試推送訊息的 WebSocket context（見 wsHarness）。
+// 包 MemoryRouter 與 WebSocket context，讓頁面元件可被測試。要推送伺服器訊息時
+// 自己建一個 wsHarness 傳進 ws；沒傳就用一個不會收到訊息的。
 export function renderWithRouter(
   ui: ReactElement,
   opts: { route?: string; ws?: WSHarness } = {},
 ): RenderResult {
-  const { route = '/admin/library', ws } = opts
+  const { route = '/admin/library', ws = wsHarness() } = opts
   // As a wrapper, so rerender keeps the router.
   return render(ui, {
     wrapper: ({ children }) => (
       <MemoryRouter initialEntries={[route]}>
-        {ws ? <ws.Provider>{children}</ws.Provider> : children}
+        <ws.Provider>{children}</ws.Provider>
       </MemoryRouter>
     ),
   })

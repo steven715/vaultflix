@@ -17,7 +17,7 @@ vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.f
 describe('MediaSourcePage (reskin)', () => {
   beforeEach(() => vi.clearAllMocks())
   it('renders sources and uses design-token background (no embedded admin header)', async () => {
-    const { container } = renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources', ws: wsHarness() })
+    const { container } = renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
     await waitFor(() => expect(screen.getByText('D槽')).toBeInTheDocument())
     expect(screen.getByText('/mnt/host/D')).toBeInTheDocument()
     // 不再自帶搜尋框（那是 AdminTopbar 的職責）

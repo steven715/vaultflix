@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { wsHarness } from '../../test/wsHarness'
 import VideoManagePage from './VideoManagePage'
 
 vi.mock('../../api/videos', () => ({
@@ -25,7 +24,7 @@ vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.f
 describe('VideoManagePage (library)', () => {
   beforeEach(() => vi.clearAllMocks())
   it('renders the video row and shows batch bar after selecting a row', async () => {
-    renderWithRouter(<VideoManagePage />, { route: '/admin/library', ws: wsHarness() })
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
     await waitFor(() => expect(screen.getByText('片A')).toBeInTheDocument())
     const checkbox = screen.getByLabelText('選取 片A')
     await userEvent.click(checkbox)
