@@ -17,8 +17,10 @@ const (
 	previewCRF                 = "28"
 )
 
-//nolint:gochecknoglobals // read-only constant table
-var previewSegmentTimestampRatios = [previewSegmentCount]float64{0.10, 0.50, 0.85}
+// previewSegmentTimestampRatios are where in the Video each preview segment starts.
+func previewSegmentTimestampRatios() [previewSegmentCount]float64 {
+	return [previewSegmentCount]float64{0.10, 0.50, 0.85}
+}
 
 // generatePreviewClip produces a low-bitrate, no-audio MP4 preview from
 // srcPath. Videos shorter than 30 seconds are transcoded in their entirety;
@@ -76,7 +78,7 @@ func transcodePreviewSegments(ctx context.Context, srcPath string, durationSecon
 		}
 	}()
 
-	for i, ratio := range previewSegmentTimestampRatios {
+	for i, ratio := range previewSegmentTimestampRatios() {
 		segFile, err := os.CreateTemp("", fmt.Sprintf("vaultflix-preview-seg%d-*.mp4", i))
 		if err != nil {
 			return fmt.Errorf("create temp segment file: %w", err)

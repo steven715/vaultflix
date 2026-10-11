@@ -3,6 +3,8 @@ version: '3'
 vars:
   GIT_SHA:
     sh: git rev-parse --short HEAD
+  # The one golangci-lint version local runs and CI use (task golangci-lint:install).
+  GOLANGCI_LINT_VERSION: 2.14.0
   # Integration tests run under a DEDICATED compose project (-p vaultflix-inttest)
   # so they are fully isolated from the everyday `vaultflix` stack: the test stack
   # gets its own ephemeral postgres/minio volumes and never recreates the running
@@ -27,8 +29,10 @@ tasks:
 
   test-fast:
     desc: "Fast checks (lint/type/unit) - native"
+    deps: [golangci-lint:version]
     cmds:
-      # go vet, gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
+      - go vet ./...
+      # gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
       - golangci-lint run ./...
       - go test ./...
       - task: web:typecheck
@@ -53,14 +57,29 @@ tasks:
     cmds:
       - npm run test
 
+  golangci-lint:version:
+    desc: "Require the golangci-lint version CI runs"
+    internal: true
+    preconditions:
+      - sh: '[ "$(golangci-lint version --short 2>/dev/null)" = "{{.GOLANGCI_LINT_VERSION}}" ]'
+        msg: "golangci-lint {{.GOLANGCI_LINT_VERSION}} required (local and CI must match); run `task golangci-lint:install`"
+
+  golangci-lint:install:
+    desc: "Install the pinned golangci-lint into $(go env GOPATH)/bin"
+    cmds:
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v{{.GOLANGCI_LINT_VERSION}}/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v{{.GOLANGCI_LINT_VERSION}}
+
   fmt:
     desc: "Format Go code (gofmt + import groups)"
+    deps: [golangci-lint:version]
     cmds:
       - golangci-lint fmt ./...
 
   lint:
-    desc: "Static checks (golangci-lint + eslint)"
+    desc: "Static checks (go vet + golangci-lint + eslint)"
+    deps: [golangci-lint:version]
     cmds:
+      - go vet ./...
       - golangci-lint run ./...
       - task: web:lint
 

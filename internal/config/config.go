@@ -119,15 +119,20 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// insecureDefaults lists the historical built-in placeholder values that must
-// never be accepted for the corresponding required secret.
-//
-//nolint:gochecknoglobals // read-only table of rejected placeholder secrets
-var insecureDefaults = map[string]string{
-	"JWT_SECRET":             "change-me-in-production",
-	"DB_PASSWORD":            "vaultflix",
-	"MINIO_SECRET_KEY":       "minioadmin",
-	"ADMIN_DEFAULT_PASSWORD": "admin",
+// insecureDefault returns the historical built-in placeholder value that must
+// never be accepted for the named required secret ("" when there is none).
+func insecureDefault(name string) string {
+	switch name {
+	case "JWT_SECRET":
+		return "change-me-in-production"
+	case "DB_PASSWORD":
+		return "vaultflix"
+	case "MINIO_SECRET_KEY":
+		return "minioadmin"
+	case "ADMIN_DEFAULT_PASSWORD":
+		return "admin"
+	}
+	return ""
 }
 
 // validateSecrets ensures every required secret is set and not left at its
@@ -147,7 +152,7 @@ func (c *Config) validateSecrets() error {
 		switch value {
 		case "":
 			problems = append(problems, fmt.Sprintf("%s is required but not set", name))
-		case insecureDefaults[name]:
+		case insecureDefault(name):
 			problems = append(problems, fmt.Sprintf("%s must not use the insecure built-in default %q", name, value))
 		}
 	}

@@ -23,8 +23,8 @@ jobs:
       - uses: arduino/setup-task@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install golangci-lint
-        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+      - name: Install golangci-lint (version pinned in Taskfile.yml)
+        run: task golangci-lint:install
       - name: Install web deps
         run: npm --prefix web ci
       - name: Run fast checks (golangci-lint, go test, tsc, eslint, vitest)

@@ -12,12 +12,12 @@ import (
 	"github.com/steven/vaultflix/internal/repository"
 )
 
-//nolint:gochecknoglobals // read-only allowlist
-var allowedCategories = map[string]bool{
-	"genre":  true,
-	"actor":  true,
-	"studio": true,
-	"custom": true,
+func isAllowedCategory(category string) bool {
+	switch category {
+	case "genre", "actor", "studio", "custom":
+		return true
+	}
+	return false
 }
 
 type TagHandler struct {
@@ -34,7 +34,7 @@ func NewTagHandler(tagRepo repository.TagRepository, videoRepo repository.VideoR
 
 func (h *TagHandler) List(c *gin.Context) {
 	category := c.Query("category")
-	if category != "" && !allowedCategories[category] {
+	if category != "" && !isAllowedCategory(category) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
 			Message: "category must be one of: genre, actor, studio, custom",
@@ -76,7 +76,7 @@ func (h *TagHandler) Create(c *gin.Context) {
 		req.Category = "custom"
 	}
 
-	if !allowedCategories[req.Category] {
+	if !isAllowedCategory(req.Category) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
 			Message: "category must be one of: genre, actor, studio, custom",

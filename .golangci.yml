@@ -5,7 +5,7 @@ linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
     - funlen # function ≤ 50 lines
-    - gochecknoglobals # no global state; a read-only table says why with //nolint
+    - gochecknoglobals # no global state (a lookup table is a func with a switch)
     - gochecknoinits # no init()
   settings:
     funlen:
@@ -13,7 +13,7 @@ linters:
       statements: -1
   exclusions:
     paths:
-      - web # node_modules ships Go files
+      - ^web/ # node_modules ships Go files
     presets:
       - std-error-handling # best-effort Close / os.Remove / print need no check
     rules:
@@ -44,6 +44,9 @@ linters:
         linters: [funlen]
 
 formatters:
+  exclusions:
+    paths:
+      - ^web/
   enable:
     - gci # imports: standard → third-party → project
     - gofmt

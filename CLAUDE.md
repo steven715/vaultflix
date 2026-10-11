@@ -250,15 +250,15 @@ const queryGetVideoByID = `
 
 所有 build / test / deploy 透過 `Taskfile.yml` 的單一入口執行。agent 本機、開發者本機、CI 呼叫**同一個 target**，不存在「CI 那邊做法不一樣」。
 
-前置工具（`task`、Go 1.25+、golangci-lint v2、Node.js 20+、Docker、`gh`）的安裝方式見 README 的 Prerequisites。`task verify` 需要原生 Go 與 Node；整合測試需要 Docker。
+前置工具（`task`、Go 1.25+、golangci-lint（版本釘在 Taskfile，`task golangci-lint:install`）、Node.js 20+、Docker、`gh`）的安裝方式見 README 的 Prerequisites。`task verify` 需要原生 Go 與 Node；整合測試需要 Docker。
 
 ### 入口指令清單
 
 | 指令 | 用途 | 跑在哪 |
 |---|---|---|
 | `task verify` | 快層 gate（= `test-fast`），Stop hook 與 `git push` 前的 hook 自動跑 | 原生 |
-| `task test-fast` | `golangci-lint`（含 go vet、gofmt、import 分組、[`.golangci.yml`](.golangci.yml) 的規則）+ `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest` | 原生 |
-| `task lint` | `golangci-lint` + 前端 `eslint`（手動 lint-only 便捷指令；兩者都已含在 `test-fast` gate 內） | 原生 |
+| `task test-fast` | `go vet` + `golangci-lint`（gofmt、import 分組、[`.golangci.yml`](.golangci.yml) 的規則）+ `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest` | 原生 |
+| `task lint` | `go vet` + `golangci-lint` + 前端 `eslint`（手動 lint-only 便捷指令；兩者都已含在 `test-fast` gate 內） | 原生 |
 | `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
 | `task test-full` | `test-fast` + `test-integration` | Docker |
 | `task up` / `task down` / `task logs` | build 並起/停/看唯一的執行 stack（改 code 後重跑 `task up`；自動疊 `docker-compose.media.yml`） | Docker |
@@ -302,7 +302,7 @@ type 可選值：
 ## 禁止事項
 
 - ❌ 不使用 `init()` function（除了 driver registration 等不可避免的場景）
-- ❌ 不使用全域可變狀態（global mutable state）。`gochecknoglobals` 會擋所有全域變數；唯讀查表加 `//nolint:gochecknoglobals // 理由`
+- ❌ 不使用全域可變狀態（global mutable state）。`gochecknoglobals` 擋所有全域變數；查表寫成帶 `switch` 的函式
 - ❌ 不使用 `panic` 做流程控制（只用於真正不可恢復的程式錯誤）
 - ❌ 不引入未在計畫文件中列出的第三方依賴（需先討論）
 - ❌ 不在 handler 層直接寫 SQL
