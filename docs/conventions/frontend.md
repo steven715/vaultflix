@@ -13,9 +13,12 @@
 ```typescript
 // ✅ 正確：interceptor 統一解包，呼叫端簡潔
 // client.ts
-client.interceptors.response.use((res) => {
-  if (res.data?.data !== undefined) return { ...res, data: res.data.data }
-  return res
+client.interceptors.response.use((response) => {
+  // PaginatedResponse has 'total' at top level, so skip those
+  if (response.data && 'data' in response.data && !('total' in response.data)) {
+    response.data = response.data.data
+  }
+  return response
 })
 // auth.ts
 const res = await client.post<LoginResponse>('/auth/login', { username, password })

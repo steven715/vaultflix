@@ -39,7 +39,7 @@ const INITIAL_STATS: PlaybackStats = {
 //
 // All counters and rolling state live in refs; the only setState happens on the
 // publish interval, so high-frequency media/network events never trigger a React
-// re-render (CLAUDE.md 前端規範：計數用 useRef、只在顯示頻率 setState).
+// re-render (docs/conventions/frontend.md「自動重試與錯誤處理」：計數用 useRef、只在顯示頻率 setState).
 //
 // `streamPath` is the same-origin path of the stream URL (e.g.
 // "/api/videos/abc/stream"); Resource Timing entries whose name contains it feed

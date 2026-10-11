@@ -130,7 +130,7 @@ Repository（資料存取層）
 
 | 層 | 做什麼 | 不做什麼 |
 |---|--------|---------|
-| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯 |
+| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯、不跳過 service 直接呼叫 repository |
 | Service | 業務邏輯、跨 repository 協調、呼叫外部服務（MinIO） | 不碰 HTTP request/response、不寫 SQL |
 | Repository | 執行 SQL 查詢、回傳 model struct | 不處理業務邏輯、不碰 HTTP、不呼叫其他 repository |
 
@@ -158,6 +158,8 @@ type ErrorResponse struct {
     Message string `json:"message"`
 }
 ```
+
+前端 API client 依這兩種形狀解包（頂層有 `total` 就視為分頁、不解包），改形狀前先看 [`docs/conventions/frontend.md`](docs/conventions/frontend.md)「前後端 Response 契約」。
 
 HTTP Status Code 使用規則：
 - `200`：GET 成功、PUT 更新成功
@@ -200,7 +202,7 @@ const queryGetVideoByID = `
 
 | 觸發條件 | 必讀 |
 |---|---|
-| 動 `web/src/`（React 元件、hooks、vitest 測試） | [`docs/conventions/frontend.md`](docs/conventions/frontend.md) —— useEffect、假時鐘測試、flaky 判斷、同路徑 refetch、具名導航 |
+| 動 `web/src/`（React 元件、hooks、vitest 測試） | [`docs/conventions/frontend.md`](docs/conventions/frontend.md) —— Response 契約、重試上限、useEffect、假時鐘測試、flaky 判斷、同路徑 refetch、具名導航 |
 | 動 `internal/websocket/` 或 `web/src/hooks/useWebSocket.ts` | [`docs/conventions/websocket.md`](docs/conventions/websocket.md) —— Hub、訊息協議、重連、onclose 世代 |
 | 動 `internal/streaming/`、Play Mode、任何呼叫 ffmpeg/ffprobe 的程式 | [`docs/streaming.md`](docs/streaming.md) —— 播放路徑、規模前提、§6 FFmpeg seek 與產物測試 |
 | 動 `docker-compose*.yml`、`Dockerfile*`、`nginx/`、部署流程、影片掛載 | [`docs/conventions/docker.md`](docs/conventions/docker.md) —— 不可變 nginx image、磁碟掛載、compose 疊加陷阱 |
