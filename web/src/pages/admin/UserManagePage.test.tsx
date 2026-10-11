@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import UserManagePage from './UserManagePage'
+import { listUsers } from '../../api/admin'
 
 vi.mock('../../api/admin', () => ({
   listUsers: vi.fn(() => Promise.resolve([
@@ -21,5 +22,15 @@ describe('UserManagePage (reskin)', () => {
     // 根容器不再用 inline style 的黑底
     const root = container.firstElementChild as HTMLElement
     expect(root.getAttribute('style')).toBeFalsy()
+  })
+  it('says the list failed to load instead of showing no users, and retries', async () => {
+    vi.mocked(listUsers).mockRejectedValueOnce(new Error('down'))
+    renderWithRouter(<UserManagePage />, { route: '/admin/users' })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('無法載入使用者')
+    expect(screen.queryByRole('table')).toBeNull()
+
+    fireEvent.click(screen.getByText('重試'))
+    expect(await screen.findByText('steven')).toBeInTheDocument()
   })
 })

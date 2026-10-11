@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { listTags } from '../../api/tags'
 import { createTag } from '../../api/admin'
+import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
+import { useRemoteResource } from '../../hooks/useRemoteResource'
 import { groupTagsByCategory } from '../../lib/tagGroups'
 import type { TagWithCount } from '../../types'
 
@@ -10,21 +12,10 @@ const DOT: Record<string, string> = {
 }
 
 export default function TagManagePage() {
-  const [tags, setTags] = useState<TagWithCount[]>([])
+  const tagList = useRemoteResource(listTags)
+  const tags: TagWithCount[] = tagList.data ?? []
   const [showCreate, setShowCreate] = useState(false)
   const toast = useToast()
-
-  function reload() {
-    listTags().then(setTags).catch((err) => console.warn('failed to load tags', err))
-  }
-
-  useEffect(() => {
-    let cancelled = false
-    listTags()
-      .then((t) => { if (!cancelled) setTags(t) })
-      .catch((err) => console.warn('failed to load tags', err))
-    return () => { cancelled = true }
-  }, [])
 
   const groups = groupTagsByCategory(tags)
 
@@ -46,29 +37,39 @@ export default function TagManagePage() {
         </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        {groups.map((g) => (
-          <div key={g.category} className="bg-surface border border-border rounded-card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className={`w-2.5 h-2.5 rounded-full ${DOT[g.category] ?? 'bg-muted'}`} />
-              <span className="font-display font-semibold text-cream">{g.label}</span>
-              <span className="font-mono text-xs text-faint ml-auto">{g.tags.length}</span>
+      {tagList.status === 'loading' ? (
+        <div className="text-faint text-center py-20">載入中...</div>
+      ) : tagList.status === 'error' ? (
+        <ErrorBanner message="無法載入標籤，請確認服務是否正常運作" onRetry={tagList.retry} />
+      ) : (
+        <div className="grid md:grid-cols-2 gap-4">
+          {groups.map((g) => (
+            <div key={g.category} className="bg-surface border border-border rounded-card p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`w-2.5 h-2.5 rounded-full ${DOT[g.category] ?? 'bg-muted'}`} />
+                <span className="font-display font-semibold text-cream">{g.label}</span>
+                <span className="font-mono text-xs text-faint ml-auto">{g.tags.length}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {g.tags.map((tag) => (
+                  <span key={tag.id} className="bg-surface-2 rounded-pill px-2.5 py-1 text-sm text-cream">
+                    {tag.name} <span className="font-mono text-faint">{tag.video_count}</span>
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {g.tags.map((tag) => (
-                <span key={tag.id} className="bg-surface-2 rounded-pill px-2.5 py-1 text-sm text-cream">
-                  {tag.name} <span className="font-mono text-faint">{tag.video_count}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {showCreate && (
         <CreateTagModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); reload(); toast.success('已新增標籤') }}
+          onCreated={() => {
+            setShowCreate(false)
+            toast.success('已新增標籤')
+            tagList.reload().catch(() => toast.error('無法更新標籤列表'))
+          }}
           onError={() => toast.error('新增失敗，請重試')}
         />
       )}

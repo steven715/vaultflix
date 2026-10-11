@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listRecommendationsByDate, createRecommendation, updateRecommendationSortOrder, deleteRecommendation } from '../../api/admin'
 import type { RecommendationItem, VideoWithTags } from '../../types'
@@ -6,6 +6,7 @@ import PosterThumb from '../../components/admin/PosterThumb'
 import VideoPickerModal from '../../components/admin/VideoPickerModal'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
+import { useRemoteResource } from '../../hooks/useRemoteResource'
 import { formatDuration } from '../../utils/format'
 
 function formatDate(date: Date): string {
@@ -14,10 +15,8 @@ function formatDate(date: Date): string {
 
 export default function RecommendationManagePage() {
   const [selectedDate, setSelectedDate] = useState(() => formatDate(new Date()))
-  const [recs, setRecs] = useState<RecommendationItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  const recList = useRemoteResource(() => listRecommendationsByDate(selectedDate), selectedDate)
+  const recs: RecommendationItem[] = recList.data ?? []
   const toast = useToast()
 
   // Add modal state
@@ -35,18 +34,6 @@ export default function RecommendationManagePage() {
     setSelectedDate(formatDate(d))
   }
 
-  // Fetch recommendations for selected date
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-    listRecommendationsByDate(selectedDate)
-      .then((items) => { if (!cancelled) setRecs(items) })
-      .catch(() => { if (!cancelled) { setRecs([]); setLoadError(true) } })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedDate, reloadKey])
-
   function handlePickVideo(video: VideoWithTags) {
     setPickedVideo(video)
     setShowPicker(false)
@@ -59,30 +46,33 @@ export default function RecommendationManagePage() {
     try {
       await createRecommendation(pickedVideo.id, selectedDate, sortOrder)
       setPickedVideo(null)
-      // Refresh list
-      const items = await listRecommendationsByDate(selectedDate)
-      setRecs(items)
     } catch {
       toast.error('新增推薦失敗，請重試')
+      return
     } finally { setCreating(false) }
+    refreshRecs()
   }
 
   async function handleSortOrderChange(id: string, newOrder: number) {
     if (newOrder < 1) return
     try {
       await updateRecommendationSortOrder(id, newOrder)
-      const items = await listRecommendationsByDate(selectedDate)
-      setRecs(items)
     } catch {
       toast.error('更新排序失敗，請重試')
+      return
     }
+    refreshRecs()
+  }
+
+  function refreshRecs() {
+    recList.reload().catch(() => toast.error('無法更新推薦列表'))
   }
 
   async function handleDelete(id: string) {
     setDeletingId(null)
     try {
       await deleteRecommendation(id)
-      setRecs((prev) => prev.filter((r) => r.id !== id))
+      recList.mutate((prev) => prev.filter((r) => r.id !== id))
     } catch {
       toast.error('移除推薦失敗，請重試')
     }
@@ -109,12 +99,12 @@ export default function RecommendationManagePage() {
       </div>
 
       {/* Recommendations list */}
-      {loading ? (
+      {recList.status === 'loading' ? (
         <div className="text-muted text-center py-20">載入中...</div>
-      ) : loadError ? (
+      ) : recList.status === 'error' ? (
         <ErrorBanner
           message="無法載入推薦，請確認服務是否正常運作"
-          onRetry={() => setReloadKey((k) => k + 1)}
+          onRetry={recList.retry}
         />
       ) : recs.length === 0 ? (
         <div className="text-muted text-center py-12">此日期尚無推薦</div>

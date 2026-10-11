@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { cancelImportJob, deleteMediaSource, getActiveBackfill, importVideos, listMediaSources } from '../../api/admin'
+import { cancelImportJob, deleteMediaSource, getActiveBackfill, importVideos, listMediaSources, updateMediaSource } from '../../api/admin'
 import { wsHarness } from '../../test/wsHarness'
 import MediaSourcePage from './MediaSourcePage'
 
@@ -91,5 +91,17 @@ describe('MediaSourcePage (reskin)', () => {
     fireEvent.click(await screen.findByText('掃描匯入'))
     await screen.findByText('匯入中')
     expect(screen.queryByText('匯入執行中')).toBeNull()
+  })
+  // Refreshing after an edit keeps the cards up instead of flashing 載入中.
+  it('keeps the list shown while it refreshes after a toggle', async () => {
+    vi.mocked(updateMediaSource).mockResolvedValue(undefined as never)
+    renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
+    fireEvent.click(await screen.findByText('停用'))
+    vi.mocked(listMediaSources).mockImplementationOnce(() => new Promise(() => {}))
+    fireEvent.click(screen.getByText('確認'))
+
+    await waitFor(() => expect(listMediaSources).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('D槽')).toBeInTheDocument()
+    expect(screen.queryByText('載入中...')).toBeNull()
   })
 })
