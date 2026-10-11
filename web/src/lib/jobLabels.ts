@@ -38,3 +38,11 @@ export function backfillLabels(kind: BackfillKind): JobLabels {
     skippedShort: '略過',
   }
 }
+
+/** The Backfill kinds the library menu offers; Code waits for Enrichment. */
+export const backfillMenu: BackfillKind[] = ['preview', 'keyframe', 'codec']
+
+/** A Backfill kind's name on its own, e.g. in a menu. */
+export function backfillKindName(kind: BackfillKind): string {
+  return backfillKindLabel[kind].trim()
+}

@@ -90,12 +90,21 @@ export default function VideoManagePage() {
   const importJob = useJob(importJobs, { onFinished: () => updateParams({ page: '1' }) })
   // An adopted job keeps the dialog open until its summary is closed.
   const importModalOpen = showImport || importJob.view !== null
-  const backfillJob = useJob(backfillJobs)
+  // A Backfill changes Videos in place: reload the page being looked at.
+  const backfillJob = useJob(backfillJobs, { onFinished: () => setReloadKey((k) => k + 1) })
   const cancelImport = useJobCancel(importJob.cancel)
   const cancelBackfill = useJobCancel(backfillJob.cancel)
 
-  async function handleStartBackfill() {
-    const { outcome, error } = await backfillJob.start('preview')
+  // Import and Backfill share the Media Lane: while one runs, the other's
+  // start control says so instead of drawing a 409.
+  const importRunning = importJob.view?.phase === 'running'
+  const backfillRunning = backfillJob.view?.phase === 'running'
+  const backfillDisabledReason = importRunning ? '匯入執行中'
+    : backfillRunning ? '補齊執行中'
+      : backfillJob.starting ? '啟動中...' : null
+
+  async function handleStartBackfill(kind: BackfillKind) {
+    const { outcome, error } = await backfillJob.start(kind)
     if (outcome === 'adopted') toast.error('已有任務進行中')
     // A busy Media Lane says which Job holds it (e.g. an Import).
     else if (outcome === 'failed') toast.error(getErrorMessage(error, '啟動 backfill 失敗'))
@@ -166,7 +175,7 @@ export default function VideoManagePage() {
       <h1 className="font-display font-bold tracking-tight text-cream text-xl mb-4">影片庫</h1>
       <LibraryToolbar
         total={total} sortBy={sortBy} sortOrder={sortOrder} tagIdsStr={tagIdsStr}
-        allTags={allTags} selected={selected} backfillStarting={backfillJob.starting} backfillJobId={backfillJob.view?.id ?? null}
+        allTags={allTags} selected={selected} backfillDisabledReason={backfillDisabledReason}
         onSort={(p) => updateParams({ sort_by: p.sort_by, sort_order: p.sort_order, page: '1' })}
         onTagFilter={(tag_ids) => updateParams({ tag_ids, page: '1' })}
         onStartBackfill={handleStartBackfill}
@@ -213,7 +222,8 @@ export default function VideoManagePage() {
       {importModalOpen && (
         <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
           onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
-          onStartImport={handleStartImport} onCancelImport={cancelImport} onResetImport={importJob.dismiss} />
+          onStartImport={handleStartImport} onCancelImport={cancelImport} onResetImport={importJob.dismiss}
+          startDisabledReason={backfillRunning ? '補齊執行中，完成或取消後再匯入' : null} />
       )}
 
       {editingVideo && (
