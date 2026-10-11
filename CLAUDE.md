@@ -269,7 +269,7 @@ const queryGetVideoByID = `
 - **Bug Fix / Feature / Refactor done** = `task verify` 綠 + 相關範圍的 `task test-integration`（或 `task test-full`）綠 + PR 的 CI 綠。
 - 純前端改動：至少 `task test-fast`（含 vitest）綠。
 - 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
-- Stop hook（收工前）與 PreToolUse hook（agent 執行 `git push` 前，`scripts/hooks/verify-before-push.sh`）都會強制 `task verify`；紅燈時 push 會被擋下，修到綠再推。
+- Stop hook（收工前）與 PreToolUse hook（agent 執行 `git push` 前，`scripts/hooks/verify-before-push.sh`）都會強制 `task verify`；紅燈時 push 會被擋下，修到綠再推。後者由腳本自己判斷指令是不是 push（含 `git -C … push`；字串或 heredoc 裡出現 `git push` 也會多跑一次），讀不到指令（沒有 jq）就照樣跑。
 
 ### 執行 stack 與部署（ADR-0011）
 
