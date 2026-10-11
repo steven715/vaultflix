@@ -1,10 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { useEffect, useState, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { WebSocketContext } from '../contexts/WebSocketContext'
-import type { WSMessage } from './useWebSocket'
 import { useJob } from './useJob'
 import type { JobKind, JobView } from '../lib/jobProgress'
+import { wsHarness } from '../test/wsHarness'
 
 const view = (id: string, over: Partial<JobView> = {}): JobView => ({
   id,
@@ -28,26 +26,6 @@ function fakeKind(over: Partial<JobKind<string>> = {}): JobKind<string> {
     errorJobId: (payload) => (payload as { job_id: string }).job_id,
     ...over,
   }
-}
-
-// A WebSocket context whose lastMessage the test pushes (through an event bus
-// the provider subscribes to, so nothing is reassigned during render).
-function wsHarness() {
-  const bus = new EventTarget()
-  function Provider({ children }: { children: ReactNode }) {
-    const [lastMessage, setLastMessage] = useState<WSMessage | null>(null)
-    useEffect(() => {
-      const onMessage = (e: Event) => setLastMessage((e as CustomEvent<WSMessage>).detail)
-      bus.addEventListener('message', onMessage)
-      return () => bus.removeEventListener('message', onMessage)
-    }, [])
-    return (
-      <WebSocketContext.Provider value={{ lastMessage, isConnected: true, sendMessage: () => {} }}>
-        {children}
-      </WebSocketContext.Provider>
-    )
-  }
-  return { Provider, send: (m: WSMessage) => act(() => { bus.dispatchEvent(new CustomEvent('message', { detail: m })) }) }
 }
 
 describe('useJob', () => {

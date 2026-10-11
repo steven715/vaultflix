@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
+import { wsHarness } from '../../test/wsHarness'
 import VideoManagePage from './VideoManagePage'
 
 vi.mock('../../api/videos', () => ({
@@ -19,13 +20,12 @@ vi.mock('../../api/admin', () => ({
   startBackfill: vi.fn(), getActiveBackfill: vi.fn(() => Promise.resolve(null)),
   addVideoTag: vi.fn(), removeVideoTag: vi.fn(),
 }))
-vi.mock('../../contexts/WebSocketContext', () => ({ useWS: () => ({ lastMessage: null, isConnected: true, sendMessage: vi.fn() }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
 describe('VideoManagePage (library)', () => {
   beforeEach(() => vi.clearAllMocks())
   it('renders the video row and shows batch bar after selecting a row', async () => {
-    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library', ws: wsHarness() })
     await waitFor(() => expect(screen.getByText('片A')).toBeInTheDocument())
     const checkbox = screen.getByLabelText('選取 片A')
     await userEvent.click(checkbox)
