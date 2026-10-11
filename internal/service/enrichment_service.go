@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -33,10 +32,8 @@ type EnrichmentService struct {
 	// Overridable in tests to avoid real HTTP. Defaults to defaultDownloadImage.
 	downloadImage func(ctx context.Context, url string) (string, error)
 
-	// Batch-job state. All mutations protected by mu.
-	mu        sync.Mutex
-	activeJob *model.EnrichJob
-	cancelCh  chan struct{}
+	// jobs runs Enrichment Jobs (one at a time).
+	jobs jobLane
 }
 
 // NewEnrichmentService constructs an EnrichmentService with real HTTP downloads.
@@ -54,6 +51,7 @@ func NewEnrichmentService(
 		minioSvc:       minioSvc,
 		notifier:       notifier,
 		downloadImage:  defaultDownloadImage,
+		jobs:           NewJobRunner(),
 	}
 }
 

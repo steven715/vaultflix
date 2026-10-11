@@ -655,9 +655,25 @@ func TestStream_XAccelRedirect(t *testing.T) {
 }
 
 func TestImportHandler_Async_Conflict(t *testing.T) {
-	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
-	importSvc.LockForTest() // simulate a running job
+	// A running Import Job: its one file waits in the duplicate check.
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "a.mp4"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inFile, gate := make(chan struct{}), make(chan struct{})
+	defer close(gate)
+	repo := &mock.VideoRepository{
+		FindBySourceAndPathFunc: func(context.Context, string, string) (*model.Video, error) {
+			close(inFile)
+			<-gate
+			return &model.Video{ID: "existing"}, nil
+		},
+	}
+	importSvc := service.NewImportService(repo, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	if _, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "test-user"); err != nil {
+		t.Fatal(err)
+	}
+	<-inFile
 
 	mediaSourceRepo := &mock.MediaSourceRepository{
 		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
@@ -682,8 +698,6 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d: %s", w.Code, w.Body.String())
 	}
-
-	importSvc.UnlockForTest()
 }
 
 func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
