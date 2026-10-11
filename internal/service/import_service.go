@@ -17,12 +17,12 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
-var supportedExtensions = map[string]bool{
-	".mp4": true,
-	".mkv": true,
-	".avi": true,
-	".wmv": true,
-	".mov": true,
+func isSupportedExtension(ext string) bool {
+	switch ext {
+	case ".mp4", ".mkv", ".avi", ".wmv", ".mov":
+		return true
+	}
+	return false
 }
 
 type fileResult struct {
@@ -270,7 +270,7 @@ func (s *ImportService) scanVideoFiles(sourceDir string) ([]string, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(info.Name()))
-		if supportedExtensions[ext] {
+		if isSupportedExtension(ext) {
 			files = append(files, path)
 		}
 

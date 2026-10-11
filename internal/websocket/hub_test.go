@@ -153,11 +153,9 @@ func TestHub_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			userID := "user"
+			userID := "userB"
 			if id%2 == 0 {
 				userID = "userA"
-			} else {
-				userID = "userB"
 			}
 			c := newTestClient(hub, userID)
 			hub.Register(c)

@@ -11,21 +11,23 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
-var upgrader = gorillaWS.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// Self-hosted single-user app; allow all origins.
-		return true
-	},
-}
-
 // WSHandler handles WebSocket upgrade requests.
 type WSHandler struct {
-	hub *websocket.Hub
+	hub      *websocket.Hub
+	upgrader gorillaWS.Upgrader
 }
 
 // NewWSHandler creates a WSHandler with the given Hub.
 func NewWSHandler(hub *websocket.Hub) *WSHandler {
-	return &WSHandler{hub: hub}
+	return &WSHandler{
+		hub: hub,
+		upgrader: gorillaWS.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				// Self-hosted single-user app; allow all origins.
+				return true
+			},
+		},
+	}
 }
 
 // HandleWebSocket upgrades the HTTP connection to a WebSocket connection.
@@ -41,7 +43,7 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// gorilla already wrote an HTTP error response on upgrade failure.
 		slog.Error("websocket upgrade failed",

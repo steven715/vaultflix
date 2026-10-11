@@ -3,6 +3,11 @@ version: '3'
 vars:
   GIT_SHA:
     sh: git rev-parse --short HEAD
+  # golangci-lint is pinned and lives in the repo's .bin/, so local runs and CI
+  # use the same binary whatever else is on PATH (installed on first use).
+  GOLANGCI_LINT_VERSION: 2.14.0
+  GOLANGCI_LINT_INSTALLER_SHA: 114493f9b3e7257d29e4130f2b4a4aadefbb6845 # commit of tag v2.14.0
+  GOLANGCI_LINT: '{{.ROOT_DIR}}/.bin/golangci-lint{{exeExt}}'
   # Integration tests run under a DEDICATED compose project (-p vaultflix-inttest)
   # so they are fully isolated from the everyday `vaultflix` stack: the test stack
   # gets its own ephemeral postgres/minio volumes and never recreates the running
@@ -27,10 +32,12 @@ tasks:
 
   test-fast:
     desc: "Fast checks (lint/type/unit) - native"
+    deps: [golangci-lint:install]
     cmds:
+      # Kept beside golangci's govet, which runs a different analyzer set.
       - go vet ./...
-      - cmd: test -z "$(gofmt -l .)"
-        msg: "gofmt found unformatted files, run `task fmt`"
+      # gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
+      - '"{{.GOLANGCI_LINT}}" run ./...'
       - go test ./...
       - task: web:typecheck
       - task: web:lint
@@ -54,15 +61,28 @@ tasks:
     cmds:
       - npm run test
 
-  fmt:
-    desc: "Format Go code"
+  golangci-lint:install:
+    desc: "Install the pinned golangci-lint into .bin/ (skipped when already there)"
+    status:
+      - '[ "$("{{.GOLANGCI_LINT}}" version --short 2>/dev/null)" = "{{.GOLANGCI_LINT_VERSION}}" ]'
     cmds:
-      - gofmt -w .
+      # The installer script is fetched by commit, not by tag. It checks the
+      # archive against the release's own checksums file: that catches a
+      # corrupt download, not a tampered release. Needs sh (Git Bash on Windows).
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/{{.GOLANGCI_LINT_INSTALLER_SHA}}/install.sh | sh -s -- -b "{{.ROOT_DIR}}/.bin" v{{.GOLANGCI_LINT_VERSION}}
+
+  fmt:
+    desc: "Format Go code (gofmt + import groups)"
+    deps: [golangci-lint:install]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" fmt ./...'
 
   lint:
-    desc: "Static checks (go vet + eslint)"
+    desc: "Static checks (go vet + golangci-lint + eslint)"
+    deps: [golangci-lint:install]
     cmds:
       - go vet ./...
+      - '"{{.GOLANGCI_LINT}}" run ./...'
       - task: web:lint
 
   test-integration:

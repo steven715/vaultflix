@@ -14,14 +14,16 @@ import (
 	"github.com/steven/vaultflix/internal/service"
 )
 
-var allowedSortBy = map[string]bool{
-	"created_at":       true,
-	"title":            true,
-	"duration_seconds": true,
-	"file_size_bytes":  true,
-	// "random" returns a shuffled sample; used by the player's up-next column so
-	// the list differs on every video. sort_order is ignored for random.
-	"random": true,
+func isAllowedSortBy(sortBy string) bool {
+	switch sortBy {
+	case "created_at", "title", "duration_seconds", "file_size_bytes":
+		return true
+	case "random":
+		// A shuffled sample; used by the player's up-next column so the list
+		// differs on every video. sort_order is ignored for random.
+		return true
+	}
+	return false
 }
 
 type VideoHandler struct {
@@ -367,7 +369,7 @@ func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
 	}
 
 	if raw := c.Query("sort_by"); raw != "" {
-		if !allowedSortBy[raw] {
+		if !isAllowedSortBy(raw) {
 			return filter, errors.New("sort_by must be one of: created_at, title, duration_seconds, file_size_bytes, random")
 		}
 		filter.SortBy = raw

@@ -23,9 +23,16 @@ jobs:
       - uses: arduino/setup-task@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache golangci-lint (binary + analysis)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .bin
+            ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('Taskfile.yml', '.golangci.yml', 'go.sum') }}
       - name: Install web deps
         run: npm --prefix web ci
-      - name: Run fast checks (vet, gofmt, go test, tsc, eslint, vitest)
+      - name: Run fast checks (golangci-lint, go test, tsc, eslint, vitest)
         run: task verify
 
   integration:

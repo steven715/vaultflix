@@ -54,12 +54,12 @@ func (c *Client) Get(ctx context.Context, url string) ([]byte, error) {
 			return nil, fmt.Errorf("http get %s: %w", url, err)
 		}
 		lastStatus = status
-		switch {
-		case status == http.StatusOK:
+		switch status {
+		case http.StatusOK:
 			return body, nil
-		case status == http.StatusForbidden:
+		case http.StatusForbidden:
 			return nil, fmt.Errorf("status 403 for %s: %w", url, model.ErrScrapeBlocked)
-		case status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable:
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 			backoff := time.Duration(1<<attempt) * 500 * time.Millisecond
 			select {
 			case <-time.After(backoff):

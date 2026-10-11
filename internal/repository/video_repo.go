@@ -58,11 +58,17 @@ type VideoRepository interface {
 	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
-var allowedSortColumns = map[string]string{
-	"created_at":       "v.created_at",
-	"title":            "v.title",
-	"duration_seconds": "v.duration_seconds",
-	"file_size_bytes":  "v.file_size_bytes",
+// sortColumn maps an allowed sort key to its column, defaulting to v.created_at.
+func sortColumn(sortBy string) string {
+	switch sortBy {
+	case "title":
+		return "v.title"
+	case "duration_seconds":
+		return "v.duration_seconds"
+	case "file_size_bytes":
+		return "v.file_size_bytes"
+	}
+	return "v.created_at"
 }
 
 const queryExistsVideoByFilenameAndSize = `
@@ -203,10 +209,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 		// shuffle the outer result. sort_order is irrelevant for a random sample.
 		dataQuery = "SELECT * FROM (" + selectClause + ") sub ORDER BY RANDOM()" + limitOffset
 	} else {
-		sortCol := allowedSortColumns[filter.SortBy]
-		if sortCol == "" {
-			sortCol = "v.created_at"
-		}
+		sortCol := sortColumn(filter.SortBy)
 		sortOrder := "DESC"
 		if strings.EqualFold(filter.SortOrder, "asc") {
 			sortOrder = "ASC"

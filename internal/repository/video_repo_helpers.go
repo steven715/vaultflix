@@ -10,20 +10,20 @@ import (
 func buildWhereClause(filter model.VideoFilter) (string, []interface{}) {
 	var conditions []string
 	var args []interface{}
-	argIdx := 1
+	// add binds v and returns its placeholder, so numbering cannot drift.
+	add := func(v interface{}) string {
+		args = append(args, v)
+		return "$" + strconv.Itoa(len(args))
+	}
 
 	if filter.Query != "" {
-		conditions = append(conditions, "to_tsvector('simple', v.title) @@ to_tsquery('simple', $"+strconv.Itoa(argIdx)+")")
-		args = append(args, filter.Query)
-		argIdx++
+		conditions = append(conditions, "to_tsvector('simple', v.title) @@ to_tsquery('simple', "+add(filter.Query)+")")
 	}
 
 	if len(filter.TagIDs) > 0 {
 		conditions = append(conditions,
-			"v.id IN (SELECT vt.video_id FROM video_tags vt WHERE vt.tag_id = ANY($"+strconv.Itoa(argIdx)+") "+
-				"GROUP BY vt.video_id HAVING COUNT(DISTINCT vt.tag_id) = $"+strconv.Itoa(argIdx+1)+")")
-		args = append(args, filter.TagIDs, len(filter.TagIDs))
-		argIdx += 2
+			"v.id IN (SELECT vt.video_id FROM video_tags vt WHERE vt.tag_id = ANY("+add(filter.TagIDs)+") "+
+				"GROUP BY vt.video_id HAVING COUNT(DISTINCT vt.tag_id) = "+add(len(filter.TagIDs))+")")
 	}
 
 	clause := ""

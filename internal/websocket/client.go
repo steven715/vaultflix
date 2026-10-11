@@ -57,10 +57,12 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case data, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			// Ignored: a broken conn surfaces on the write right after.
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// Hub closed the channel — send a close frame and exit.
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// Hub closed the channel — send a close frame and exit. Best
+				// effort: the connection is going away either way.
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -72,7 +74,8 @@ func (c *Client) WritePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			// Ignored: a broken conn surfaces on the ping write right after.
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				slog.Debug("websocket ping failed",
 					"error", err,
@@ -96,9 +99,10 @@ func (c *Client) ReadPump() {
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	// Ignored: a broken conn surfaces on the read loop's next ReadMessage.
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
