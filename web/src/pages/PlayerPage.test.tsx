@@ -51,8 +51,22 @@ function renderPlayer() {
   )
 }
 
+// The APIs every PlayerPage render calls (mocks reset between tests).
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })
+  vi.mocked(videosApi.listVideos).mockResolvedValue({
+    data: [],
+    total: 0,
+    page: 1,
+    page_size: 12,
+  } as never)
+  vi.mocked(recommendationsApi.getTodayRecommendations).mockResolvedValue([
+    { id: 'r1', video_id: 'rv1', title: 'Rec One', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 1, is_fallback: false },
+    { id: 'r2', video_id: 'rv2', title: 'Rec Two', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 2, is_fallback: false },
+    { id: 'r3', video_id: 'rv3', title: 'Rec Three', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 3, is_fallback: false },
+    { id: 'r4', video_id: 'rv4', title: 'Rec Four', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 4, is_fallback: false },
+    { id: 'r5', video_id: 'rv5', title: 'Rec Five', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 5, is_fallback: false },
+  ] as never)
 })
 
 // The Playback Session (and the Stream Source) attach their media listeners in
@@ -64,23 +78,6 @@ async function sessionListening() {
 }
 
 describe('PlayerPage play_mode', () => {
-  beforeEach(() => {
-    vi.mocked(videosApi.getStreamToken).mockResolvedValue({ token: 'tok', expires_in: 60 })
-    vi.mocked(videosApi.listVideos).mockResolvedValue({
-      data: [],
-      total: 0,
-      page: 1,
-      page_size: 12,
-    } as never)
-    vi.mocked(recommendationsApi.getTodayRecommendations).mockResolvedValue([
-      { id: 'r1', video_id: 'rv1', title: 'Rec One', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 1, is_fallback: false },
-      { id: 'r2', video_id: 'rv2', title: 'Rec Two', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 2, is_fallback: false },
-      { id: 'r3', video_id: 'rv3', title: 'Rec Three', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 3, is_fallback: false },
-      { id: 'r4', video_id: 'rv4', title: 'Rec Four', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 4, is_fallback: false },
-      { id: 'r5', video_id: 'rv5', title: 'Rec Five', thumbnail_url: '', duration_seconds: 60, resolution: '1920x1080', file_size_bytes: 1, sort_order: 5, is_fallback: false },
-    ] as never)
-  })
-
   it('shows a notice for transcode videos instead of a player', async () => {
     vi.mocked(videosApi.getVideo).mockResolvedValue({
       ...base,
