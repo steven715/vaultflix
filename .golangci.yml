@@ -36,12 +36,6 @@ linters:
       - path: internal/middleware/auth\.go
         text: "Function 'JWTAuth' is too long"
         linters: [funlen]
-      - path: internal/service/enrichment_batch\.go
-        text: "Function 'runBatch' is too long"
-        linters: [funlen]
-      - path: internal/service/import_service\.go
-        text: "Function 'runImport' is too long"
-        linters: [funlen]
       - path: internal/service/video_service\.go
         text: "Function '(List|GetByID)' is too long"
         linters: [funlen]

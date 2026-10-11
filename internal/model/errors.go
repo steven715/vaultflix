@@ -31,3 +31,7 @@ var ErrScrapeBlocked = errors.New("scrape blocked by challenge")
 
 // ErrSourceUnavailable 表示來源站連線失敗 / 非預期狀態。
 var ErrSourceUnavailable = errors.New("scrape source unavailable")
+
+// ErrJobItemSkipped 表示 Job 中的一項被略過（例如重複的檔案、Media Source 已停用），
+// 不算成功也不算失敗。
+var ErrJobItemSkipped = errors.New("job item skipped")

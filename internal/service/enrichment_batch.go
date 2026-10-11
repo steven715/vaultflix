@@ -2,202 +2,133 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
-// StartBatchAsync launches a batch enrichment worker in the background and
-// returns a snapshot of the new job. Returns model.ErrConflict when another
-// batch is already running. req.Status filters which videos to process; an
-// empty string defaults to model.EnrichmentPending. Notifications are pushed
-// to the WebSocket connections of userID.
+// jobKindEnrichment tags Enrichment Jobs on the JobRunner.
+const jobKindEnrichment = "enrichment"
+
+// StartBatchAsync launches an Enrichment Job in the background and returns a
+// snapshot of it. Returns model.ErrConflict when another Enrichment Job is
+// already running. req.Status filters which videos to process; an empty
+// string defaults to model.EnrichmentPending. Notifications are pushed to the
+// WebSocket connections of userID.
 func (s *EnrichmentService) StartBatchAsync(ctx context.Context, req model.EnrichBatchRequest, userID string) (*model.EnrichJob, error) {
 	if req.Status == "" {
 		req.Status = model.EnrichmentPending
 	}
-
-	s.mu.Lock()
-	if s.activeJob != nil && s.activeJob.Status == "running" {
-		s.mu.Unlock()
-		return nil, model.ErrConflict
+	job, err := s.jobs.Start(jobKindEnrichment, nil,
+		enrichmentItems{svc: s, req: req, userID: userID},
+		&enrichmentReport{notifier: s.notifier, userID: userID})
+	if err != nil {
+		return nil, fmt.Errorf("start enrichment job: %w", err)
 	}
-
-	job := &model.EnrichJob{
-		ID:        uuid.New().String(),
-		Status:    "running",
-		StartedAt: time.Now(),
-	}
-	cancelCh := make(chan struct{})
-
-	s.activeJob = job
-	s.cancelCh = cancelCh
-	snapshot := cloneEnrichJobLocked(job)
-	s.mu.Unlock()
-
-	go s.runBatch(job, cancelCh, req, userID)
-
-	// Return a snapshot: the worker goroutine mutates job under s.mu.
-	return snapshot, nil
+	return toEnrichJob(job), nil
 }
 
-// ActiveJob returns a snapshot of the most recently started batch enrichment
-// job (running or finished), or nil when no batch has ever started in this
-// process. Safe to read concurrently with the running worker.
+// ActiveJob returns a snapshot of the most recently started Enrichment Job
+// (running or finished), or nil when none has started in this process.
 func (s *EnrichmentService) ActiveJob() *model.EnrichJob {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return cloneEnrichJobLocked(s.activeJob)
+	job := s.jobs.Latest()
+	if job == nil || job.Kind != jobKindEnrichment {
+		return nil
+	}
+	return toEnrichJob(job)
 }
 
 // CancelBatch requests the running job with the given ID to stop after the
 // current video finishes. Returns model.ErrNotFound when no such job exists.
 // Cancelling a finished job is a no-op (idempotent).
 func (s *EnrichmentService) CancelBatch(jobID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.activeJob == nil || s.activeJob.ID != jobID {
-		return model.ErrNotFound
-	}
-	if s.activeJob.Status != "running" {
-		return nil
-	}
-	select {
-	case <-s.cancelCh:
-		// already closed
-	default:
-		close(s.cancelCh)
+	if err := s.jobs.Cancel(jobID); err != nil {
+		return fmt.Errorf("cancel enrichment job %s: %w", jobID, err)
 	}
 	return nil
 }
 
-// updateEnrichJob applies fn to job while holding s.mu, serialising every
-// mutation of the job's fields against snapshots taken by ActiveJob / the
-// worker.
-func (s *EnrichmentService) updateEnrichJob(job *model.EnrichJob, fn func(*model.EnrichJob)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	fn(job)
+// enrichmentItems lists the Videos one Enrichment Job processes.
+type enrichmentItems struct {
+	svc    *EnrichmentService
+	req    model.EnrichBatchRequest
+	userID string
 }
 
-// snapshotEnrichJob returns a deep copy of job taken under s.mu.
-func (s *EnrichmentService) snapshotEnrichJob(job *model.EnrichJob) *model.EnrichJob {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return cloneEnrichJobLocked(job)
+func (e enrichmentItems) Items(ctx context.Context) ([]JobItem, error) {
+	videos, err := e.svc.videoRepo.ListByEnrichmentStatus(ctx, e.req.Status)
+	if err != nil {
+		return nil, fmt.Errorf("list videos with enrichment status %s: %w", e.req.Status, err)
+	}
+	if e.req.Limit > 0 && len(videos) > e.req.Limit {
+		videos = videos[:e.req.Limit]
+	}
+	items := make([]JobItem, len(videos))
+	for i, v := range videos {
+		items[i] = JobItem{ID: v.ID, Name: v.OriginalFilename, Run: func(ctx context.Context) error {
+			return e.enrichOne(ctx, v.ID)
+		}}
+	}
+	return items, nil
 }
 
-// cloneEnrichJobLocked returns a shallow copy of j (FinishedAt pointer is
-// deep-copied). Caller must hold s.mu. Returns nil for a nil job.
-func cloneEnrichJobLocked(j *model.EnrichJob) *model.EnrichJob {
-	if j == nil {
+// enrichOne enriches one Video and, when asked, accepts its best Suggestion.
+func (e enrichmentItems) enrichOne(ctx context.Context, videoID string) error {
+	if err := e.svc.EnrichVideo(ctx, videoID, e.userID); err != nil {
+		return fmt.Errorf("enrich video %s: %w", videoID, err)
+	}
+	if !e.req.AutoAccept {
 		return nil
 	}
-	cp := *j
-	if j.FinishedAt != nil {
-		f := *j.FinishedAt
-		cp.FinishedAt = &f
+	if err := e.svc.autoAcceptHighestPriority(ctx, videoID, e.userID); err != nil {
+		return fmt.Errorf("auto-accept suggestion for video %s: %w", videoID, err)
 	}
-	return &cp
+	return nil
 }
 
-// runBatch is the goroutine that drives the batch enrichment loop.
-func (s *EnrichmentService) runBatch(job *model.EnrichJob, cancelCh chan struct{}, req model.EnrichBatchRequest, userID string) {
-	jobID := job.ID
+// enrichmentReport sends one Enrichment Job's messages. It reports only the
+// start of each Video; per-Video failures go to the log.
+type enrichmentReport struct {
+	notifier websocket.Notifier
+	userID   string
+}
 
-	defer func() {
-		finished := time.Now()
-		s.updateEnrichJob(job, func(j *model.EnrichJob) {
-			j.FinishedAt = &finished
-			j.CurrentVideoID = ""
-			if j.Status == "running" {
-				j.Status = "completed"
-			}
-		})
-		snap := s.snapshotEnrichJob(job)
-		s.notifier.SendToUser(userID, &websocket.Message{
-			Type:    websocket.TypeEnrichBatchComplete,
-			Payload: snap,
-		})
-		slog.Info("enrich batch finished",
-			"job_id", snap.ID,
-			"status", snap.Status,
-			"total", snap.Total,
-			"succeeded", snap.Succeeded,
-			"failed", snap.Failed,
-		)
-	}()
+func (e *enrichmentReport) ItemStarted(job Job, it JobItem, current int) {
+	e.send(websocket.TypeEnrichProgress, map[string]interface{}{
+		"job_id": job.ID, "video_id": it.ID, "current": current, "total": job.Total, "status": "processing",
+	})
+}
 
-	videos, err := s.videoRepo.ListByEnrichmentStatus(context.Background(), req.Status)
+func (e *enrichmentReport) ItemDone(job Job, it JobItem, _ int, err error) {
 	if err != nil {
-		s.updateEnrichJob(job, func(j *model.EnrichJob) { j.Status = "failed" })
-		s.notifier.SendToUser(userID, &websocket.Message{
-			Type:    websocket.TypeEnrichError,
-			Payload: map[string]string{"job_id": jobID, "error": err.Error()},
-		})
-		return
+		slog.Warn("enrich batch: video failed", "job_id", job.ID, "video_id", it.ID, "error", err)
 	}
+}
 
-	// Apply the limit cap: if Limit > 0, process at most Limit videos.
-	if req.Limit > 0 && len(videos) > req.Limit {
-		videos = videos[:req.Limit]
-	}
+func (e *enrichmentReport) Failed(job Job, err error) {
+	e.send(websocket.TypeEnrichError, map[string]string{"job_id": job.ID, "error": err.Error()})
+}
 
-	total := len(videos)
-	s.updateEnrichJob(job, func(j *model.EnrichJob) { j.Total = total })
+func (e *enrichmentReport) Finished(job Job) {
+	snap := toEnrichJob(&job)
+	e.send(websocket.TypeEnrichBatchComplete, snap)
+	slog.Info("enrich batch finished",
+		"job_id", snap.ID, "status", snap.Status, "total", snap.Total,
+		"succeeded", snap.Succeeded, "failed", snap.Failed,
+	)
+}
 
-	for i, v := range videos {
-		select {
-		case <-cancelCh:
-			s.updateEnrichJob(job, func(j *model.EnrichJob) { j.Status = "cancelled" })
-			return
-		default:
-		}
+func (e *enrichmentReport) send(msgType string, payload interface{}) {
+	e.notifier.SendToUser(e.userID, &websocket.Message{Type: msgType, Payload: payload})
+}
 
-		s.updateEnrichJob(job, func(j *model.EnrichJob) { j.CurrentVideoID = v.ID })
-		s.notifier.SendToUser(userID, &websocket.Message{
-			Type: websocket.TypeEnrichProgress,
-			Payload: map[string]interface{}{
-				"job_id":   jobID,
-				"video_id": v.ID,
-				"current":  i + 1,
-				"total":    total,
-				"status":   "processing",
-			},
-		})
-
-		enrichErr := s.EnrichVideo(context.Background(), v.ID, userID)
-
-		if enrichErr == nil && req.AutoAccept {
-			if aaErr := s.autoAcceptHighestPriority(context.Background(), v.ID, userID); aaErr != nil {
-				slog.Warn("enrich batch: auto-accept failed",
-					"job_id", jobID,
-					"video_id", v.ID,
-					"error", aaErr,
-				)
-				enrichErr = aaErr
-			}
-		}
-
-		s.updateEnrichJob(job, func(j *model.EnrichJob) {
-			j.Processed = i + 1
-			if enrichErr != nil {
-				j.Failed++
-			} else {
-				j.Succeeded++
-			}
-		})
-
-		if enrichErr != nil {
-			slog.Warn("enrich batch: video failed",
-				"job_id", jobID,
-				"video_id", v.ID,
-				"error", enrichErr,
-			)
-		}
+// toEnrichJob shows a Job in the Enrichment API's shape.
+func toEnrichJob(j *Job) *model.EnrichJob {
+	return &model.EnrichJob{
+		ID: j.ID, Status: j.Status, Total: j.Total, Processed: j.Processed,
+		Succeeded: j.Succeeded, Failed: j.Failed, CurrentVideoID: j.Current.ID,
+		StartedAt: j.StartedAt, FinishedAt: j.FinishedAt,
 	}
 }

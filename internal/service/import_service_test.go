@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,22 +13,57 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-func TestGetJob_Found(t *testing.T) {
-	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
-
-	job := &model.ImportJob{
-		ID:     "job-123",
-		Status: "running",
+// startBlockedImport starts an Import Job that stays running, on its one
+// file, until release is called.
+func startBlockedImport(t *testing.T) (svc *ImportService, job *model.ImportJob, release func()) {
+	t.Helper()
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "a.mp4"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	svc.activeJobs.Store(job.ID, job)
+	inFile, gate := make(chan struct{}), make(chan struct{})
+	repo := &mock.VideoRepository{
+		FindBySourceAndPathFunc: func(context.Context, string, string) (*model.Video, error) {
+			close(inFile)
+			<-gate
+			return &model.Video{ID: "existing"}, nil
+		},
+	}
+	svc = NewImportService(repo, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	job, err := svc.StartAsync(context.Background(), &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-inFile
+	var once sync.Once
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	return svc, job, release
+}
 
-	got, err := svc.GetJob("job-123")
+// waitImportDone polls until the Import Job jobID is no longer running.
+func waitImportDone(t *testing.T, svc *ImportService, jobID string) *model.ImportJob {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, err := svc.GetJob(jobID); err == nil && got.Status != "running" {
+			return got
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("import never finished")
+	return nil
+}
+
+func TestGetJob_Found(t *testing.T) {
+	svc, job, _ := startBlockedImport(t)
+
+	got, err := svc.GetJob(job.ID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if got.ID != "job-123" {
-		t.Errorf("expected job ID job-123, got %s", got.ID)
+	if got.ID != job.ID || got.Status != "running" || got.SourceID != "src-1" {
+		t.Errorf("got %+v", got)
 	}
 }
 
@@ -33,62 +72,37 @@ func TestGetJob_NotFound(t *testing.T) {
 	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
 
 	_, err := svc.GetJob("nonexistent")
-	if err != model.ErrNotFound {
+	if !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
 func TestGetActiveJob_Running(t *testing.T) {
-	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
-
-	job := &model.ImportJob{ID: "job-active", Status: "running"}
-	svc.activeJobs.Store(job.ID, job)
-
-	completed := &model.ImportJob{ID: "job-done", Status: "completed"}
-	svc.activeJobs.Store(completed.ID, completed)
+	svc, job, _ := startBlockedImport(t)
 
 	got := svc.GetActiveJob()
-	if got == nil {
-		t.Fatal("expected active job, got nil")
-	}
-	if got.ID != "job-active" {
-		t.Errorf("expected job-active, got %s", got.ID)
+	if got == nil || got.ID != job.ID {
+		t.Fatalf("GetActiveJob = %+v, want %s", got, job.ID)
 	}
 }
 
 func TestGetActiveJob_None(t *testing.T) {
-	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	svc, job, release := startBlockedImport(t)
+	release()
+	waitImportDone(t, svc, job.ID)
 
-	completed := &model.ImportJob{ID: "job-done", Status: "completed"}
-	svc.activeJobs.Store(completed.ID, completed)
-
-	got := svc.GetActiveJob()
-	if got != nil {
-		t.Errorf("expected nil, got job %s", got.ID)
+	if got := svc.GetActiveJob(); got != nil {
+		t.Errorf("expected nil once the job finished, got job %s", got.ID)
 	}
 }
 
 func TestStartAsync_Conflict(t *testing.T) {
-	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	svc, _, _ := startBlockedImport(t)
 
-	// Manually lock to simulate a running job
-	svc.LockForTest()
-
-	source := &model.MediaSource{
-		ID:        "src-1",
-		Label:     "Test Source",
-		MountPath: t.TempDir(),
-	}
-
-	_, err := svc.StartAsync(context.Background(), source, "user-1")
-	if err != model.ErrConflict {
+	_, err := svc.StartAsync(context.Background(), &model.MediaSource{ID: "src-2", MountPath: t.TempDir()}, "user-1")
+	if !errors.Is(err, model.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
-
-	svc.UnlockForTest()
 }
 
 func TestStartAsync_EmptyDirectory(t *testing.T) {
