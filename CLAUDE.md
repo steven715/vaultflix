@@ -130,7 +130,7 @@ Repository（資料存取層）
 
 | 層 | 做什麼 | 不做什麼 |
 |---|--------|---------|
-| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯 |
+| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯、不跳過 service 直接呼叫 repository |
 | Service | 業務邏輯、跨 repository 協調、呼叫外部服務（MinIO） | 不碰 HTTP request/response、不寫 SQL |
 | Repository | 執行 SQL 查詢、回傳 model struct | 不處理業務邏輯、不碰 HTTP、不呼叫其他 repository |
 
@@ -158,6 +158,8 @@ type ErrorResponse struct {
     Message string `json:"message"`
 }
 ```
+
+前端 API client 依這兩種形狀解包（頂層有 `total` 就視為分頁、不解包），改形狀前先看 [`docs/conventions/frontend.md`](docs/conventions/frontend.md)「前後端 Response 契約」。
 
 HTTP Status Code 使用規則：
 - `200`：GET 成功、PUT 更新成功
@@ -194,60 +196,13 @@ const queryGetVideoByID = `
 
 ---
 
-## 前端規範（React + TypeScript）
-
-### 前後端 Response 契約
-
-後端所有成功回應使用 `{ data: ... }` wrapper（`SuccessResponse`）。前端 API client 層是唯一處理這個契約的地方：
-
-- axios response interceptor 統一解開 `SuccessResponse` wrapper，讓呼叫端直接拿到 `data` 內容
-- 個別 API function 不應出現 `res.data.data` 的雙層解包 — 如果需要這樣寫，代表 interceptor 沒有正確處理
-- 分頁回應（`PaginatedResponse`）因為頂層就包含 `total`、`page` 等欄位，不適用自動解包，需在 interceptor 中區分處理
-
-```typescript
-// ✅ 正確：interceptor 統一解包，呼叫端簡潔
-// client.ts
-client.interceptors.response.use((res) => {
-  if (res.data?.data !== undefined) return { ...res, data: res.data.data }
-  return res
-})
-// auth.ts
-const res = await client.post<LoginResponse>('/auth/login', { username, password })
-return res.data // 直接是 { token: "..." }
-
-// ❌ 錯誤：每個呼叫端自己解包，容易遺漏
-return res.data.data
-```
-
-### 自動重試與錯誤處理
-
-- 任何自動重試邏輯必須設定**重試上限**，且重試次數用 `useRef` 追蹤，不用 `useState`（避免觸發重新渲染導致迴圈）
-- 事件驅動的錯誤處理（如 `<video onError>`）不可直接觸發導致同一事件再次發生的狀態更新，必須有中斷條件
-
-```tsx
-// ✅ 正確：ref 追蹤重試次數，超過上限停止
-const retryRef = useRef(0)
-function handleVideoError() {
-  if (retryRef.current >= 1) return
-  retryRef.current += 1
-  refetchAndReload()
-}
-
-// ❌ 錯誤：無限重試 — error → refetch → setState → re-render → error → ...
-function handleVideoError() {
-  refetchAndReload() // 永遠重試，沒有上限
-}
-```
-
----
-
 ## 主題規範（動到該區域前必讀）
 
 以下規則只在碰到特定區域時需要，不常駐於此檔。**觸發條件成立時先讀對應文件再動手。**
 
 | 觸發條件 | 必讀 |
 |---|---|
-| 動 `web/src/`（React 元件、hooks、vitest 測試） | [`docs/conventions/frontend.md`](docs/conventions/frontend.md) —— useEffect、假時鐘測試、flaky 判斷、同路徑 refetch、具名導航 |
+| 動 `web/src/`（React 元件、hooks、vitest 測試） | [`docs/conventions/frontend.md`](docs/conventions/frontend.md) —— Response 契約、重試上限、useEffect、假時鐘測試、flaky 判斷、同路徑 refetch、具名導航 |
 | 動 `internal/websocket/` 或 `web/src/hooks/useWebSocket.ts` | [`docs/conventions/websocket.md`](docs/conventions/websocket.md) —— Hub、訊息協議、重連、onclose 世代 |
 | 動 `internal/streaming/`、Play Mode、任何呼叫 ffmpeg/ffprobe 的程式 | [`docs/streaming.md`](docs/streaming.md) —— 播放路徑、規模前提、§6 FFmpeg seek 與產物測試 |
 | 動 `docker-compose*.yml`、`Dockerfile*`、`nginx/`、部署流程、影片掛載 | [`docs/conventions/docker.md`](docs/conventions/docker.md) —— 不可變 nginx image、磁碟掛載、compose 疊加陷阱 |
@@ -394,10 +349,8 @@ repo 根目錄的 `.mcp.json` 註冊了 `chrome-devtools-mcp`（版本固定，�
 
 - 每建立或修改一個檔案後，簡短說明做了什麼以及為什麼
 - 遇到計畫文件中不明確的地方，先用你的判斷做決定，完成後統一列出所有假設
-- 嚴格遵守分層架構，不跨層呼叫
-- 如果某個步驟需要做架構決策（例如選 Gin 還是 Echo），說明你的選擇理由
+- 每次架構決策（例如選 Gin 還是 Echo）說明選擇理由，並列出潛在缺點或 trade-off（例如：增加了複雜度、多了安全考量面、對目前專案規模是否過度設計）
 - 當我提出架構修改或設計要求時，如果你認為原本的設計更合理、我的修改在此專案脈絡下屬於過度設計、或存在我可能沒考慮到的副作用（如安全風險、維護成本），請直接說出來並給出理由，不要無條件照做
-- 每次架構決策除了說明選擇理由，也要列出該決策的潛在缺點或 trade-off（例如：增加了複雜度、多了安全考量面、對目前專案規模是否過度設計）
 
 ---
 
