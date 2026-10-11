@@ -84,4 +84,12 @@ describe('MediaSourcePage (reskin)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '掃描匯入' })).toBeDisabled())
     expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
   })
+
+  it('does not repeat its own running Import above the list', async () => {
+    vi.mocked(importVideos).mockResolvedValue(runningJob as never)
+    renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
+    fireEvent.click(await screen.findByText('掃描匯入'))
+    await screen.findByText('匯入中')
+    expect(screen.queryByText('匯入執行中')).toBeNull()
+  })
 })

@@ -14,7 +14,6 @@ export default function MediaSourcePage() {
   const [loadError, setLoadError] = useState(false)
   const toast = useToast()
 
-  // Import Job (the panel shows under the Media Source it runs on)
   // The Media Lane: Import Jobs run here, and a Backfill started elsewhere
   // holds the lane too, so 掃描匯入 waits for it (ADR-0014).
   const lane = useMediaLane({ onImportFinished: () => refreshSources() })
@@ -61,10 +60,6 @@ export default function MediaSourcePage() {
     return () => { cancelled = true }
   }, [])
 
-  async function handleImport(source: MediaSource) {
-    await importJob.start(source.id)
-  }
-
 
   async function handleToggleEnabled(source: MediaSource) {
     try {
@@ -80,7 +75,7 @@ export default function MediaSourcePage() {
     try {
       await deleteMediaSource(source.id)
       setConfirmAction(null)
-      if (shownSourceId === source.id && importJob.view?.phase !== 'running') importJob.dismiss()
+      if (shownSourceId === source.id && !importJob.busy) importJob.dismiss()
       fetchSources()
     } catch {
       toast.error('刪除失敗，請重試')
@@ -114,7 +109,8 @@ export default function MediaSourcePage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {lane.importBlockedReason && <p className="text-xs text-faint">{lane.importBlockedReason}</p>}
+          {/* Only another Job's hold needs saying: this page's own Import shows its panel. */}
+          {lane.backfill.busy && <p className="text-xs text-faint">{lane.importBlockedReason}</p>}
           {sources.map((source) => (
             <div
               key={source.id}
@@ -148,7 +144,7 @@ export default function MediaSourcePage() {
                     編輯
                   </button>
                   <button
-                    onClick={() => handleImport(source)}
+                    onClick={() => { void importJob.start(source.id) }}
                     disabled={lane.importBlockedReason !== null}
                     title={lane.importBlockedReason ?? undefined}
                     className="text-xs text-accent hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-btn transition-colors"

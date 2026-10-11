@@ -82,4 +82,30 @@ describe('useMediaLane', () => {
     await waitFor(() => expect(onImportFinished).toHaveBeenCalledTimes(1))
     expect(onImportFinished.mock.calls[0][0]).toMatchObject({ id: 'i1', phase: 'completed' })
   })
+
+  it('toasts when a start finds the same kind already running elsewhere', async () => {
+    const conflict = Object.assign(new Error('409'), { response: { status: 409 } })
+    vi.mocked(importVideos).mockRejectedValue(conflict)
+    vi.mocked(getActiveImportJob).mockResolvedValueOnce(null).mockResolvedValue(runningImport)
+    const { result } = lane()
+    let outcome = ''
+    await act(async () => { outcome = await result.current.import.start('s1') })
+    expect(outcome).toBe('adopted')
+    expect(toast.error).toHaveBeenCalledWith('已有任務進行中')
+  })
+
+  it('says each Job is busy while it starts or runs', async () => {
+    vi.mocked(getActiveBackfill).mockResolvedValue(runningBackfill)
+    const { result } = lane()
+    await waitFor(() => expect(result.current.backfill.busy).toBe(true))
+    expect(result.current.import.busy).toBe(false)
+  })
+
+  it('keeps start and cancel the same functions across renders', async () => {
+    const { result, rerender } = lane()
+    const before = result.current
+    rerender()
+    expect(result.current.import.start).toBe(before.import.start)
+    expect(result.current.backfill.cancel).toBe(before.backfill.cancel)
+  })
 })
