@@ -31,6 +31,15 @@ describe('reduceJob', () => {
     expect(reduceJob(running, { type: 'failed', jobId: 'j2' })).toBe(running)
   })
 
+  it('never reopens a finished job from a late running snapshot', () => {
+    const done: JobView = { ...running, phase: 'completed' }
+    expect(reduceJob(done, { type: 'snapshot', view: running })).toBe(done)
+  })
+
+  it('ignores a finish when no job is shown', () => {
+    expect(reduceJob(null, { type: 'finished', view: { ...running, phase: 'completed' } })).toBeNull()
+  })
+
   it('takes the final job on finish', () => {
     const done: JobView = { ...running, phase: 'completed', counts: { ...running.counts, processed: 10, succeeded: 10 } }
     expect(reduceJob(running, { type: 'finished', view: done })).toEqual(done)

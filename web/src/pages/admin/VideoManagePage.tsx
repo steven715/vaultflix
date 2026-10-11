@@ -86,7 +86,8 @@ export default function VideoManagePage() {
   // Import Job: a running one keeps the import dialog open (also when it was
   // already running as the page opened); finishing goes back to page 1.
   const importJob = useJob(importJobs, { onFinished: () => updateParams({ page: '1' }) })
-  const importModalOpen = showImport || importJob.view?.phase === 'running'
+  // An adopted job keeps the dialog open until its summary is closed.
+  const importModalOpen = showImport || importJob.view !== null
   const backfillJob = useJob(backfillJobs)
 
   async function handleStartBackfill() {
@@ -214,7 +215,7 @@ export default function VideoManagePage() {
 
       {importModalOpen && (
         <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
-          onSourceChange={setSelectedSourceID} onClose={() => setShowImport(false)}
+          onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
           onStartImport={handleStartImport} onResetImport={importJob.dismiss} />
       )}
 

@@ -90,6 +90,42 @@ describe('useJob', () => {
     expect(result.current.view?.id).toBe('running-one')
   })
 
+  it('does not adopt a job that ended right after the 409', async () => {
+    const ws = wsHarness()
+    const conflict = Object.assign(new Error('409'), { response: { status: 409 } })
+    const kind = fakeKind({
+      start: vi.fn(async () => { throw conflict }),
+      active: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(view('gone', { phase: 'completed' })),
+    })
+    const onFinished = vi.fn()
+    const { result } = renderHook(() => useJob(kind, { onFinished }), { wrapper: ws.Provider })
+    let res: { outcome: string; error?: unknown } = { outcome: '' }
+    await act(async () => { res = await result.current.start('src') })
+    expect(res).toEqual({ outcome: 'failed', error: conflict })
+    expect(result.current.view).toBeNull()
+    expect(onFinished).not.toHaveBeenCalled()
+  })
+
+  it('shows the end of a job that finished before its start request returned', async () => {
+    const ws = wsHarness()
+    let resolveStart: (v: JobView) => void = () => {}
+    const kind = fakeKind({ start: vi.fn(() => new Promise<JobView>((r) => { resolveStart = r })) })
+    const { result } = renderHook(() => useJob(kind), { wrapper: ws.Provider })
+    let pending: Promise<unknown> = Promise.resolve()
+    act(() => { pending = result.current.start('src') })
+    ws.send({ type: 'c', payload: { id: 'new' } })
+    await act(async () => { resolveStart(view('new')); await pending })
+    expect(result.current.view?.phase).toBe('completed')
+  })
+
+  it('sends one start request while one is in flight', async () => {
+    const ws = wsHarness()
+    const kind = fakeKind()
+    const { result } = renderHook(() => useJob(kind), { wrapper: ws.Provider })
+    await act(async () => { await Promise.all([result.current.start('src'), result.current.start('src')]) })
+    expect(kind.start).toHaveBeenCalledTimes(1)
+  })
+
   it('reports other start failures', async () => {
     const ws = wsHarness()
     const kind = fakeKind({ start: vi.fn(async () => { throw new Error('500') }) })

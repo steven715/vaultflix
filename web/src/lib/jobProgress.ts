@@ -44,13 +44,16 @@ export function reduceJob(view: JobView | null, event: JobEvent): JobView | null
     case 'reset':
       return null
     case 'snapshot':
-      // A REST snapshot may arrive after live results moved the same job on.
-      if (view && view.id === event.view.id && event.view.counts.processed < view.counts.processed) {
+      // A REST snapshot may arrive after live results moved the same job on,
+      // or after it already finished.
+      if (view && view.id === event.view.id &&
+          (view.phase !== 'running' || event.view.counts.processed < view.counts.processed)) {
         return view
       }
       return event.view
     case 'finished':
-      return view && view.id !== event.view.id ? view : event.view
+      // Only the shown job: another tab's job must not take over this page.
+      return view && view.id === event.view.id ? event.view : view
   }
   if (!view || view.id !== event.jobId) return view
   switch (event.type) {

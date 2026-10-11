@@ -58,14 +58,23 @@ export function useJob<TArgs>(
     onFinishedRef.current = onFinished
   }, [onFinished])
 
+  // The last job end seen over WebSocket. A job can end before the request
+  // that brings it in (start, restore) returns; showing it then must show
+  // the end, not a running job that never updates again.
+  const lastFinishedRef = useRef<JobView | null>(null)
+  const show = useCallback((v: JobView) => {
+    const done = lastFinishedRef.current
+    dispatch({ type: 'snapshot', view: done?.id === v.id ? done : v })
+  }, [])
+
   // Take over a job that is already running when the page opens.
   useEffect(() => {
     let cancelled = false
     kind.active().then((v) => {
-      if (!cancelled && v && v.phase === 'running') dispatch({ type: 'snapshot', view: v })
+      if (!cancelled && v && v.phase === 'running') show(v)
     }).catch((err) => console.warn('failed to restore active job', err))
     return () => { cancelled = true }
-  }, [kind])
+  }, [kind, show])
 
   // Follow WebSocket progress. Dispatching from a microtask keeps the state
   // update out of the synchronous effect body. Never cancel a queued event: a
@@ -77,7 +86,9 @@ export function useJob<TArgs>(
   useEffect(() => {
     if (!lastMessage) return
     const event = eventFor(kind, lastMessage)
-    if (event) queueMicrotask(() => dispatch(event))
+    if (!event) return
+    if (event.type === 'finished') lastFinishedRef.current = event.view
+    queueMicrotask(() => dispatch(event))
   }, [lastMessage, kind])
 
   // Report each job's end once.
@@ -88,20 +99,28 @@ export function useJob<TArgs>(
     onFinishedRef.current?.(view)
   }, [view])
 
-  const start = useCallback(async (args: TArgs): Promise<StartResult> => {
-    setStarting(true)
-    try {
-      dispatch({ type: 'snapshot', view: await kind.start(args) })
-      return { outcome: 'started' }
-    } catch (err) {
-      if (!isConflict(err)) return { outcome: 'failed', error: err }
-      const running = await kind.active().catch(() => null)
-      if (running) dispatch({ type: 'snapshot', view: running })
-      return { outcome: 'adopted' }
-    } finally {
-      setStarting(false)
-    }
-  }, [kind])
+  // A second start while one is in flight (e.g. a double click) shares it.
+  const inflightRef = useRef<Promise<StartResult> | null>(null)
+  const start = useCallback((args: TArgs): Promise<StartResult> => {
+    inflightRef.current ??= (async (): Promise<StartResult> => {
+      setStarting(true)
+      try {
+        show(await kind.start(args))
+        return { outcome: 'started' }
+      } catch (err) {
+        if (!isConflict(err)) return { outcome: 'failed', error: err }
+        // The job behind the 409 may have ended since; then there is nothing to adopt.
+        const running = await kind.active().catch(() => null)
+        if (running?.phase !== 'running') return { outcome: 'failed', error: err }
+        show(running)
+        return { outcome: 'adopted' }
+      } finally {
+        setStarting(false)
+        inflightRef.current = null
+      }
+    })()
+    return inflightRef.current
+  }, [kind, show])
 
   const viewId = view?.id
   const cancelJob = useCallback(async () => {
