@@ -105,3 +105,7 @@ Stream Source 與 Playback Session 是在 `useEffect` 裡對 `<video>` 掛 liste
 ## 作業面板跟著「有沒有 job」顯示，不跟著「是否執行中」
 
 Import Job、Backfill Job 這類背景作業的進度面板，條件寫成 `view !== null`（或比對 job 的對象，如 Media Source id），不要寫成 `phase === 'running'`。用 running 當條件，job 一結束面板就消失，使用者永遠看不到完成摘要與失敗清單（MediaSourcePage 曾經如此）。結束後的摘要留著，由使用者按「關閉」（`useJob` 的 `dismiss`）收掉；「執行中」只拿來決定按鈕是否 disabled、能不能關閉。
+
+## 用到 WebSocket 的測試：用 `wsHarness`，不要 mock `useWS`
+
+元件或 hook 讀 `useWS()`（如 `useJob`）時，用 `src/test/wsHarness.tsx`：`renderWithRouter(ui, { ws })`（頁面測試預設就會包一個）或 `renderHook(..., { wrapper: ws.Provider })`，再用 `ws.send(message)` 推送伺服器訊息，之後的非同步結果用 `findBy`／`waitFor` 等。需要斷線狀態或記錄送出的訊息時，擴充 harness 本身。它走真的 `WebSocketContext`，測到的是頁面實際收訊息的路徑；`vi.mock` 掉 `useWS` 則要每個檔案各寫一份，hook 一改到 context 就全部壞掉。

@@ -19,7 +19,6 @@ vi.mock('../../api/admin', () => ({
   startBackfill: vi.fn(), getActiveBackfill: vi.fn(() => Promise.resolve(null)),
   addVideoTag: vi.fn(), removeVideoTag: vi.fn(),
 }))
-vi.mock('../../contexts/WebSocketContext', () => ({ useWS: () => ({ lastMessage: null, isConnected: true, sendMessage: vi.fn() }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
 describe('VideoManagePage (library)', () => {
