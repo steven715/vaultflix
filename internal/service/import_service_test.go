@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -82,7 +83,7 @@ func TestStartAsync_Conflict(t *testing.T) {
 		MountPath: t.TempDir(),
 	}
 
-	_, err := svc.StartAsync(nil, source, "user-1")
+	_, err := svc.StartAsync(context.Background(), source, "user-1")
 	if err != model.ErrConflict {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -100,7 +101,7 @@ func TestStartAsync_EmptyDirectory(t *testing.T) {
 		MountPath: t.TempDir(),
 	}
 
-	job, err := svc.StartAsync(nil, source, "user-1")
+	job, err := svc.StartAsync(context.Background(), source, "user-1")
 	if err != nil {
 		t.Fatalf("StartAsync failed: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestStartAsync_ScanError(t *testing.T) {
 		MountPath: "/nonexistent/path/that/does/not/exist",
 	}
 
-	job, err := svc.StartAsync(nil, source, "user-1")
+	job, err := svc.StartAsync(context.Background(), source, "user-1")
 	if err != nil {
 		t.Fatalf("StartAsync failed: %v", err)
 	}

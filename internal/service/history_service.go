@@ -47,10 +47,7 @@ func (s *watchHistoryService) SaveProgress(ctx context.Context, userID, videoID 
 		return fmt.Errorf("failed to get video %s for progress save: %w", videoID, err)
 	}
 
-	completed := false
-	if video.DurationSeconds > 0 && float64(progressSeconds) >= float64(video.DurationSeconds)*0.9 {
-		completed = true
-	}
+	completed := video.DurationSeconds > 0 && float64(progressSeconds) >= float64(video.DurationSeconds)*0.9
 
 	record := &model.WatchHistory{
 		UserID:          userID,

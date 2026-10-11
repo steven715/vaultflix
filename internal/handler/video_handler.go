@@ -14,6 +14,7 @@ import (
 	"github.com/steven/vaultflix/internal/service"
 )
 
+//nolint:gochecknoglobals // read-only allowlist
 var allowedSortBy = map[string]bool{
 	"created_at":       true,
 	"title":            true,

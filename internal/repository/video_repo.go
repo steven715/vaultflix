@@ -58,6 +58,7 @@ type VideoRepository interface {
 	ListKeyframeCandidates(ctx context.Context, limit int) ([]model.Video, error)
 }
 
+//nolint:gochecknoglobals // read-only allowlist (sort key → column)
 var allowedSortColumns = map[string]string{
 	"created_at":       "v.created_at",
 	"title":            "v.title",

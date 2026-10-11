@@ -28,9 +28,8 @@ tasks:
   test-fast:
     desc: "Fast checks (lint/type/unit) - native"
     cmds:
-      - go vet ./...
-      - cmd: test -z "$(gofmt -l .)"
-        msg: "gofmt found unformatted files, run `task fmt`"
+      # go vet, gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
+      - golangci-lint run ./...
       - go test ./...
       - task: web:typecheck
       - task: web:lint
@@ -55,14 +54,14 @@ tasks:
       - npm run test
 
   fmt:
-    desc: "Format Go code"
+    desc: "Format Go code (gofmt + import groups)"
     cmds:
-      - gofmt -w .
+      - golangci-lint fmt ./...
 
   lint:
-    desc: "Static checks (go vet + eslint)"
+    desc: "Static checks (golangci-lint + eslint)"
     cmds:
-      - go vet ./...
+      - golangci-lint run ./...
       - task: web:lint
 
   test-integration:

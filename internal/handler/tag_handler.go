@@ -12,6 +12,7 @@ import (
 	"github.com/steven/vaultflix/internal/repository"
 )
 
+//nolint:gochecknoglobals // read-only allowlist
 var allowedCategories = map[string]bool{
 	"genre":  true,
 	"actor":  true,

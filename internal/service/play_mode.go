@@ -7,6 +7,8 @@ import (
 )
 
 // 瀏覽器 <video> 原生可解的編碼與容器集合（Phase 1 保守取交集）。
+//
+//nolint:gochecknoglobals // read-only lookup tables
 var (
 	browserVideoCodecs = map[string]bool{"h264": true}
 	browserAudioCodecs = map[string]bool{"aac": true, "mp3": true}

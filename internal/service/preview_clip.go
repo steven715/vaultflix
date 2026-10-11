@@ -17,6 +17,7 @@ const (
 	previewCRF                 = "28"
 )
 
+//nolint:gochecknoglobals // read-only constant table
 var previewSegmentTimestampRatios = [previewSegmentCount]float64{0.10, 0.50, 0.85}
 
 // generatePreviewClip produces a low-bitrate, no-audio MP4 preview from

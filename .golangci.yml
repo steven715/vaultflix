@@ -1,0 +1,55 @@
+version: "2"
+
+# The mechanical half of CLAUDE.md's Go rules; `task verify` runs it.
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - funlen # function ≤ 50 lines
+    - gochecknoglobals # no global state; a read-only table says why with //nolint
+    - gochecknoinits # no init()
+  settings:
+    funlen:
+      lines: 50
+      statements: -1
+  exclusions:
+    paths:
+      - web # node_modules ships Go files
+    presets:
+      - std-error-handling # best-effort Close / os.Remove / print need no check
+    rules:
+      - path: _test\.go
+        linters: [funlen, gochecknoglobals, gochecknoinits]
+      # Functions that were already over 50 lines when the limit became a
+      # check. Split one, then drop it here; the list only shrinks.
+      - path: cmd/server/main\.go
+        text: "Function 'main' is too long"
+        linters: [funlen]
+      - path: internal/handler/tag_handler\.go
+        text: "Function 'AddVideoTag' is too long"
+        linters: [funlen]
+      - path: internal/handler/video_handler\.go
+        text: "Function '(Import|Stream|parseVideoFilter)' is too long"
+        linters: [funlen]
+      - path: internal/middleware/auth\.go
+        text: "Function 'JWTAuth' is too long"
+        linters: [funlen]
+      - path: internal/service/enrichment_batch\.go
+        text: "Function 'runBatch' is too long"
+        linters: [funlen]
+      - path: internal/service/import_service\.go
+        text: "Function 'runImport' is too long"
+        linters: [funlen]
+      - path: internal/service/video_service\.go
+        text: "Function '(List|GetByID)' is too long"
+        linters: [funlen]
+
+formatters:
+  enable:
+    - gci # imports: standard → third-party → project
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/steven/vaultflix)

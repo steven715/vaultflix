@@ -17,6 +17,7 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
+//nolint:gochecknoglobals // read-only allowlist
 var supportedExtensions = map[string]bool{
 	".mp4": true,
 	".mkv": true,
