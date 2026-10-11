@@ -1,6 +1,6 @@
 package model
 
-// MediaInfo 是從影片檔讀出的技術屬性（見 CONTEXT.md「Media Info」）。
+// MediaInfo 是從影片檔讀出的技術屬性（見 GLOSSARY.md「Media Info」）。
 type MediaInfo struct {
 	DurationSeconds int
 	Resolution      string

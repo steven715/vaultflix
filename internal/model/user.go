@@ -17,7 +17,7 @@ type User struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
-// Roles (see CONTEXT.md「Role」).
+// Roles (see GLOSSARY.md「Role」).
 const (
 	RoleAdmin  = "admin"
 	RoleViewer = "viewer"
