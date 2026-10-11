@@ -7,11 +7,13 @@ interface JobProgressPanelProps {
   labels: JobLabels
   /** Shown while running when given; resolves once the request is sent. */
   onCancel?: () => Promise<void>
+  /** Shown once the job has ended, to close its summary. */
+  onDismiss?: () => void
 }
 
 // JobProgressPanel shows one Import Job or Backfill Job: live counts while it
 // runs, a summary with the failures once it ends.
-export default function JobProgressPanel({ view, labels, onCancel }: JobProgressPanelProps) {
+export default function JobProgressPanel({ view, labels, onCancel, onDismiss }: JobProgressPanelProps) {
   const [cancelling, setCancelling] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
   const { counts } = view
@@ -89,6 +91,11 @@ export default function JobProgressPanel({ view, labels, onCancel }: JobProgress
               ))}
             </div>
           )}
+        </div>
+      )}
+      {onDismiss && (
+        <div className="flex justify-end mt-2">
+          <button onClick={onDismiss} className="text-xs text-faint hover:text-muted">關閉</button>
         </div>
       )}
     </div>

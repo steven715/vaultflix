@@ -54,4 +54,13 @@ describe('JobProgressPanel', () => {
     rerender(<JobProgressPanel view={{ ...running, phase: 'cancelled' }} labels={backfillLabels('code')} />)
     expect(screen.getByText('已取消')).toBeInTheDocument()
   })
+
+  it('offers 關閉 only once the job has ended', () => {
+    const onDismiss = vi.fn()
+    const { rerender } = render(<JobProgressPanel view={running} labels={importLabels} onDismiss={onDismiss} />)
+    expect(screen.queryByText('關閉')).toBeNull()
+    rerender(<JobProgressPanel view={{ ...running, phase: 'completed' }} labels={importLabels} onDismiss={onDismiss} />)
+    fireEvent.click(screen.getByText('關閉'))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
 })

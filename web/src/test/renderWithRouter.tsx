@@ -8,5 +8,8 @@ export function renderWithRouter(
   opts: { route?: string } = {},
 ): RenderResult {
   const { route = '/admin/library' } = opts
-  return render(<MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>)
+  // As a wrapper, so rerender keeps the router.
+  return render(ui, {
+    wrapper: ({ children }) => <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>,
+  })
 }
