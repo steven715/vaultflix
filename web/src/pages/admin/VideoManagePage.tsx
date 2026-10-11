@@ -87,7 +87,11 @@ export default function VideoManagePage() {
 
   // Import Job: a running one keeps the import dialog open (also when it was
   // already running as the page opened); finishing goes back to page 1.
-  const importJob = useJob(importJobs, { onFinished: () => updateParams({ page: '1' }) })
+  // Going to page 1 alone does not refetch when already there (frontend.md
+  // 「同路徑重新導航的 refetch」), so bump reloadKey too; both land in one render.
+  const importJob = useJob(importJobs, {
+    onFinished: () => { updateParams({ page: '1' }); setReloadKey((k) => k + 1) },
+  })
   // An adopted job keeps the dialog open until its summary is closed.
   const importModalOpen = showImport || importJob.view !== null
   const backfillJob = useJob(backfillJobs)
