@@ -17,8 +17,10 @@ export default function MediaSourcePage() {
   const toast = useToast()
 
   // Import Job (the panel shows under the Media Source it runs on)
-  const importJob = useJob(importJobs, { onFinished: () => fetchSources() })
-  const importingSourceId = importJob.view?.phase === 'running' ? importJob.view.subject ?? null : null
+  const importJob = useJob(importJobs, { onFinished: () => refreshSources() })
+  const importBusy = importJob.starting || importJob.view?.phase === 'running'
+  // The card whose Import Job is shown: it stays after the job ends, until closed.
+  const shownSourceId = importJob.view?.subject ?? null
 
   // Modal state
   const [showCreate, setShowCreate] = useState(false)
@@ -35,6 +37,16 @@ export default function MediaSourcePage() {
       setLoadError(true)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Refresh the list in place (e.g. new Video counts after an Import), so the
+  // cards and the Import summary on them stay up.
+  async function refreshSources() {
+    try {
+      setSources(await listMediaSources())
+    } catch {
+      toast.error('無法更新媒體來源列表')
     }
   }
 
@@ -68,6 +80,7 @@ export default function MediaSourcePage() {
     try {
       await deleteMediaSource(source.id)
       setConfirmAction(null)
+      if (shownSourceId === source.id && !importBusy) importJob.dismiss()
       fetchSources()
     } catch {
       toast.error('刪除失敗，請重試')
@@ -135,7 +148,7 @@ export default function MediaSourcePage() {
                   </button>
                   <button
                     onClick={() => handleImport(source)}
-                    disabled={importingSourceId !== null}
+                    disabled={importBusy}
                     className="text-xs text-accent hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-btn transition-colors"
                   >
                     掃描匯入
@@ -159,8 +172,8 @@ export default function MediaSourcePage() {
               </div>
 
               {/* Import progress inline */}
-              {importingSourceId === source.id && importJob.view && (
-                <JobProgressPanel view={importJob.view} labels={importLabels} />
+              {shownSourceId === source.id && importJob.view && (
+                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onDismiss={importJob.dismiss} />
               )}
             </div>
           ))}
