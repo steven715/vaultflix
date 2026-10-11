@@ -1,6 +1,49 @@
 # 前端慣例（React + TypeScript）
 
-> 動 `web/src/` 前先讀。常駐規則（Response 契約、重試上限）在 CLAUDE.md，這裡是踩過的坑沉澱出來的規則。
+> 動 `web/src/` 前先讀。
+
+## 前後端 Response 契約
+
+後端所有成功回應使用 `{ data: ... }` wrapper（`SuccessResponse`）。前端 API client 層是唯一處理這個契約的地方：
+
+- axios response interceptor 統一解開 `SuccessResponse` wrapper，讓呼叫端直接拿到 `data` 內容
+- 個別 API function 不應出現 `res.data.data` 的雙層解包 — 如果需要這樣寫，代表 interceptor 沒有正確處理
+- 分頁回應（`PaginatedResponse`）因為頂層就包含 `total`、`page` 等欄位，不適用自動解包，需在 interceptor 中區分處理
+
+```typescript
+// ✅ 正確：interceptor 統一解包，呼叫端簡潔
+// client.ts
+client.interceptors.response.use((res) => {
+  if (res.data?.data !== undefined) return { ...res, data: res.data.data }
+  return res
+})
+// auth.ts
+const res = await client.post<LoginResponse>('/auth/login', { username, password })
+return res.data // 直接是 { token: "..." }
+
+// ❌ 錯誤：每個呼叫端自己解包，容易遺漏
+return res.data.data
+```
+
+## 自動重試與錯誤處理
+
+- 任何自動重試邏輯必須設定**重試上限**，且重試次數用 `useRef` 追蹤，不用 `useState`（避免觸發重新渲染導致迴圈）
+- 事件驅動的錯誤處理（如 `<video onError>`）不可直接觸發導致同一事件再次發生的狀態更新，必須有中斷條件
+
+```tsx
+// ✅ 正確：ref 追蹤重試次數，超過上限停止
+const retryRef = useRef(0)
+function handleVideoError() {
+  if (retryRef.current >= 1) return
+  retryRef.current += 1
+  refetchAndReload()
+}
+
+// ❌ 錯誤：無限重試 — error → refetch → setState → re-render → error → ...
+function handleVideoError() {
+  refetchAndReload() // 永遠重試，沒有上限
+}
+```
 
 ## useEffect 非同步操作
 
