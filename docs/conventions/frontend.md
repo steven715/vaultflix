@@ -120,7 +120,7 @@ useEffect(() => {
 
 判斷標準：這份資料是否預期「回到此頁就刷新」？是 → 加 `location.key`；否（純由 URL 參數決定、deterministic 的如分頁列表）→ 不加，避免每次導航都多打一次 API。
 
-同一個陷阱也出現在程式碼自己改參數時：資料變了（例如 Import Job 完成）要重整列表，就遞增一個 `reloadKey` 依賴，不要只靠 `updateParams({ page: '1' })`。已經在第 1 頁時，參數沒變，列表就不會更新（影片管理頁曾經如此）。
+同一個陷阱也出現在程式碼自己改參數時：資料變了（例如 Import Job 完成）要帶使用者回第 1 頁看新資料，**已經在第 1 頁就遞增 `reloadKey`，否則才改 page 參數**。只改參數時，在第 1 頁不會更新（影片管理頁曾經如此）；兩個一起改則會抓兩次，因為 React Router 7 的導航在 `startTransition` 裡，比 `reloadKey` 晚一次 render 才生效。
 
 ## 具名導航控制要導到目的地，不要用 `navigate(-1)`
 

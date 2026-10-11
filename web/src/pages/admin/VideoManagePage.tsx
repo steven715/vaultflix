@@ -87,10 +87,18 @@ export default function VideoManagePage() {
 
   // Import Job: a running one keeps the import dialog open (also when it was
   // already running as the page opened); finishing goes back to page 1.
-  // Going to page 1 alone does not refetch when already there (frontend.md
-  // 「同路徑重新導航的 refetch」), so bump reloadKey too; both land in one render.
+  // Show the newest Videos on page 1, loaded once: navigating to the page
+  // already shown does not refetch (frontend.md「同路徑重新導航的 refetch」),
+  // and a page change commits in a later render than reloadKey would.
+  function showFromPageOne() {
+    if (page === 1) setReloadKey((k) => k + 1)
+    else updateParams({ page: '1' })
+  }
+
+  // An Import that added Videos shows them; one that added none leaves the
+  // admin where they were.
   const importJob = useJob(importJobs, {
-    onFinished: () => { updateParams({ page: '1' }); setReloadKey((k) => k + 1) },
+    onFinished: (view) => { if (view.counts.succeeded > 0) showFromPageOne() },
   })
   // An adopted job keeps the dialog open until its summary is closed.
   const importModalOpen = showImport || importJob.view !== null

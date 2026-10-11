@@ -5,6 +5,7 @@ import { renderWithRouter } from '../../test/renderWithRouter'
 import { wsHarness } from '../../test/wsHarness'
 import { listVideos } from '../../api/videos'
 import { importVideos, listMediaSources } from '../../api/admin'
+import type { ImportJob } from '../../types'
 import VideoManagePage from './VideoManagePage'
 
 vi.mock('../../api/videos', () => ({
@@ -34,26 +35,45 @@ describe('VideoManagePage (library)', () => {
     expect(screen.getByText(/已選取/)).toBeInTheDocument()
   })
 
-  it('reloads the list when an Import ends while already on page 1', async () => {
-    const job = {
-      id: 'i1', source_id: 's1', source_label: 'D', status: 'running', total: 1, processed: 0,
-      imported: 0, skipped: 0, failed: 0, errors: [], started_at: '',
-    }
-    vi.mocked(importVideos).mockResolvedValue(job as never)
+  const runningImport: ImportJob = {
+    id: 'i1', source_id: 's1', source_label: 'D', status: 'running', total: 1, processed: 0,
+    imported: 0, skipped: 0, failed: 0, errors: [], started_at: '',
+  }
+
+  // Start an Import from the dialog on route, then end it over WebSocket.
+  async function importAndEnd(route: string, end: Partial<ImportJob>) {
+    vi.mocked(importVideos).mockResolvedValue(runningImport)
     vi.mocked(listMediaSources).mockResolvedValue([
       { id: 's1', label: 'D槽', mount_path: '/mnt/D', enabled: true, video_count: 0, created_at: '', updated_at: '' },
     ])
     const ws = wsHarness()
-    renderWithRouter(<VideoManagePage />, { route: '/admin/library', ws })
+    renderWithRouter(<VideoManagePage />, { route, ws })
     await screen.findByText('片A')
-
     fireEvent.click(screen.getByRole('button', { name: '匯入影片' }))
     await screen.findByRole('option', { name: /D槽/ })
     fireEvent.click(screen.getByRole('button', { name: '開始匯入' }))
     await waitFor(() => expect(importVideos).toHaveBeenCalledWith('s1'))
     const loads = vi.mocked(listVideos).mock.calls.length
+    ws.send({ type: 'import_complete', payload: { ...runningImport, processed: 1, ...end } })
+    return loads
+  }
 
-    ws.send({ type: 'import_complete', payload: { ...job, status: 'completed', processed: 1, imported: 1 } })
+  it('reloads the list when an Import ends while already on page 1', async () => {
+    const loads = await importAndEnd('/admin/library', { status: 'completed', imported: 1 })
     await waitFor(() => expect(vi.mocked(listVideos).mock.calls.length).toBe(loads + 1))
+  })
+
+  it('shows page 1, loaded once, when an Import ends on a later page', async () => {
+    const loads = await importAndEnd('/admin/library?page=3', { status: 'completed', imported: 1 })
+    await waitFor(() => expect(vi.mocked(listVideos).mock.calls.at(-1)?.[0]).toMatchObject({ page: 1 }))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(vi.mocked(listVideos).mock.calls.length).toBe(loads + 1)
+  })
+
+  it('stays on the page when an Import imported nothing', async () => {
+    const loads = await importAndEnd('/admin/library?page=3', { status: 'failed', failed: 1 })
+    await screen.findByText('匯入失敗')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(vi.mocked(listVideos).mock.calls.length).toBe(loads)
   })
 })
