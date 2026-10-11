@@ -1,6 +1,6 @@
 # 後端設計原則
 
-> 產生給瀏覽器的 URL、新增設定參數、處理使用者可控的檔案路徑前先讀。
+> 產生給瀏覽器的 URL、新增設定參數、處理使用者可控的檔案路徑、下載外部資源前先讀。
 
 ## URL 消費者意識
 
@@ -108,3 +108,7 @@ abs := filepath.Join(source.MountPath, *v.FilePath)
 
 - 上傳失敗 → key 留空，不要「保留原網址」
 - 寫入時 key 為空代表「這次沒有新圖」，以 `COALESCE(NULLIF($n, ''), 原欄位)` 保留既有圖片，不要覆寫成空值
+
+## 下載外部資源：先看狀態碼再落地
+
+從外部網址抓東西（封面、Performer 頭像、刮削頁）時，非 2xx 回應一律回 error，不寫檔、不上傳。`http.Client` 對 404／500 不會回 error，body 是一張錯誤頁；直接 `io.Copy` 進暫存檔，錯誤頁就會被當成圖片傳進 MinIO（`defaultDownloadImage` 曾經如此）。要的是圖片時，再用 `http.DetectContentType` 嗅前 512 bytes 確認是 `image/*`：2xx 也可能是 HTML soft-404 或空的 204，而 CDN 給的 `Content-Type` 常常不準。寫完的檔案也要檢查 `Close` 的錯誤，失敗就刪檔回 error。

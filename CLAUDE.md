@@ -206,7 +206,7 @@ const queryGetVideoByID = `
 | 動 `internal/websocket/` 或 `web/src/hooks/useWebSocket.ts` | [`docs/conventions/websocket.md`](docs/conventions/websocket.md) —— Hub、訊息協議、重連、onclose 世代 |
 | 動 `internal/streaming/`、Play Mode、任何呼叫 ffmpeg/ffprobe 的程式 | [`docs/streaming.md`](docs/streaming.md) —— 播放路徑、規模前提、§6 FFmpeg seek 與產物測試 |
 | 動 `docker-compose*.yml`、`Dockerfile*`、`nginx/`、部署流程、影片掛載 | [`docs/conventions/docker.md`](docs/conventions/docker.md) —— 不可變 nginx image、磁碟掛載、compose 疊加陷阱 |
-| 產生給瀏覽器的 URL、新增設定參數、處理使用者可控的檔案路徑 | [`docs/conventions/backend-design.md`](docs/conventions/backend-design.md) —— URL 消費者、執行期可調性、路徑安全 |
+| 產生給瀏覽器的 URL、新增設定參數、處理使用者可控的檔案路徑、下載外部資源 | [`docs/conventions/backend-design.md`](docs/conventions/backend-design.md) —— URL 消費者、執行期可調性、路徑安全 |
 | 做出難以逆轉、有真實取捨的架構決策 | [`docs/adr/`](docs/adr/README.md) —— 先讀相關 ADR；新決策寫新 ADR |
 
 修完 bug 後把教訓寫成**正向規則**，放進上表對應的主題文件（沒有合適的就新開一份並在此表加一列），不要直接堆進本檔。

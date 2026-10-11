@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/steven/vaultflix/internal/model"
@@ -253,16 +256,35 @@ func defaultDownloadImage(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}
 	defer resp.Body.Close()
+	// An error page is not an image: keep it out of MinIO.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+	}
+	// Nor is a 2xx that isn't one (an HTML soft-404, an empty 204): sniff the
+	// bytes rather than trust Content-Type, which CDNs often get wrong.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(resp.Body, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return "", fmt.Errorf("read %s: %w", url, err)
+	}
+	head = head[:n]
+	if kind := http.DetectContentType(head); !strings.HasPrefix(kind, "image/") {
+		return "", fmt.Errorf("download %s: not an image (%s)", url, kind)
+	}
 
 	tmp, err := os.CreateTemp("", "vaultflix-img-*.jpg")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	if _, err := io.Copy(tmp, io.MultiReader(bytes.NewReader(head), resp.Body)); err != nil {
 		tmp.Close()
 		os.Remove(tmp.Name())
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
-	tmp.Close()
+	// A failed Close can mean the image never fully reached disk.
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
 	return tmp.Name(), nil
 }
