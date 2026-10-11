@@ -50,10 +50,13 @@ interface ImportModalProps {
   onCancelImport?: () => Promise<void>
   /** Forget the shown job, back to picking a Media Source. */
   onResetImport: () => void
+  /** Why an Import cannot start now (e.g. a Backfill holds the Media Lane); null when it can. */
+  startDisabledReason?: string | null
 }
 
 export function ImportModal({
   job, mediaSources, selectedSourceID, onSourceChange, onClose, onStartImport, onCancelImport, onResetImport,
+  startDisabledReason = null,
 }: ImportModalProps) {
   const running = job?.phase === 'running'
   return (
@@ -70,9 +73,10 @@ export function ImportModal({
                 {mediaSources.map((s) => <option key={s.id} value={s.id}>{s.label} ({s.mount_path})</option>)}
               </select>
             )}
+            {startDisabledReason && <p className="text-xs text-faint mb-3">{startDisabledReason}</p>}
             <div className="flex justify-end gap-2">
               <button onClick={onClose} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">取消</button>
-              <button onClick={onStartImport} disabled={!selectedSourceID || mediaSources.length === 0} className="bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50 text-sm px-4 py-1.5 rounded-btn">開始匯入</button>
+              <button onClick={onStartImport} disabled={!selectedSourceID || mediaSources.length === 0 || startDisabledReason !== null} className="bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50 text-sm px-4 py-1.5 rounded-btn">開始匯入</button>
             </div>
           </>
         )}

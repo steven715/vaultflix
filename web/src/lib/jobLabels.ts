@@ -20,21 +20,33 @@ export const importLabels: JobLabels = {
   skippedShort: '跳過',
 }
 
-// 英文詞條前後留空白，讓「補齊{label}中」中英混排時仍有間隔。
 const backfillKindLabel: Record<BackfillKind, string> = {
   preview: '預覽',
   codec: '編碼資訊',
-  keyframe: ' Keyframe Index ',
+  keyframe: 'Keyframe Index',
   code: '番號',
+}
+
+// spaced pads a Latin name so「補齊{name}中」keeps a gap between scripts.
+function spaced(name: string): string {
+  return /^[\x20-\x7e]+$/.test(name) ? ` ${name} ` : name
 }
 
 export function backfillLabels(kind: BackfillKind): JobLabels {
   return {
-    running: `補齊${backfillKindLabel[kind]}中`,
+    running: `補齊${spaced(backfillKindLabel[kind])}中`,
     done: { completed: '補齊完成', failed: '補齊失敗', cancelled: '已取消' },
     total: '掃描影片',
     succeeded: '成功補齊',
     skipped: '略過',
     skippedShort: '略過',
   }
+}
+
+/** The Backfill kinds the library menu offers; Code waits for Enrichment. */
+export const backfillMenu: BackfillKind[] = ['preview', 'keyframe', 'codec']
+
+/** A Backfill kind's name on its own, e.g. in a menu. */
+export function backfillKindName(kind: BackfillKind): string {
+  return backfillKindLabel[kind]
 }
