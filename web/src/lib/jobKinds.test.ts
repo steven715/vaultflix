@@ -38,8 +38,9 @@ describe('importJobs', () => {
     expect(v.subject).toBe('s1')
   })
 
-  it('cannot be cancelled', () => {
-    expect(importJobs.cancel).toBeUndefined()
+  it('cancels through the API', async () => {
+    await importJobs.cancel?.('i1')
+    expect(admin.cancelImportJob).toHaveBeenCalledWith('i1')
   })
 })
 

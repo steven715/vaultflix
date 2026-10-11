@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,32 +14,57 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// startBlockedImport starts an Import Job that stays running, on its one
-// file, until release is called.
-func startBlockedImport(t *testing.T) (svc *ImportService, job *model.ImportJob, release func()) {
+// blockedImport is an ImportService over a Media Source of n files, where
+// every file waits in the duplicate check until release is called.
+type blockedImport struct {
+	svc     *ImportService
+	source  *model.MediaSource
+	inFile  chan struct{} // closed once the first file is being processed
+	release func()
+}
+
+func newBlockedImport(t *testing.T, n int) *blockedImport {
 	t.Helper()
 	mount := t.TempDir()
-	if err := os.WriteFile(filepath.Join(mount, "a.mp4"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
+	for i := 0; i < n; i++ {
+		if err := os.WriteFile(filepath.Join(mount, fmt.Sprintf("v%d.mp4", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	inFile, gate := make(chan struct{}), make(chan struct{})
+	b := &blockedImport{inFile: make(chan struct{})}
+	gate := make(chan struct{})
+	var entered, released sync.Once
 	repo := &mock.VideoRepository{
 		FindBySourceAndPathFunc: func(context.Context, string, string) (*model.Video, error) {
-			close(inFile)
+			entered.Do(func() { close(b.inFile) })
 			<-gate
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	svc = NewImportService(repo, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
-	job, err := svc.StartAsync(context.Background(), &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}, "user-1")
+	b.svc = NewImportService(repo, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	b.source = &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
+	b.release = func() { released.Do(func() { close(gate) }) }
+	t.Cleanup(b.release)
+	return b
+}
+
+// start launches the Import Job and waits until its first file is in progress.
+func (b *blockedImport) start(t *testing.T) *model.ImportJob {
+	t.Helper()
+	job, err := b.svc.StartAsync(context.Background(), b.source, "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-inFile
-	var once sync.Once
-	release = func() { once.Do(func() { close(gate) }) }
-	t.Cleanup(release)
-	return svc, job, release
+	<-b.inFile
+	return job
+}
+
+// startBlockedImport starts an Import Job that stays running, on its one
+// file, until release is called.
+func startBlockedImport(t *testing.T) (svc *ImportService, job *model.ImportJob, release func()) {
+	t.Helper()
+	b := newBlockedImport(t, 1)
+	return b.svc, b.start(t), b.release
 }
 
 // waitImportDone polls until the Import Job jobID is no longer running.
@@ -198,5 +224,83 @@ func TestStartAsync_ScanError(t *testing.T) {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
+	}
+}
+
+func TestCancel_StopsTheImportBetweenFiles(t *testing.T) {
+	b := newBlockedImport(t, 2)
+	job := b.start(t)
+
+	if err := b.svc.Cancel(job.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	b.release()
+	got := waitImportDone(t, b.svc, job.ID)
+
+	if got.Status != "cancelled" || got.Processed != 1 {
+		t.Errorf("job = %+v, want cancelled after its first file", got)
+	}
+}
+
+func TestCancel_UnknownImportJob(t *testing.T) {
+	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	if err := svc.Cancel("nope"); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// mediaLane puts a blocked Import and a BackfillRunner on one Job Lane.
+func mediaLane(t *testing.T) (*blockedImport, *BackfillRunner) {
+	t.Helper()
+	lane := NewJobRunner()
+	b := newBlockedImport(t, 1)
+	b.svc.UseJobRunner(lane)
+	backfill := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillCode: &mock.BackfillTask{}})
+	backfill.UseJobRunner(lane)
+	return b, backfill
+}
+
+func TestMediaLane_ImportBlocksBackfill(t *testing.T) {
+	b, backfill := mediaLane(t)
+	job := b.start(t)
+
+	_, err := backfill.Start(context.Background(), model.BackfillCode, "user-1")
+	var busy *JobLaneBusyError
+	if !errors.Is(err, model.ErrConflict) || !errors.As(err, &busy) || busy.RunningKind != JobKindImport {
+		t.Fatalf("Backfill Start = %v, want a busy lane naming the Import Job", err)
+	}
+	if backfill.Active(context.Background()) != nil {
+		t.Error("Backfill Active must not report the running Import Job")
+	}
+	if err := b.svc.Cancel("not-" + job.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("cancel of an unknown id = %v", err)
+	}
+	b.release()
+	waitImportDone(t, b.svc, job.ID)
+}
+
+func TestMediaLane_BackfillBlocksImport(t *testing.T) {
+	b, backfill := mediaLane(t)
+	gate := make(chan struct{})
+	backfill.tasks[model.BackfillCode] = &mock.BackfillTask{Videos: videosNamed("v1"), ProcessFunc: func(context.Context, *model.Video) error {
+		<-gate
+		return nil
+	}}
+	bf, err := backfill.Start(context.Background(), model.BackfillCode, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer close(gate)
+
+	_, err = b.svc.StartAsync(context.Background(), b.source, "user-1")
+	var busy *JobLaneBusyError
+	if !errors.As(err, &busy) || busy.RunningKind != JobKindBackfill {
+		t.Fatalf("Import Start = %v, want a busy lane naming the Backfill Job", err)
+	}
+	if b.svc.GetActiveJob() != nil {
+		t.Error("Import GetActiveJob must not report the running Backfill Job")
+	}
+	if err := b.svc.Cancel(bf.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("Import Cancel of a Backfill Job = %v, want ErrNotFound", err)
 	}
 }

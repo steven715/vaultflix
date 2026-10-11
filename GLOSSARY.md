@@ -33,8 +33,25 @@ _Avoid_: 用「掃描」稱呼 Import 或 Backfill
 **Backfill**（補齊）:
 對既有 Video 一次性補算衍生資料的 admin 工作；目前有 Preview、codec、Keyframe Index、番號四種。
 
+### 背景作業
+
+**Job**（作業）:
+由 admin 啟動、在背景逐項處理一批影片檔或 Video 的一次執行；每項結果為成功、略過或失敗，可於兩項之間取消。有 Import Job、Backfill Job、Enrichment Job 三種。
+_Avoid_: task（裸用）, 用 Job 稱呼播放時按需進行的處理（如產生 HLS Segment）
+
+**Job Lane**:
+共用同一種資源、同一時間只容許一個 Job 的分組；Lane 已有 Job 在跑時，新的 Job 會被拒絕，不會排隊。有 Media Lane（Import Job、Backfill Job，本機磁碟與 ffmpeg）與 Enrichment Lane（Enrichment Job，外部網站）兩條。
+_Avoid_: queue, 佇列, 隊伍
+
+**Import Job**:
+一次 Import 的執行，在 Media Lane 上逐檔處理一個 Media Source 中尚未登錄的影片檔。
+
 **Backfill Job**:
-一次 Backfill 的執行；在背景逐部處理 Video，每部結果為成功、略過（如 Media Source 停用）或失敗，可於兩部之間取消。同一時間全域只有一個 Backfill Job。
+一次 Backfill 的執行，在 Media Lane 上逐部處理缺少該種衍生資料的 Video；略過的例子是 Media Source 已停用。
+
+**Enrichment Job**:
+一次對多部 Video 執行 Enrichment 的 Job，在 Enrichment Lane 上逐部處理處於指定 Enrichment 狀態（預設為待查）的 Video。
+_Avoid_: 批次補全, enrich batch
 
 ### 作品資訊
 

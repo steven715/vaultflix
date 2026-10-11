@@ -1,6 +1,6 @@
 # ADR-0003: Run async import as an in-memory goroutine, no job queue
 
-- Status: Accepted
+- Status: Superseded by [ADR-0014](0014-job-lanes.md)
 - Date: 2026-04-06
 
 ## Context
@@ -24,8 +24,4 @@
 - No durability: job state is lost on restart/crash. No cancellation.
 - `context.Background()` is deliberate — the job outlives the request and is **not** cancelled if the client disconnects.
 - The global mutex serializes imports system-wide.
-- The WebSocket Hub / `Notifier`-interface conventions this builds on are in `docs/conventions/websocket.md`.
-
-## Update 2026-10-11
-
-The decision stands (in memory, no queue, one Job at a time), but the mechanism changed: Import, Backfill and Enrichment Jobs now all run on `service.JobRunner`, which keeps **only the latest Job** of its lane instead of a `sync.Map` of every Job. `GET /import-jobs/:id` therefore finds only the latest Import Job.
+- The WebSocket Hub / `Notifier`-interface conventions this builds on are in CLAUDE.md「WebSocket 規範」.

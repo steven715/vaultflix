@@ -52,15 +52,21 @@ func (s *ImportService) SetKeyframeProber(p keyframeProber) {
 	s.keyframes = p
 }
 
-// jobKindImport tags Import Jobs on the JobRunner.
-const jobKindImport = "import"
+// UseJobRunner runs Import Jobs on r, the Media Lane shared with Backfill
+// Jobs, instead of a runner of their own.
+func (s *ImportService) UseJobRunner(r *JobRunner) {
+	s.jobs = r
+}
+
+// JobKindImport tags Import Jobs on the JobRunner.
+const JobKindImport = "import"
 
 // StartAsync launches an Import Job for source in the background and returns
 // a snapshot of it. Only one Import Job runs at a time; a second call returns
 // model.ErrConflict.
 func (s *ImportService) StartAsync(ctx context.Context, source *model.MediaSource, userID string) (*model.ImportJob, error) {
 	job, err := s.jobs.Start(JobSpec{
-		Kind: jobKindImport, Meta: source, Task: &importItems{svc: s, source: source},
+		Kind: JobKindImport, Meta: source, Task: &importItems{svc: s, source: source},
 		Reporter: &importReport{notifier: s.notifier, userID: userID},
 	})
 	if err != nil {
@@ -73,17 +79,30 @@ func (s *ImportService) StartAsync(ctx context.Context, source *model.MediaSourc
 // Returns model.ErrNotFound otherwise.
 func (s *ImportService) GetJob(jobID string) (*model.ImportJob, error) {
 	job := s.jobs.Latest()
-	if job == nil || job.Kind != jobKindImport || job.ID != jobID {
+	if job == nil || job.Kind != JobKindImport || job.ID != jobID {
 		return nil, model.ErrNotFound
 	}
 	return toImportJob(job), nil
+}
+
+// Cancel asks the running Import Job jobID to stop after its current file;
+// the files already imported stay. Cancelling a finished Job is a no-op.
+// Returns model.ErrNotFound when jobID is not the latest Import Job.
+func (s *ImportService) Cancel(jobID string) error {
+	if _, err := s.GetJob(jobID); err != nil {
+		return fmt.Errorf("cancel import job %s: %w", jobID, err)
+	}
+	if err := s.jobs.Cancel(jobID); err != nil {
+		return fmt.Errorf("cancel import job %s: %w", jobID, err)
+	}
+	return nil
 }
 
 // GetActiveJob returns a snapshot of the running Import Job, or nil when none
 // is running.
 func (s *ImportService) GetActiveJob() *model.ImportJob {
 	job := s.jobs.Latest()
-	if job == nil || job.Kind != jobKindImport || job.Status != "running" {
+	if job == nil || job.Kind != JobKindImport || job.Status != "running" {
 		return nil
 	}
 	return toImportJob(job)

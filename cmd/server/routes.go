@@ -68,6 +68,7 @@ func libraryRoutes(h apiHandlers) []middleware.Route {
 		route(http.MethodPost, "/videos/import", h.video.Import),
 		route(http.MethodGet, "/import-jobs/active", h.video.GetActiveImportJob),
 		route(http.MethodGet, "/import-jobs/:id", h.video.GetImportJob),
+		route(http.MethodPost, "/import-jobs/:id/cancel", h.video.CancelImportJob),
 		route(http.MethodPost, "/videos/:id/tags", h.tag.AddVideoTag),
 		route(http.MethodDelete, "/videos/:id/tags/:tagId", h.tag.RemoveVideoTag),
 		route(http.MethodGet, "/tags", h.tag.List, viewer),

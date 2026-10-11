@@ -30,6 +30,10 @@ export async function cancelBackfill(jobID: string): Promise<void> {
   await client.post(`/admin/backfill-jobs/${jobID}/cancel`)
 }
 
+export async function cancelImportJob(jobID: string): Promise<void> {
+  await client.post(`/import-jobs/${jobID}/cancel`)
+}
+
 export async function listMediaSources(): Promise<MediaSource[]> {
   const res = await client.get<MediaSource[]>('/media-sources')
   return res.data

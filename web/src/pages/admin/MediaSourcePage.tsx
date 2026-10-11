@@ -66,6 +66,15 @@ export default function MediaSourcePage() {
     if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
   }
 
+  async function handleCancelImport() {
+    try {
+      await importJob.cancel?.()
+    } catch (err) {
+      console.warn('failed to cancel import', err)
+      toast.error('取消失敗')
+    }
+  }
+
   async function handleToggleEnabled(source: MediaSource) {
     try {
       await updateMediaSource(source.id, { label: source.label, enabled: !source.enabled })
@@ -173,7 +182,7 @@ export default function MediaSourcePage() {
 
               {/* Import progress inline */}
               {shownSourceId === source.id && importJob.view && (
-                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onDismiss={importJob.dismiss} />
+                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onCancel={handleCancelImport} onDismiss={importJob.dismiss} />
               )}
             </div>
           ))}

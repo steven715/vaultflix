@@ -46,12 +46,14 @@ interface ImportModalProps {
   onSourceChange: (id: string) => void
   onClose: () => void
   onStartImport: () => void
+  /** Stop the running Import Job after its current file. */
+  onCancelImport: () => Promise<void>
   /** Forget the shown job, back to picking a Media Source. */
   onResetImport: () => void
 }
 
 export function ImportModal({
-  job, mediaSources, selectedSourceID, onSourceChange, onClose, onStartImport, onResetImport,
+  job, mediaSources, selectedSourceID, onSourceChange, onClose, onStartImport, onCancelImport, onResetImport,
 }: ImportModalProps) {
   const running = job?.phase === 'running'
   return (
@@ -76,7 +78,7 @@ export function ImportModal({
         )}
         {job && (
           <>
-            <JobProgressPanel view={job} labels={importLabels} />
+            <JobProgressPanel view={job} labels={importLabels} onCancel={onCancelImport} />
             {!running && (
               <div className="flex justify-end gap-2 mt-3">
                 <button onClick={() => { onResetImport(); onClose() }} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">關閉</button>

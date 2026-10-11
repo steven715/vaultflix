@@ -89,9 +89,10 @@ Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/s
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/videos/import` | Start async video import | admin |
-| GET | `/api/import-jobs/active` | Get currently running import job | admin |
-| GET | `/api/import-jobs/:id` | Get import job by ID | admin |
+| POST | `/api/videos/import` | Start an Import Job → 202; 409 while the Media Lane is busy (the message names the running Job, ADR-0014) | admin |
+| GET | `/api/import-jobs/active` | Get the running Import Job (`null` when none) | admin |
+| GET | `/api/import-jobs/:id` | Get the latest Import Job by ID (404 for an older one) | admin |
+| POST | `/api/import-jobs/:id/cancel` | Cancel an Import Job after its current file → 204; files already imported stay | admin |
 
 ## Metadata Enrichment
 
@@ -110,7 +111,7 @@ Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/s
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/admin/analytics` | Library and viewing analytics | admin |
-| POST | `/api/admin/backfill-jobs` | Start a Backfill Job: body `{"kind": "preview" \| "codec" \| "keyframe" \| "code"}` → 202 `{job_id, kind}`; 400 unknown kind; 409 while any Backfill Job runs (one at a time across kinds). Progress over WS `backfill_*` with `kind` | admin |
+| POST | `/api/admin/backfill-jobs` | Start a Backfill Job: body `{"kind": "preview" \| "codec" \| "keyframe" \| "code"}` → 202 `{job_id, kind}`; 400 unknown kind; 409 while the Media Lane is busy with any Backfill or Import Job (the message names it, ADR-0014). Progress over WS `backfill_*` with `kind` | admin |
 | GET | `/api/admin/backfill-jobs/active` | Get the latest Backfill Job (any kind; running or finished) | admin |
 | POST | `/api/admin/backfill-jobs/:id/cancel` | Cancel a Backfill Job after its current Video | admin |
 

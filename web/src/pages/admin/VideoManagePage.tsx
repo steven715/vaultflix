@@ -15,6 +15,7 @@ import { useToast } from '../../contexts/ToastContext'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
 import { useJob } from '../../hooks/useJob'
 import { backfillJobs, importJobs } from '../../lib/jobKinds'
+import { getErrorMessage } from '../../utils/error'
 
 export default function VideoManagePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -91,9 +92,10 @@ export default function VideoManagePage() {
   const backfillJob = useJob(backfillJobs)
 
   async function handleStartBackfill() {
-    const { outcome } = await backfillJob.start('preview')
+    const { outcome, error } = await backfillJob.start('preview')
     if (outcome === 'adopted') toast.error('已有任務進行中')
-    else if (outcome === 'failed') toast.error('啟動 backfill 失敗')
+    // A busy Media Lane says which Job holds it (e.g. an Import).
+    else if (outcome === 'failed') toast.error(getErrorMessage(error, '啟動 backfill 失敗'))
   }
 
   async function handleCancelBackfill() {
@@ -107,8 +109,17 @@ export default function VideoManagePage() {
 
   async function handleStartImport() {
     if (!selectedSourceID) return
-    const { outcome } = await importJob.start(selectedSourceID)
-    if (outcome === 'failed') toast.error('匯入啟動失敗')
+    const { outcome, error } = await importJob.start(selectedSourceID)
+    if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
+  }
+
+  async function handleCancelImport() {
+    try {
+      await importJob.cancel?.()
+    } catch (err) {
+      console.warn('failed to cancel import', err)
+      toast.error('取消失敗')
+    }
   }
 
   function openEdit(video: VideoWithTags) {
@@ -216,7 +227,7 @@ export default function VideoManagePage() {
       {importModalOpen && (
         <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
           onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
-          onStartImport={handleStartImport} onResetImport={importJob.dismiss} />
+          onStartImport={handleStartImport} onCancelImport={handleCancelImport} onResetImport={importJob.dismiss} />
       )}
 
       {editingVideo && (

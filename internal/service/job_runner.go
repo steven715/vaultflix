@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -90,6 +91,18 @@ type jobLane interface {
 	Cancel(jobID string) error
 }
 
+// JobLaneBusyError is why a Job did not start: another Job, of RunningKind,
+// holds the lane. It matches model.ErrConflict.
+type JobLaneBusyError struct {
+	RunningKind string
+}
+
+func (e *JobLaneBusyError) Error() string {
+	return fmt.Sprintf("a %s job is running on this lane", e.RunningKind)
+}
+
+func (e *JobLaneBusyError) Unwrap() error { return model.ErrConflict }
+
 // JobRunner runs one Job at a time in the background, keeping only the latest
 // in memory (ADR-0003). Cancellation takes effect between items, never
 // interrupting one in flight.
@@ -106,13 +119,13 @@ func NewJobRunner() *JobRunner {
 }
 
 // Start launches a Job and returns a snapshot of it. The Job runs detached
-// from any request. Returns model.ErrConflict until the previous Job has
-// reported Finished.
+// from any request. Until the previous Job has reported Finished, returns a
+// *JobLaneBusyError, which matches model.ErrConflict.
 func (r *JobRunner) Start(spec JobSpec) (*Job, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.busy {
-		return nil, model.ErrConflict
+		return nil, &JobLaneBusyError{RunningKind: r.latest.Kind}
 	}
 	job := &Job{ID: uuid.NewString(), Kind: spec.Kind, Meta: spec.Meta, Status: "running", StartedAt: time.Now()}
 	r.latest, r.busy, r.cancelCh = job, true, make(chan struct{})

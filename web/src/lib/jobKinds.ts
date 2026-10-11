@@ -1,7 +1,7 @@
 // The admin UI's job kinds: each maps its own API and WebSocket messages onto
 // the common JobView / JobEvent shapes (jobProgress.ts). Adding a kind (e.g.
 // the Enrichment batch) means adding one object here, not another component.
-import { cancelBackfill, getActiveBackfill, getActiveImportJob, importVideos, startBackfill } from '../api/admin'
+import { cancelBackfill, cancelImportJob, getActiveBackfill, getActiveImportJob, importVideos, startBackfill } from '../api/admin'
 import type { BackfillJob, BackfillKind, BackfillProgress, ImportJob, ImportProgress } from '../types'
 import type { JobCounts, JobEvent, JobKind, JobView } from './jobProgress'
 
@@ -18,7 +18,7 @@ function importView(job: ImportJob): JobView {
   }
 }
 
-/** Import Jobs, started on a Media Source id. Cannot be cancelled. */
+/** Import Jobs, started on a Media Source id. Cancelled between files. */
 export const importJobs: JobKind<string> = {
   messages: { progress: 'import_progress', complete: 'import_complete', error: 'import_error' },
   start: async (sourceId) => importView(await importVideos(sourceId)),
@@ -26,6 +26,7 @@ export const importJobs: JobKind<string> = {
     const job = await getActiveImportJob()
     return job ? importView(job) : null
   },
+  cancel: (jobId) => cancelImportJob(jobId),
   progressEvent(payload): JobEvent {
     const p = payload as ImportProgress
     if (p.status === 'processing') return { type: 'item-started', jobId: p.job_id, item: p.file_name }
