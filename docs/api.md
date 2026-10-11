@@ -123,4 +123,4 @@ Role enforcement comes from the route table in [`cmd/server/routes.go`](../cmd/s
 For full request/response details, see the handler source code in [`internal/handler/`](../internal/handler/)
 and the route table in [`cmd/server/main.go`](../cmd/server/main.go).
 
-> Domain vocabulary (Media Source, Import Job, Enrichment, Metadata Suggestion, Play Mode…) is defined in [CONTEXT.md](../CONTEXT.md).
+> Domain vocabulary (Media Source, Import Job, Enrichment, Metadata Suggestion, Play Mode…) is defined in [GLOSSARY.md](../GLOSSARY.md).

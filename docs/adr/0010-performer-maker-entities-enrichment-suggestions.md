@@ -29,7 +29,7 @@ every scraped change as a `metadata_suggestions` row that the user must accept o
    frame analysis later). Every source produces **Metadata Suggestions** that do nothing until the
    user accepts them. Nothing is auto-applied; the term「自動標籤」is retired.
 
-Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md).
+Vocabulary is defined in [GLOSSARY.md](../../GLOSSARY.md).
 
 ## Alternatives rejected
 

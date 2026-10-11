@@ -1,6 +1,6 @@
 # Vaultflix Roadmap
 
-> 用語以 [CONTEXT.md](CONTEXT.md) 為準。已完成的項目直接刪除（歷史在 git）。
+> 用語以 [GLOSSARY.md](GLOSSARY.md) 為準。已完成的項目直接刪除（歷史在 git）。
 
 ### 🎯 進行中（優先）
 
@@ -15,13 +15,13 @@
   - **範圍**：`internal/streaming` 的 ffmpeg arg builder（`-c:v libx264`）+ Play Mode Classification 把 `transcode` 導向真轉碼；前端 hls.js 路徑共用。硬體 i7-14700F 28 threads 軟轉即時 1080p 足夠；NVENC 視需要再評估。remux 已改為 VOD-on-the-fly（PR #24，見 `docs/streaming.md`），轉碼要沿用同一套 Keyframe Index / Segment Boundary 對齊機制。
   - **已排除**：預轉存檔（+343GB×N 儲存，已否決，見 ADR-0009）。
 
-- [ ] **程式碼對齊術語表** — 2026-09-28 建立 CONTEXT.md 時只統一了文件用語，程式碼仍用舊名。拆成獨立 Refactor PR：
+- [ ] **程式碼對齊術語表** — 2026-09-28 建立術語表時只統一了文件用語，程式碼仍用舊名。拆成獨立 Refactor PR：
   - **Performer / Maker 遷移（ADR-0010）**：`actresses` → performers（DB / Go / API）；`actor`、`studio` Tag 資料遷移成 Performer / Maker 後淘汰這兩個 category
   - **UI 文案**：「掃描匯入」→「匯入」、BackfillProgress「掃描影片」、admin 選單「精選」→「今日推薦」、「續看 / 繼續播放」→「繼續觀看」、「觀看記錄」→「觀看紀錄」
   - **識別字**：Watch Progress 欄位（`progress_seconds` vs `watch_progress`）、裸用的 `label` / `source` / `scope` 視改動成本決定是否改名
   - 觸發：開始 Enrichment ② 之前（Performer 遷移是其前提）
 
-- [ ] **前端 Enrichment UI** — 後端 `/enrich`、`/suggestions`、`/enrich-jobs` 已存在，前端完全沒有對應 UI（types 也沒有）。需要：Suggestion 審核介面、Performer 頁 / Avatar、卡片顯示 **Cover 優先、Thumbnail 後備**（CONTEXT.md 已定此規則，`PosterThumb` 目前只吃 thumbnail）。
+- [ ] **前端 Enrichment UI** — 後端 `/enrich`、`/suggestions`、`/enrich-jobs` 已存在，前端完全沒有對應 UI（types 也沒有）。需要：Suggestion 審核介面、Performer 頁 / Avatar、卡片顯示 **Cover 優先、Thumbnail 後備**（GLOSSARY.md 已定此規則，`PosterThumb` 目前只吃 thumbnail）。
 
 ### 小型 bug（順手修）
 

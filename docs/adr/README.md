@@ -27,4 +27,4 @@ Short, **immutable** notes capturing *why* a non-obvious architectural choice wa
 | [0012](0012-repository-tests-against-real-postgres.md) | Test repository SQL against the integration stack's real Postgres | Accepted |
 | [0013](0013-route-table-replaces-casbin.md) | One route table declares access; drop Casbin | Accepted |
 
-> Other living docs: [ROADMAP.md](../../ROADMAP.md) (what's next), [README.md](../../README.md) (what's built, how to run it), [CONTEXT.md](../../CONTEXT.md) (domain vocabulary).
+> Other living docs: [ROADMAP.md](../../ROADMAP.md) (what's next), [README.md](../../README.md) (what's built, how to run it), [GLOSSARY.md](../../GLOSSARY.md) (domain vocabulary).

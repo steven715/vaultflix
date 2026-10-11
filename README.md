@@ -51,7 +51,7 @@ React SPA (localhost:3000)
 - **WebSocket**: Real-time import progress notifications
 - **React Frontend**: Login, browse, player, and admin pages with responsive dark theme
 
-What's next lives in [ROADMAP.md](ROADMAP.md). Domain vocabulary used throughout the code and docs is defined in [CONTEXT.md](CONTEXT.md).
+What's next lives in [ROADMAP.md](ROADMAP.md). Domain vocabulary used throughout the code and docs is defined in [GLOSSARY.md](GLOSSARY.md).
 
 ## Prerequisites
 
@@ -227,7 +227,7 @@ vaultflix/
 ├── docker-compose.media.yml.example  # Per-machine video mounts (copy, don't edit the base)
 ├── Taskfile.yml            # Single entry point for build / test / deploy
 ├── CLAUDE.md               # Development conventions and coding standards
-├── CONTEXT.md              # Domain glossary (canonical terms)
+├── GLOSSARY.md             # Domain glossary (canonical terms)
 ├── .mcp.json               # Chrome DevTools MCP for browser debugging
 └── ROADMAP.md              # Planned features and tech-debt backlog
 ```

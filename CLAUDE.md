@@ -6,7 +6,7 @@ Vaultflix 是一個 Go + React 的個人影片管理與串流平台。後端為 
 
 **場景前提（架構決策以此規模為準）**：Jellyfin 式個人媒體伺服器 —— 單一使用者為主、同時串流數個位數、區網優先、偶爾 ngrok 對外分享。不做 YouTube 式規模；串流走即時處理路線（保留原檔，播放時 remux/transcode）。詳見 `docs/adr/0009` 與 `docs/streaming.md`。
 
-**領域用語以 [`CONTEXT.md`](CONTEXT.md) 為準。** 程式碼識別字、文件、commit、PR、測試名稱提到領域概念時用術語表的主詞條，不用 `_Avoid_` 列出的別名（程式碼中尚未改名的舊識別字如 `Actress` 例外，見 ROADMAP「程式碼對齊術語表」）。
+**領域用語以 [`GLOSSARY.md`](GLOSSARY.md) 為準。** 程式碼識別字、文件、commit、PR、測試名稱提到領域概念時用術語表的主詞條，不用 `_Avoid_` 列出的別名（程式碼中尚未改名的舊識別字如 `Actress` 例外，見 ROADMAP「程式碼對齊術語表」）。
 
 ---
 
@@ -384,7 +384,7 @@ repo 根目錄的 `.mcp.json` 註冊了 `chrome-devtools-mcp`（版本固定，�
 ## 開發流程
 
 - 一個 PR 只做一個場景（Bug Fix / Feature / Refactor 擇一）。同一個對話可以處理多件事，但要拆成不同 branch / PR，不混在同一個 diff
-- Feature 設計用 `/grill-with-docs`（術語寫進 `CONTEXT.md`、決策寫 ADR）；Bug 用 `/diagnosing-bugs`；實作優先 `/tdd`
+- Feature 設計用 `/grill-with-docs`（術語寫進 `GLOSSARY.md`、決策寫 ADR）；Bug 用 `/diagnosing-bugs`；實作優先 `/tdd`
 - 發 PR 前跑 `/code-review`，即使改動看起來很簡單
 - Done-condition 見上方「CI/CD 與單一入口」
 
@@ -415,4 +415,4 @@ Issue 與 spec 放在 GitHub Issues（`steven715/vaultflix`），透過 `gh` CLI
 
 ### Domain docs
 
-Single-context：root 的 `CONTEXT.md`（術語表）+ `docs/adr/`。See `docs/agents/domain.md`.
+Single-context：root 的 `GLOSSARY.md`（術語表）+ `docs/adr/`。See `docs/agents/domain.md`.

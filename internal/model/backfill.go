@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// BackfillKind 是 Backfill 的種類（見 CONTEXT.md「Backfill」）。
+// BackfillKind 是 Backfill 的種類（見 GLOSSARY.md「Backfill」）。
 type BackfillKind string
 
 const (
