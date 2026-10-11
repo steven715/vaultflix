@@ -2,21 +2,19 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
-import {
-  importVideos, updateVideo, deleteVideo, listMediaSources,
-  getActiveImportJob, startBackfill, getActiveBackfill, addVideoTag,
-} from '../../api/admin'
+import { updateVideo, deleteVideo, listMediaSources, addVideoTag } from '../../api/admin'
 import type { VideoWithTags, TagWithCount, MediaSource, BackfillKind } from '../../types'
 import LibraryToolbar from '../../components/admin/LibraryToolbar'
 import LibraryTable from '../../components/admin/LibraryTable'
 import { BatchTagPicker, ImportModal, EditModal, DeleteConfirm } from '../../components/admin/LibraryModals'
 import Pagination from '../../components/Pagination'
-import BackfillProgress from '../../components/admin/BackfillProgress'
+import JobProgressPanel from '../../components/admin/JobProgressPanel'
+import { backfillLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
-
-type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
+import { useJob } from '../../hooks/useJob'
+import { backfillJobs, importJobs } from '../../lib/jobKinds'
 
 export default function VideoManagePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -32,19 +30,14 @@ export default function VideoManagePage() {
   const toast = useToast()
 
   const [showImport, setShowImport] = useState(false)
-  const [importState, setImportState] = useState<ImportState>('idle')
   const [mediaSources, setMediaSources] = useState<MediaSource[]>([])
   const [selectedSourceID, setSelectedSourceID] = useState('')
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
   const [editingVideo, setEditingVideo] = useState<VideoWithTags | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [saving, setSaving] = useState(false)
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
-  const [backfillJobId, setBackfillJobId] = useState<string | null>(null)
-  const [backfillStarting, setBackfillStarting] = useState(false)
-  const [backfillKind, setBackfillKind] = useState<BackfillKind>('preview')
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || 20
@@ -90,59 +83,31 @@ export default function VideoManagePage() {
       .catch((err) => { console.warn('failed to load media sources', err); setMediaSources([]) })
   }, [showImport])
 
-  useEffect(() => {
-    let cancelled = false
-    getActiveImportJob().then((job) => {
-      if (cancelled || !job) return
-      setShowImport(true); setCurrentJobId(job.id); setImportState('importing')
-    }).catch((err) => { console.warn('failed to detect active import job', err) })
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    getActiveBackfill().then((job) => {
-      if (cancelled || !job || job.status !== 'running') return
-      setBackfillJobId(job.id)
-      setBackfillKind(job.kind)
-    }).catch((err) => { console.warn('failed to detect active backfill job', err) })
-    return () => { cancelled = true }
-  }, [])
+  // Import Job: a running one keeps the import dialog open (also when it was
+  // already running as the page opened); finishing goes back to page 1.
+  const importJob = useJob(importJobs, { onFinished: () => updateParams({ page: '1' }) })
+  const importModalOpen = showImport || importJob.view?.phase === 'running'
+  const backfillJob = useJob(backfillJobs)
 
   async function handleStartBackfill() {
-    if (backfillStarting) return
-    setBackfillStarting(true)
-    try {
-      const { job_id, kind } = await startBackfill('preview')
-      setBackfillJobId(job_id)
-      setBackfillKind(kind)
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number } }
-      if (axiosErr?.response?.status === 409) {
-        const active = await getActiveBackfill().catch(() => null)
-        if (active && active.status === 'running') {
-          setBackfillJobId(active.id)
-          setBackfillKind(active.kind)
-        }
-        toast.error('已有任務進行中')
-      } else { toast.error('啟動 backfill 失敗') }
-    } finally { setBackfillStarting(false) }
+    const { outcome } = await backfillJob.start('preview')
+    if (outcome === 'adopted') toast.error('已有任務進行中')
+    else if (outcome === 'failed') toast.error('啟動 backfill 失敗')
   }
 
-  function resetImportState() { setImportState('idle'); setCurrentJobId(null) }
+  async function handleCancelBackfill() {
+    try {
+      await backfillJob.cancel?.()
+    } catch (err) {
+      console.warn('failed to cancel backfill', err)
+      toast.error('取消失敗')
+    }
+  }
 
   async function handleStartImport() {
     if (!selectedSourceID) return
-    try {
-      const job = await importVideos(selectedSourceID)
-      setCurrentJobId(job.id); setImportState('importing')
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number } }
-      if (axiosErr?.response?.status === 409) {
-        getActiveImportJob().then((j) => { if (j) { setCurrentJobId(j.id); setImportState('importing') } })
-          .catch((e) => { console.warn('failed to detect active import job after 409', e) })
-      } else { toast.error('匯入啟動失敗') }
-    }
+    const { outcome } = await importJob.start(selectedSourceID)
+    if (outcome === 'failed') toast.error('匯入啟動失敗')
   }
 
   function openEdit(video: VideoWithTags) {
@@ -203,21 +168,25 @@ export default function VideoManagePage() {
       <h1 className="font-display font-bold tracking-tight text-cream text-xl mb-4">影片庫</h1>
       <LibraryToolbar
         total={total} sortBy={sortBy} sortOrder={sortOrder} tagIdsStr={tagIdsStr}
-        allTags={allTags} selected={selected} backfillStarting={backfillStarting} backfillJobId={backfillJobId}
+        allTags={allTags} selected={selected} backfillStarting={backfillJob.starting} backfillJobId={backfillJob.view?.id ?? null}
         onSort={(p) => updateParams({ sort_by: p.sort_by, sort_order: p.sort_order, page: '1' })}
         onTagFilter={(tag_ids) => updateParams({ tag_ids, page: '1' })}
         onStartBackfill={handleStartBackfill}
-        onOpenImport={() => { setShowImport(true); resetImportState() }}
+        onOpenImport={() => { importJob.dismiss(); setShowImport(true) }}
         onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
         onBatchDelete={handleBatchDelete}
         onClearSelection={() => setSelected([])}
       />
 
-      {backfillJobId && (
+      {backfillJob.view && (
         <div className="mb-5">
-          <BackfillProgress jobId={backfillJobId} kind={backfillKind} onComplete={() => {}} />
+          <JobProgressPanel
+            view={backfillJob.view}
+            labels={backfillLabels(backfillJob.view.subject as BackfillKind)}
+            onCancel={handleCancelBackfill}
+          />
           <div className="text-right mt-1">
-            <button onClick={() => setBackfillJobId(null)} className="text-xs text-faint hover:text-muted">關閉</button>
+            <button onClick={backfillJob.dismiss} className="text-xs text-faint hover:text-muted">關閉</button>
           </div>
         </div>
       )}
@@ -243,11 +212,10 @@ export default function VideoManagePage() {
           onTagChange={setBatchTagPickerId} onApply={handleBatchTag} onClose={() => setBatchTagPickerId(null)} />
       )}
 
-      {showImport && (
-        <ImportModal importState={importState} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
-          currentJobId={currentJobId} onSourceChange={setSelectedSourceID} onClose={() => setShowImport(false)}
-          onStartImport={handleStartImport} onImportComplete={() => { setImportState('completed'); updateParams({ page: '1' }) }}
-          onResetImport={resetImportState} />
+      {importModalOpen && (
+        <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
+          onSourceChange={setSelectedSourceID} onClose={() => setShowImport(false)}
+          onStartImport={handleStartImport} onResetImport={importJob.dismiss} />
       )}
 
       {editingVideo && (

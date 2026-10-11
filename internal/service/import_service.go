@@ -181,6 +181,7 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 
 		result := s.processOneFile(ctx, source, filePath)
 
+		var counts model.ImportProgress
 		s.updateJob(job, func(j *model.ImportJob) {
 			j.Processed = i + 1
 			switch result.Status {
@@ -195,6 +196,7 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 					Error:    result.Error,
 				})
 			}
+			counts.Imported, counts.Skipped, counts.Failed = j.Imported, j.Skipped, j.Failed
 		})
 
 		s.notifier.SendToUser(userID, &websocket.Message{
@@ -206,6 +208,9 @@ func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, sou
 				Total:    total,
 				Status:   result.Status,
 				Error:    result.Error,
+				Imported: counts.Imported,
+				Skipped:  counts.Skipped,
+				Failed:   counts.Failed,
 			},
 		})
 	}

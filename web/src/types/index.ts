@@ -112,6 +112,10 @@ export interface ImportProgress {
   total: number
   status: 'processing' | 'success' | 'skipped' | 'error'
   error?: string
+  // The job's counts after this file (absent on 'processing').
+  imported: number
+  skipped: number
+  failed: number
 }
 
 export interface BackfillError {
@@ -146,6 +150,10 @@ export interface BackfillProgress {
   total: number
   status: 'processing' | 'success' | 'skipped' | 'error'
   error?: string
+  // The job's counts after this Video.
+  succeeded: number
+  skipped: number
+  failed: number
 }
 
 export interface MediaSource {

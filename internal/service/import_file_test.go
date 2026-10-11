@@ -17,6 +17,7 @@ import (
 // MediaProcessor; only ffprobe/ffmpeg (mock.MediaTool) and the stores are fake.
 type importFixture struct {
 	svc       *ImportService
+	notifier  *mock.Notifier
 	tool      *mock.MediaTool
 	keyframes *mock.KeyframeProber
 	mu        sync.Mutex
@@ -52,7 +53,8 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 		UploadThumbnailFunc: func(context.Context, string, string) error { return nil },
 		UploadPreviewFunc:   func(context.Context, string, string) error { return nil },
 	}
-	f.svc = NewImportService(repo, NewMediaProcessor(f.tool, minio), &mock.Notifier{})
+	f.notifier = &mock.Notifier{}
+	f.svc = NewImportService(repo, NewMediaProcessor(f.tool, minio), f.notifier)
 	f.svc.SetKeyframeProber(f.keyframes)
 	return f, &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
 }
@@ -156,5 +158,23 @@ func TestImportStartAsync_PerFileFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Each per-file result carries the job's counts so far: the admin UI shows
+// them as-is instead of adding up messages it may have missed.
+func TestImportStartAsync_ProgressCarriesJobCounts(t *testing.T) {
+	f, source := newImportFixture(t, map[string][]byte{"a.mkv": mock.ProbeJSONFor(10, "h264", "aac"), "b.mkv": mock.ProbeJSONFor(10, "h264", "aac")}, "b.mkv")
+
+	f.run(t, source)
+
+	var last model.ImportProgress
+	for _, m := range f.notifier.GetMessages() {
+		if p, ok := m.Payload.(model.ImportProgress); ok && p.Status != "processing" {
+			last = p
+		}
+	}
+	if last.Current != 2 || last.Total != 2 || last.Imported != 1 || last.Skipped != 1 || last.Failed != 0 {
+		t.Errorf("last progress = %+v, want 2/2 with imported 1, skipped 1, failed 0", last)
 	}
 }

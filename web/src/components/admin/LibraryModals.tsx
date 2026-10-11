@@ -1,7 +1,7 @@
 import type { VideoWithTags, TagWithCount, MediaSource } from '../../types'
-import ImportProgress from './ImportProgress'
-
-type ImportState = 'idle' | 'importing' | 'completed' | 'failed'
+import JobProgressPanel from './JobProgressPanel'
+import { importLabels } from '../../lib/jobLabels'
+import type { JobView } from '../../lib/jobProgress'
 
 /* ---------- Batch Tag Picker ---------- */
 
@@ -39,26 +39,26 @@ export function BatchTagPicker({ selectedCount, allTags, tagId, onTagChange, onA
 /* ---------- Import Modal ---------- */
 
 interface ImportModalProps {
-  importState: ImportState
+  /** The Import Job being shown, or null to pick a Media Source. */
+  job: JobView | null
   mediaSources: MediaSource[]
   selectedSourceID: string
-  currentJobId: string | null
   onSourceChange: (id: string) => void
   onClose: () => void
   onStartImport: () => void
-  onImportComplete: () => void
+  /** Forget the shown job, back to picking a Media Source. */
   onResetImport: () => void
 }
 
 export function ImportModal({
-  importState, mediaSources, selectedSourceID, currentJobId,
-  onSourceChange, onClose, onStartImport, onImportComplete, onResetImport,
+  job, mediaSources, selectedSourceID, onSourceChange, onClose, onStartImport, onResetImport,
 }: ImportModalProps) {
+  const running = job?.phase === 'running'
   return (
-    <div className="fixed inset-0 bg-[rgba(8,6,5,0.72)] backdrop-blur-[3px] flex items-center justify-center z-50" onClick={() => importState !== 'importing' && onClose()}>
+    <div className="fixed inset-0 bg-[rgba(8,6,5,0.72)] backdrop-blur-[3px] flex items-center justify-center z-50" onClick={() => !running && onClose()}>
       <div className="bg-surface rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <h2 className="font-display font-bold tracking-tight text-cream text-lg mb-4">匯入影片</h2>
-        {importState === 'idle' && (
+        {!job && (
           <>
             <label className="block text-sm text-muted mb-1">選擇媒體來源</label>
             {mediaSources.length === 0 ? (
@@ -74,16 +74,16 @@ export function ImportModal({
             </div>
           </>
         )}
-        {(importState === 'importing' || importState === 'completed' || importState === 'failed') && currentJobId && (
+        {job && (
           <>
-            <ImportProgress jobId={currentJobId} onComplete={onImportComplete} />
-            {importState !== 'importing' && (
+            <JobProgressPanel view={job} labels={importLabels} />
+            {!running && (
               <div className="flex justify-end gap-2 mt-3">
                 <button onClick={() => { onResetImport(); onClose() }} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">關閉</button>
                 <button onClick={onResetImport} className="bg-accent text-accent-ink hover:brightness-110 text-sm px-4 py-1.5 rounded-btn">重新匯入</button>
               </div>
             )}
-            {importState === 'importing' && <p className="text-xs text-faint text-center mt-3">匯入進行中，請勿關閉此視窗...</p>}
+            {running && <p className="text-xs text-faint text-center mt-3">匯入進行中，請勿關閉此視窗...</p>}
           </>
         )}
       </div>
