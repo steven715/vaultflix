@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/steven/vaultflix/internal/mock"
@@ -370,43 +369,46 @@ func TestEnrichVideo_PrefersStoredCode(t *testing.T) {
 	}
 }
 
-func TestDefaultDownloadImage_StatusCodes(t *testing.T) {
+// A tiny but real PNG header, enough for http.DetectContentType.
+var pngBytes = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+
+func TestDefaultDownloadImage_OnlySavesImages(t *testing.T) {
 	tests := []struct {
 		name    string
 		status  int
+		body    []byte
 		wantErr bool
 	}{
-		{"ok saves the body", http.StatusOK, false},
-		{"not found is an error", http.StatusNotFound, true},
-		{"server error is an error", http.StatusInternalServerError, true},
+		{"image saved", http.StatusOK, pngBytes, false},
+		{"not found page", http.StatusNotFound, []byte("<html>not found</html>"), true},
+		{"server error page", http.StatusInternalServerError, []byte("<html>oops</html>"), true},
+		{"200 html soft-404", http.StatusOK, []byte("<!doctype html><html>gone</html>"), true},
+		{"204 empty body", http.StatusNoContent, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte("body"))
+				_, _ = w.Write(tt.body)
 			}))
 			defer srv.Close()
-			t.Setenv("TMPDIR", t.TempDir())
 
 			path, err := defaultDownloadImage(context.Background(), srv.URL)
+			if path != "" {
+				t.Cleanup(func() { _ = os.Remove(path) })
+			}
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("err = nil, want an error for status %d (path %q)", tt.status, path)
-				}
-				// An error page must never be left behind as an "image".
-				if leftover, _ := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "vaultflix-img-*")); len(leftover) > 0 {
-					t.Errorf("temp files left: %v", leftover)
+				if err == nil || path != "" {
+					t.Fatalf("got (%q, %v), want an error and no file", path, err)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("err = %v", err)
 			}
-			got, readErr := os.ReadFile(path)
-			if readErr != nil || string(got) != "body" {
-				t.Errorf("file = %q, %v; want %q", got, readErr, "body")
+			if got, _ := os.ReadFile(path); string(got) != string(pngBytes) {
+				t.Errorf("file = %q, want the image bytes", got)
 			}
 		})
 	}
