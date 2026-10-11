@@ -8,11 +8,15 @@ import (
 
 // PlaybackResolver is a hand-written fake for VideoService.ResolvePlayback.
 type PlaybackResolver struct {
-	Path string
-	Mode model.PlayMode
-	Err  error
+	Path            string
+	LegacyObjectKey string
+	Mode            model.PlayMode
+	Err             error
 }
 
-func (m *PlaybackResolver) ResolvePlayback(ctx context.Context, videoID string) (string, model.PlayMode, error) {
-	return m.Path, m.Mode, m.Err
+func (m *PlaybackResolver) ResolvePlayback(ctx context.Context, videoID string) (*model.PlaybackSource, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	return &model.PlaybackSource{Path: m.Path, LegacyObjectKey: m.LegacyObjectKey, PlayMode: m.Mode}, nil
 }

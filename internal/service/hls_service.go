@@ -12,7 +12,7 @@ import (
 // (implemented by *VideoService).
 type playbackResolver interface {
 	// ResolvePlayback follows VideoService.ResolvePlayback's error contract.
-	ResolvePlayback(ctx context.Context, videoID string) (string, model.PlayMode, error)
+	ResolvePlayback(ctx context.Context, videoID string) (*model.PlaybackSource, error)
 }
 
 // segmentIndex returns a Video's Segment Boundary table (implemented by
@@ -86,16 +86,20 @@ func (s *HLSService) Segment(ctx context.Context, videoID, name string) (string,
 
 // boundaries resolves a remux Video and loads its Segment Boundary table.
 func (s *HLSService) boundaries(ctx context.Context, videoID string) (string, []model.SegmentBoundary, error) {
-	inputPath, mode, err := s.videos.ResolvePlayback(ctx, videoID)
+	src, err := s.videos.ResolvePlayback(ctx, videoID)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to resolve playback of video %s: %w", videoID, err)
 	}
-	if mode != model.PlayModeRemux {
-		return "", nil, fmt.Errorf("video %s is %s: %w", videoID, mode, model.ErrNotRemux)
+	if src.IsLegacy() {
+		// A legacy MinIO-stored Video has no file on disk to cut Segments from.
+		return "", nil, fmt.Errorf("video %s has no file on a media source: %w", videoID, model.ErrNotFound)
 	}
-	segs, err := s.index.LookupOrProbe(ctx, videoID, inputPath)
+	if src.PlayMode != model.PlayModeRemux {
+		return "", nil, fmt.Errorf("video %s is %s: %w", videoID, src.PlayMode, model.ErrNotRemux)
+	}
+	segs, err := s.index.LookupOrProbe(ctx, videoID, src.Path)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to look up segments of video %s: %w", videoID, err)
 	}
-	return inputPath, segs, nil
+	return src.Path, segs, nil
 }

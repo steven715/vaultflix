@@ -31,7 +31,7 @@ linters:
         text: "Function 'AddVideoTag' is too long"
         linters: [funlen]
       - path: internal/handler/video_handler\.go
-        text: "Function '(Import|Stream|parseVideoFilter)' is too long"
+        text: "Function '(Import|parseVideoFilter)' is too long"
         linters: [funlen]
       - path: internal/middleware/auth\.go
         text: "Function 'JWTAuth' is too long"

@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 )
@@ -46,8 +44,7 @@ func (b *KeyframeBackfill) List(ctx context.Context) ([]model.Video, error) {
 	}
 	remux := make([]model.Video, 0, len(candidates))
 	for _, v := range candidates {
-		container := strings.TrimPrefix(filepath.Ext(v.OriginalFilename), ".")
-		if ClassifyPlayMode(container, v.VideoCodec, v.AudioCodec) == model.PlayModeRemux {
+		if videoPlayMode(&v) == model.PlayModeRemux {
 			remux = append(remux, v)
 		}
 	}

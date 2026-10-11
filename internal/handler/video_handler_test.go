@@ -513,9 +513,12 @@ func TestStreamVideo(t *testing.T) {
 					return tt.video, nil
 				},
 			}
+			// A stream request needs only where the bytes are: never the
+			// detail page's Tags or presigned image URLs.
 			tagRepo := &mock.TagRepository{
 				GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
-					return []model.Tag{}, nil
+					t.Error("stream looked up Tags")
+					return nil, nil
 				},
 			}
 			minioSvc := &mock.MinIOClient{
@@ -523,11 +526,10 @@ func TestStreamVideo(t *testing.T) {
 					return "https://minio/legacy-stream", nil
 				},
 				GenerateThumbnailPresignedURLFunc: func(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+					t.Error("stream presigned a Thumbnail")
 					return "", nil
 				},
 			}
-
-			videoSvc := service.NewVideoService(videoRepo, &mock.MediaFileResolver{}, tagRepo, minioSvc)
 
 			var mediaSourceSvc *service.MediaSourceService
 			if tt.source != nil || tt.sourceErr != nil {
@@ -540,6 +542,10 @@ func TestStreamVideo(t *testing.T) {
 					},
 				}
 				mediaSourceSvc = service.NewMediaSourceService(mediaSourceRepo, tmpDir)
+			}
+			videoSvc := service.NewVideoService(videoRepo, &mock.MediaFileResolver{}, tagRepo, minioSvc)
+			if mediaSourceSvc != nil {
+				videoSvc = service.NewVideoService(videoRepo, mediaSourceSvc, tagRepo, minioSvc)
 			}
 
 			r, _ := setupStreamRouter(videoSvc, mediaSourceSvc, "")
@@ -606,14 +612,13 @@ func TestStream_XAccelRedirect(t *testing.T) {
 			return []model.Tag{}, nil
 		},
 	}
-	videoSvc := service.NewVideoService(videoRepo, &mock.MediaFileResolver{}, tagRepo, &mock.MinIOClient{})
-
 	mediaSourceRepo := &mock.MediaSourceRepository{
 		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
 			return &model.MediaSource{ID: sourceID, MountPath: mountPath, Enabled: true}, nil
 		},
 	}
 	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, mountPrefix)
+	videoSvc := service.NewVideoService(videoRepo, mediaSourceSvc, tagRepo, &mock.MinIOClient{})
 
 	r, _ := setupStreamRouter(videoSvc, mediaSourceSvc, xaccelPrefix)
 

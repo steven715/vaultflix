@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
-	"strings"
 
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
@@ -135,7 +133,6 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 		}
 	}
 
-	container := strings.TrimPrefix(filepath.Ext(video.OriginalFilename), ".")
 	detail := &model.VideoDetail{
 		VideoWithTags: model.VideoWithTags{
 			Video:        *video,
@@ -144,7 +141,7 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 			PreviewURL:   previewURL,
 		},
 		StreamURL: streamURL,
-		PlayMode:  ClassifyPlayMode(container, video.VideoCodec, video.AudioCodec),
+		PlayMode:  videoPlayMode(video),
 	}
 
 	// Enrich with user-specific data if services are available and userID is provided
