@@ -47,4 +47,9 @@ type BackfillProgress struct {
 	Total            int          `json:"total"`
 	Status           string       `json:"status"` // processing | success | skipped | error
 	Error            string       `json:"error,omitempty"`
+	// The job's counts after this Video, so clients can show them as-is
+	// rather than adding messages up.
+	Succeeded int `json:"succeeded"`
+	Skipped   int `json:"skipped"`
+	Failed    int `json:"failed"`
 }

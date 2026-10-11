@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
-import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource, importVideos, getActiveImportJob } from '../../api/admin'
+import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource } from '../../api/admin'
 import type { MediaSource } from '../../types'
 import NavIcon from '../../components/admin/NavIcon'
-import ImportProgress from '../../components/admin/ImportProgress'
+import JobProgressPanel from '../../components/admin/JobProgressPanel'
+import { importLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { getErrorMessage } from '../../utils/error'
+import { useJob } from '../../hooks/useJob'
+import { importJobs } from '../../lib/jobKinds'
 
 export default function MediaSourcePage() {
   const [sources, setSources] = useState<MediaSource[]>([])
@@ -13,9 +16,9 @@ export default function MediaSourcePage() {
   const [loadError, setLoadError] = useState(false)
   const toast = useToast()
 
-  // Import state
-  const [importingSourceId, setImportingSourceId] = useState<string | null>(null)
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  // Import Job (the panel shows under the Media Source it runs on)
+  const importJob = useJob(importJobs, { onFinished: () => fetchSources() })
+  const importingSourceId = importJob.view?.phase === 'running' ? importJob.view.subject ?? null : null
 
   // Modal state
   const [showCreate, setShowCreate] = useState(false)
@@ -46,45 +49,9 @@ export default function MediaSourcePage() {
     return () => { cancelled = true }
   }, [])
 
-  // Check for active import on mount
-  useEffect(() => {
-    let cancelled = false
-    getActiveImportJob().then((job) => {
-      if (cancelled || !job) return
-      setImportingSourceId(job.source_id)
-      setCurrentJobId(job.id)
-    }).catch((err) => {
-      console.warn('failed to detect active import job', err)
-    })
-    return () => { cancelled = true }
-  }, [])
-
   async function handleImport(source: MediaSource) {
-    try {
-      const job = await importVideos(source.id)
-      setImportingSourceId(source.id)
-      setCurrentJobId(job.id)
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { message?: string } } }
-      if (axiosErr?.response?.status === 409) {
-        const activeJob = await getActiveImportJob().catch((detectErr) => {
-          console.warn('failed to detect active import job after 409', detectErr)
-          return null
-        })
-        if (activeJob) {
-          setImportingSourceId(activeJob.source_id)
-          setCurrentJobId(activeJob.id)
-        }
-      } else {
-        toast.error(getErrorMessage(err, '匯入啟動失敗'))
-      }
-    }
-  }
-
-  function handleImportComplete() {
-    setImportingSourceId(null)
-    setCurrentJobId(null)
-    fetchSources()
+    const { outcome, error } = await importJob.start(source.id)
+    if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
   }
 
   async function handleToggleEnabled(source: MediaSource) {
@@ -192,8 +159,8 @@ export default function MediaSourcePage() {
               </div>
 
               {/* Import progress inline */}
-              {importingSourceId === source.id && currentJobId && (
-                <ImportProgress jobId={currentJobId} onComplete={handleImportComplete} />
+              {importingSourceId === source.id && importJob.view && (
+                <JobProgressPanel view={importJob.view} labels={importLabels} />
               )}
             </div>
           ))}

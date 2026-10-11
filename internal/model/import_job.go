@@ -32,4 +32,9 @@ type ImportProgress struct {
 	Total    int    `json:"total"`
 	Status   string `json:"status"`
 	Error    string `json:"error,omitempty"`
+	// The job's counts after this file, so clients can show them as-is
+	// rather than adding messages up.
+	Imported int `json:"imported"`
+	Skipped  int `json:"skipped"`
+	Failed   int `json:"failed"`
 }

@@ -175,6 +175,7 @@ func (b *backfillRun) processOne(ctx context.Context, v *model.Video, pos positi
 		default:
 			j.Succeeded++
 		}
+		progress.Succeeded, progress.Skipped, progress.Failed = j.Succeeded, j.Skipped, j.Failed
 	})
 	b.runner.sendProgress(b.userID, progress)
 }

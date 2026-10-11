@@ -10,6 +10,7 @@ vi.mock('../../api/admin', () => ({
   getActiveImportJob: vi.fn(() => Promise.resolve(null)),
   createMediaSource: vi.fn(), updateMediaSource: vi.fn(), deleteMediaSource: vi.fn(), importVideos: vi.fn(),
 }))
+vi.mock('../../contexts/WebSocketContext', () => ({ useWS: () => ({ lastMessage: null, isConnected: true, sendMessage: vi.fn() }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
 describe('MediaSourcePage (reskin)', () => {

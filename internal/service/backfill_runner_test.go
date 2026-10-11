@@ -179,3 +179,34 @@ func hasMessage(n *mock.Notifier, msgType string) bool {
 	}
 	return false
 }
+
+// Each per-Video result carries the job's counts so far (see the Import
+// equivalent): the UI replaces its numbers instead of adding messages up.
+func TestBackfillRunner_Start_ProgressCarriesJobCounts(t *testing.T) {
+	notifier := &mock.Notifier{}
+	task := &mock.BackfillTask{Videos: videosNamed("ok", "off", "bad"), ProcessFunc: func(_ context.Context, v *model.Video) error {
+		switch v.ID {
+		case "off":
+			return model.ErrMediaSourceDisabled
+		case "bad":
+			return errors.New("boom")
+		}
+		return nil
+	}}
+	r := NewBackfillRunner(notifier, map[model.BackfillKind]BackfillTask{model.BackfillCodec: task})
+	job, err := r.Start(context.Background(), model.BackfillCodec, "user-1")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitForBackfill(t, r, job.ID, "completed")
+
+	var last model.BackfillProgress
+	for _, m := range notifier.GetMessages() {
+		if p, ok := m.Payload.(model.BackfillProgress); ok && p.Status != "processing" {
+			last = p
+		}
+	}
+	if last.Current != 3 || last.Succeeded != 1 || last.Skipped != 1 || last.Failed != 1 {
+		t.Errorf("last progress = %+v, want 3 processed: succeeded 1, skipped 1, failed 1", last)
+	}
+}
