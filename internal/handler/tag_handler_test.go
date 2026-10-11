@@ -208,3 +208,19 @@ func TestRemoveVideoTag_Success(t *testing.T) {
 		t.Fatalf("expected 204, got %d", w.Code)
 	}
 }
+
+func TestAddVideoTag_RemovedBeforeInsert(t *testing.T) {
+	// Both exist at the checks, then one is deleted before the insert: the
+	// foreign key turns it into ErrNotFound, which is still a 404.
+	r := setupTagRouter(&mock.TagRepository{
+		GetByIDFunc:     func(context.Context, int) (*model.Tag, error) { return &model.Tag{ID: 3}, nil },
+		AddVideoTagFunc: func(context.Context, string, int) error { return model.ErrNotFound },
+	}, &mock.VideoRepository{
+		GetByIDFunc: func(context.Context, string) (*model.Video, error) { return &model.Video{ID: "v1"}, nil },
+	})
+
+	w := doRequest(r, http.MethodPost, "/api/videos/v1/tags", `{"tag_id":3}`)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+}
