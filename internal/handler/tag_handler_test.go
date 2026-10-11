@@ -11,11 +11,12 @@ import (
 
 	"github.com/steven/vaultflix/internal/mock"
 	"github.com/steven/vaultflix/internal/model"
+	"github.com/steven/vaultflix/internal/service"
 )
 
 func setupTagRouter(tagRepo *mock.TagRepository, videoRepo *mock.VideoRepository) *gin.Engine {
 	r := gin.New()
-	h := NewTagHandler(tagRepo, videoRepo)
+	h := NewTagHandler(service.NewTagService(tagRepo, videoRepo))
 	r.GET("/api/tags", h.List)
 	r.POST("/api/tags", h.Create)
 	r.POST("/api/videos/:id/tags", h.AddVideoTag)
