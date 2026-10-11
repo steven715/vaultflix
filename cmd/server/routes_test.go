@@ -19,8 +19,8 @@ func routeKeys(filter func(viewer, stream bool) bool) []string {
 }
 
 // Exactly what a viewer may call. Changing this list is a permission change:
-// it must be deliberate. (Snapshot of casbin/policy.csv when the table replaced
-// it, minus its rule for a PUT /watch-history route that never existed.)
+// it must be deliberate. (Started as a snapshot of casbin/policy.csv when the
+// table replaced it; the HLS pair was added so viewers can play remux Videos.)
 func TestAPIRoutes_ViewerPermissions(t *testing.T) {
 	want := []string{
 		"DELETE /favorites/:videoId",
@@ -31,6 +31,8 @@ func TestAPIRoutes_ViewerPermissions(t *testing.T) {
 		"GET /tags",
 		"GET /videos",
 		"GET /videos/:id",
+		"GET /videos/:id/hls/:segment",
+		"GET /videos/:id/hls/index.m3u8",
 		"GET /videos/:id/stream",
 		"GET /videos/:id/stream-token",
 		"GET /watch-history",

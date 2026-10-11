@@ -78,8 +78,8 @@ func libraryRoutes(h apiHandlers) []middleware.Route {
 func playbackRoutes(h apiHandlers) []middleware.Route {
 	return []middleware.Route{
 		route(http.MethodGet, "/videos/:id/stream", h.video.Stream, viewer, streamToken),
-		route(http.MethodGet, "/videos/:id/hls/index.m3u8", h.hls.Playlist, streamToken),
-		route(http.MethodGet, "/videos/:id/hls/:segment", h.hls.Segment, streamToken),
+		route(http.MethodGet, "/videos/:id/hls/index.m3u8", h.hls.Playlist, viewer, streamToken),
+		route(http.MethodGet, "/videos/:id/hls/:segment", h.hls.Segment, viewer, streamToken),
 		route(http.MethodGet, "/videos/:id/stream-token", h.auth.StreamToken, viewer),
 	}
 }
