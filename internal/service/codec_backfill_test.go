@@ -28,8 +28,44 @@ func (r *fakeCodecRepo) UpdateCodecs(_ context.Context, id, vc, ac string) error
 }
 
 func newTestCodecBackfill(repo *fakeCodecRepo, files mediaFileResolver) (*CodecBackfill, *mock.MediaTool) {
-	tool := &mock.MediaTool{ProbeOutput: map[string][]byte{"movie.mkv": mock.ProbeJSONFor(60, "h264", "aac")}}
-	return NewCodecBackfill(repo, files, NewMediaProcessor(tool, &mock.MinIOClient{})), tool
+	b, tool, _ := newTestCodecBackfillWithIndexes(repo, files)
+	return b, tool
+}
+
+func newTestCodecBackfillWithIndexes(repo *fakeCodecRepo, files mediaFileResolver) (*CodecBackfill, *mock.MediaTool, *fakeKeyframeRepo) {
+	tool := &mock.MediaTool{ProbeOutput: map[string][]byte{
+		"movie.mkv": mock.ProbeJSONFor(60, "h264", "aac"),
+		"movie.mp4": mock.ProbeJSONFor(60, "h264", "aac"),
+	}}
+	indexes := newFakeKeyframeRepo()
+	keyframes := NewKeyframeService(indexes)
+	keyframes.probe = func(context.Context, string) ([]float64, float64, error) { return []float64{0, 8}, 16, nil }
+	return NewCodecBackfill(repo, files, NewMediaProcessor(tool, &mock.MinIOClient{}), keyframes), tool, indexes
+}
+
+// A Video whose codecs turn out to play by remux gets its Keyframe Index in
+// the same step, so its first play does not wait for one.
+func TestCodecBackfill_ProcessOne_IndexesVideoThatTurnsOutRemux(t *testing.T) {
+	tests := []struct {
+		file      string
+		wantIndex bool
+	}{
+		{"movie.mkv", true},
+		{"movie.mp4", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			svc, _, indexes := newTestCodecBackfillWithIndexes(&fakeCodecRepo{}, mock.ResolveUnder("/mnt/host/D"))
+			v := &model.Video{ID: "v1", SourceID: strPtr("s1"), FilePath: strPtr(tt.file), OriginalFilename: tt.file}
+
+			if err := svc.ProcessOne(context.Background(), v); err != nil {
+				t.Fatalf("ProcessOne: %v", err)
+			}
+			if _, got := indexes.stored["v1"]; got != tt.wantIndex {
+				t.Errorf("Keyframe Index stored = %v, want %v", got, tt.wantIndex)
+			}
+		})
+	}
 }
 
 func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
@@ -45,6 +81,22 @@ func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 	}
 	if repo.updated["v1"] != [2]string{"h264", "aac"} {
 		t.Errorf("v1 codecs = %v, want [h264 aac]", repo.updated["v1"])
+	}
+}
+
+// The codecs are the Codec Backfill's product: a Keyframe Index that can't be
+// built leaves the item a success, and the first play probes it again.
+func TestCodecBackfill_ProcessOne_KeyframeIndexFailureKeepsCodecs(t *testing.T) {
+	repo := &fakeCodecRepo{}
+	svc, _, indexes := newTestCodecBackfillWithIndexes(repo, mock.ResolveUnder("/mnt/host/D"))
+	svc.keyframes.(*KeyframeService).probe = func(context.Context, string) ([]float64, float64, error) { return nil, 0, errors.New("boom") }
+	v := &model.Video{ID: "v1", SourceID: strPtr("s1"), FilePath: strPtr("movie.mkv"), OriginalFilename: "movie.mkv"}
+
+	if err := svc.ProcessOne(context.Background(), v); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+	if repo.updated["v1"] != [2]string{"h264", "aac"} || len(indexes.stored) != 0 {
+		t.Errorf("codecs %v, indexes %v, want codecs stored without a Keyframe Index", repo.updated["v1"], indexes.stored)
 	}
 }
 

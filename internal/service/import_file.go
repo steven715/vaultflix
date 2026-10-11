@@ -24,42 +24,48 @@ type mediaDeriver interface {
 	MakePreview(ctx context.Context, f model.MediaFile) (string, error)
 }
 
-// processOneFile registers one scanned file as a Video, unless it already is.
-func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) fileResult {
+// processOneFile registers one scanned file as a Video and builds its Keyframe
+// Index if it plays by remux. Returns model.ErrJobItemSkipped when the file is
+// already registered, or a wrapped error naming the file when it can't be
+// registered. A Keyframe Index that can't be built only logs: the first play
+// probes it again.
+func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) error {
 	filename := filepath.Base(filePath)
 
 	relPath, err := filepath.Rel(source.MountPath, filePath)
 	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to calculate relative path for %s: %v", filename, err)}
+		return fmt.Errorf("failed to calculate relative path for %s: %w", filename, err)
 	}
 	relPath = filepath.ToSlash(relPath)
 
 	_, err = s.videoRepo.FindBySourceAndPath(ctx, source.ID, relPath)
 	if err == nil {
 		slog.Info("video skipped, already imported", "file", filename, "source_id", source.ID, "file_path", relPath)
-		return fileResult{Status: "skipped"}
+		return model.ErrJobItemSkipped
 	}
 	if !errors.Is(err, model.ErrNotFound) {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to check duplicate for %s: %v", filename, err)}
+		return fmt.Errorf("failed to check duplicate for %s: %w", filename, err)
 	}
 
 	video, err := s.deriveVideo(ctx, filePath)
 	if err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to import %s: %v", filename, err)}
+		return fmt.Errorf("failed to import %s: %w", filename, err)
 	}
 	video.SourceID, video.FilePath = &source.ID, &relPath
 	if err := s.videoRepo.Create(ctx, video); err != nil {
-		return fileResult{Status: "error", Error: fmt.Sprintf("failed to save video record for %s: %v", filename, err)}
+		return fmt.Errorf("failed to save video record for %s: %w", filename, err)
 	}
 
-	if s.keyframes != nil && videoPlayMode(video) == model.PlayModeRemux {
-		s.keyframes.TriggerProbe(video.ID, filePath)
+	if s.keyframes != nil {
+		if err := s.keyframes.EnsureIndex(ctx, video, filePath); err != nil {
+			slog.Warn("keyframe index not built at import", "video_id", video.ID, "file", filename, "error", err)
+		}
 	}
 	slog.Info("video imported",
 		"video_id", video.ID, "file", filename, "source_id", source.ID, "file_path", relPath,
 		"duration", video.DurationSeconds, "resolution", video.Resolution, "size_bytes", video.FileSizeBytes,
 	)
-	return fileResult{Status: "success"}
+	return nil
 }
 
 // deriveVideo builds a new Video from the file: Media Info, Thumbnail, Preview
