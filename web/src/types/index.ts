@@ -94,7 +94,7 @@ export interface ImportJob {
   id: string
   source_id: string
   source_label: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
   total: number
   processed: number
   imported: number

@@ -91,10 +91,7 @@ func (h *VideoHandler) Import(c *gin.Context) {
 	job, err := h.importService.StartAsync(ctx, source, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "import_in_progress",
-				Message: "another import job is already running",
-			})
+			c.JSON(http.StatusConflict, jobLaneBusy(err))
 			return
 		}
 		slog.Error("failed to start import", "error", err, "source_id", req.SourceID)
@@ -317,31 +314,6 @@ func encodePathSegments(p string) string {
 		parts[i] = url.PathEscape(s)
 	}
 	return strings.Join(parts, "/")
-}
-
-func (h *VideoHandler) GetImportJob(c *gin.Context) {
-	jobID := c.Param("id")
-	job, err := h.importService.GetJob(jobID)
-	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "import job not found",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get import job",
-		})
-		return
-	}
-	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
-}
-
-func (h *VideoHandler) GetActiveImportJob(c *gin.Context) {
-	job := h.importService.GetActiveJob()
-	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
 }
 
 func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {

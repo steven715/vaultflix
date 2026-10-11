@@ -15,7 +15,7 @@ Short, **immutable** notes capturing *why* a non-obvious architectural choice wa
 |-----|-------|--------|
 | [0001](0001-local-disk-media-sources.md) | Keep videos on local disk, manage paths via a `media_sources` table | Accepted |
 | [0002](0002-stream-auth-query-param-token.md) | Authenticate media streaming via a `?token=` query param | Accepted |
-| [0003](0003-async-import-in-memory-no-queue.md) | Run async import as an in-memory goroutine, no job queue | Accepted |
+| [0003](0003-async-import-in-memory-no-queue.md) | Run async import as an in-memory goroutine, no job queue | Superseded by 0014 |
 | [0004](0004-soft-delete-users.md) | Soft-delete users via `disabled_at` | Accepted |
 | [0005](0005-build-once-sha-image-compose-overrides.md) | Build the API once as a SHA-tagged image; layer envs with compose overrides | Superseded by 0011 |
 | [0006](0006-playback-hud-stall-classification.md) | Classify playback stalls as starved-vs-codec in the HUD | Accepted |
@@ -26,5 +26,6 @@ Short, **immutable** notes capturing *why* a non-obvious architectural choice wa
 | [0011](0011-single-stack-local-build.md) | One local-build stack; drop the GHCR artifact and the dev/prod split | Accepted (supersedes 0005) |
 | [0012](0012-repository-tests-against-real-postgres.md) | Test repository SQL against the integration stack's real Postgres | Accepted |
 | [0013](0013-route-table-replaces-casbin.md) | One route table declares access; drop Casbin | Accepted |
+| [0014](0014-job-lanes.md) | Jobs run on in-memory Job Lanes that refuse, not queue | Accepted (supersedes 0003) |
 
 > Other living docs: [ROADMAP.md](../../ROADMAP.md) (what's next), [README.md](../../README.md) (what's built, how to run it), [GLOSSARY.md](../../GLOSSARY.md) (domain vocabulary).

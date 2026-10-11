@@ -14,7 +14,9 @@ import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
 import { useJob } from '../../hooks/useJob'
+import { useJobCancel } from '../../hooks/useJobCancel'
 import { backfillJobs, importJobs } from '../../lib/jobKinds'
+import { getErrorMessage } from '../../utils/error'
 
 export default function VideoManagePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -89,27 +91,22 @@ export default function VideoManagePage() {
   // An adopted job keeps the dialog open until its summary is closed.
   const importModalOpen = showImport || importJob.view !== null
   const backfillJob = useJob(backfillJobs)
+  const cancelImport = useJobCancel(importJob.cancel)
+  const cancelBackfill = useJobCancel(backfillJob.cancel)
 
   async function handleStartBackfill() {
-    const { outcome } = await backfillJob.start('preview')
+    const { outcome, error } = await backfillJob.start('preview')
     if (outcome === 'adopted') toast.error('已有任務進行中')
-    else if (outcome === 'failed') toast.error('啟動 backfill 失敗')
-  }
-
-  async function handleCancelBackfill() {
-    try {
-      await backfillJob.cancel?.()
-    } catch (err) {
-      console.warn('failed to cancel backfill', err)
-      toast.error('取消失敗')
-    }
+    // A busy Media Lane says which Job holds it (e.g. an Import).
+    else if (outcome === 'failed') toast.error(getErrorMessage(error, '啟動 backfill 失敗'))
   }
 
   async function handleStartImport() {
     if (!selectedSourceID) return
-    const { outcome } = await importJob.start(selectedSourceID)
-    if (outcome === 'failed') toast.error('匯入啟動失敗')
+    const { outcome, error } = await importJob.start(selectedSourceID)
+    if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
   }
+
 
   function openEdit(video: VideoWithTags) {
     setEditingVideo(video); setEditTitle(video.title); setEditDesc(video.description)
@@ -184,7 +181,7 @@ export default function VideoManagePage() {
           <JobProgressPanel
             view={backfillJob.view}
             labels={backfillLabels(backfillJob.view.subject as BackfillKind)}
-            onCancel={handleCancelBackfill}
+            onCancel={cancelBackfill}
           />
           <div className="text-right mt-1">
             <button onClick={backfillJob.dismiss} className="text-xs text-faint hover:text-muted">關閉</button>
@@ -216,7 +213,7 @@ export default function VideoManagePage() {
       {importModalOpen && (
         <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
           onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
-          onStartImport={handleStartImport} onResetImport={importJob.dismiss} />
+          onStartImport={handleStartImport} onCancelImport={cancelImport} onResetImport={importJob.dismiss} />
       )}
 
       {editingVideo && (

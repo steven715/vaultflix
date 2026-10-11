@@ -36,8 +36,14 @@ func NewBackfillRunner(notifier websocket.Notifier, tasks map[model.BackfillKind
 	return &BackfillRunner{notifier: notifier, tasks: tasks, jobs: NewJobRunner()}
 }
 
-// jobKindBackfill tags Backfill Jobs on the JobRunner.
-const jobKindBackfill = "backfill"
+// UseJobRunner runs Backfill Jobs on r, the Media Lane shared with Import
+// Jobs, instead of a runner of their own.
+func (r *BackfillRunner) UseJobRunner(jr *JobRunner) {
+	r.jobs = jr
+}
+
+// JobKindBackfill tags Backfill Jobs on the JobRunner.
+const JobKindBackfill = "backfill"
 
 // Start launches a Backfill Job of kind and returns a snapshot of it. Progress
 // goes to userID's WebSocket connections. ctx scopes only the call: the job
@@ -51,7 +57,7 @@ func (r *BackfillRunner) Start(ctx context.Context, kind model.BackfillKind, use
 		return nil, fmt.Errorf("backfill kind %q: %w", kind, model.ErrInvalidInput)
 	}
 	job, err := r.jobs.Start(JobSpec{
-		Kind: jobKindBackfill, Meta: kind, Task: &backfillItems{task: task},
+		Kind: JobKindBackfill, Meta: kind, Task: &backfillItems{task: task},
 		Reporter: &backfillReport{notifier: r.notifier, userID: userID},
 	})
 	if err != nil {
@@ -64,7 +70,7 @@ func (r *BackfillRunner) Start(ctx context.Context, kind model.BackfillKind, use
 // finished), or nil when none has started in this process.
 func (r *BackfillRunner) Active(ctx context.Context) *model.BackfillJob {
 	job := r.jobs.Latest()
-	if job == nil || job.Kind != jobKindBackfill {
+	if job == nil || job.Kind != JobKindBackfill {
 		return nil
 	}
 	return toBackfillJob(job)
@@ -74,6 +80,9 @@ func (r *BackfillRunner) Active(ctx context.Context) *model.BackfillJob {
 // Cancelling a finished job is a no-op. Returns model.ErrNotFound when jobID
 // is not the latest job.
 func (r *BackfillRunner) Cancel(ctx context.Context, jobID string) error {
+	if latest := r.jobs.Latest(); latest == nil || latest.Kind != JobKindBackfill || latest.ID != jobID {
+		return fmt.Errorf("cancel backfill %s: %w", jobID, model.ErrNotFound)
+	}
 	if err := r.jobs.Cancel(jobID); err != nil {
 		return fmt.Errorf("cancel backfill %s: %w", jobID, err)
 	}

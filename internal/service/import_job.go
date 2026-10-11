@@ -73,8 +73,8 @@ func (im *importReport) Failed(job Job, err error) {
 func (im *importReport) Finished(job Job) {
 	snap := toImportJob(&job)
 	im.send(websocket.TypeImportComplete, snap)
-	slog.Info("import completed",
-		"source_id", snap.SourceID, "source_label", snap.SourceLabel, "total_scanned", snap.Total,
+	slog.Info("import job finished",
+		"source_id", snap.SourceID, "source_label", snap.SourceLabel, "status", snap.Status, "total_scanned", snap.Total,
 		"imported", snap.Imported, "skipped", snap.Skipped, "failed", snap.Failed,
 	)
 }

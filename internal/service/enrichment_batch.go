@@ -9,8 +9,8 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
-// jobKindEnrichment tags Enrichment Jobs on the JobRunner.
-const jobKindEnrichment = "enrichment"
+// JobKindEnrichment tags Enrichment Jobs on the JobRunner.
+const JobKindEnrichment = "enrichment"
 
 // StartBatchAsync launches an Enrichment Job in the background and returns a
 // snapshot of it. Returns model.ErrConflict when another Enrichment Job is
@@ -22,7 +22,7 @@ func (s *EnrichmentService) StartBatchAsync(ctx context.Context, req model.Enric
 		req.Status = model.EnrichmentPending
 	}
 	job, err := s.jobs.Start(JobSpec{
-		Kind: jobKindEnrichment, Task: &enrichmentItems{svc: s, req: req, userID: userID},
+		Kind: JobKindEnrichment, Task: &enrichmentItems{svc: s, req: req, userID: userID},
 		Reporter: &enrichmentReport{notifier: s.notifier, userID: userID},
 	})
 	if err != nil {
@@ -35,7 +35,7 @@ func (s *EnrichmentService) StartBatchAsync(ctx context.Context, req model.Enric
 // (running or finished), or nil when none has started in this process.
 func (s *EnrichmentService) ActiveJob() *model.EnrichJob {
 	job := s.jobs.Latest()
-	if job == nil || job.Kind != jobKindEnrichment {
+	if job == nil || job.Kind != JobKindEnrichment {
 		return nil
 	}
 	return toEnrichJob(job)

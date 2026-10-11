@@ -153,10 +153,7 @@ func (h *EnrichmentHandler) StartBatch(c *gin.Context) {
 	job, err := h.svc.StartBatchAsync(c.Request.Context(), req, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "batch_in_progress",
-				Message: "another enrichment batch is already running",
-			})
+			c.JSON(http.StatusConflict, jobLaneBusy(err))
 			return
 		}
 		slog.Error("failed to start batch enrichment", "error", err)

@@ -201,6 +201,11 @@ func main() {
 		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
 		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
 	})
+	// The Media Lane: Import and Backfill Jobs share disks and ffmpeg, so one
+	// runs at a time (ADR-0014). Enrichment Jobs keep a lane of their own.
+	mediaLane := service.NewJobRunner()
+	importService.UseJobRunner(mediaLane)
+	backfillRunner.UseJobRunner(mediaLane)
 	backfillHandler := handler.NewBackfillHandler(backfillRunner)
 
 	wsHandler := handler.NewWSHandler(hub)

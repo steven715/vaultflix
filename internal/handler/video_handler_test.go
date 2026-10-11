@@ -698,6 +698,51 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d: %s", w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), "匯入") {
+		t.Errorf("body = %s, want it to name the running Import Job", w.Body.String())
+	}
+}
+
+func serveImportCancel(importSvc *service.ImportService, jobID string) *httptest.ResponseRecorder {
+	r := gin.New()
+	h := NewVideoHandler(importSvc, nil, nil, "")
+	r.POST("/api/import-jobs/:id/cancel", h.CancelImportJob)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/import-jobs/"+jobID+"/cancel", nil))
+	return w
+}
+
+func TestCancelImportJobHandler_UnknownJob(t *testing.T) {
+	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	if w := serveImportCancel(importSvc, "nope"); w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestCancelImportJobHandler_RunningJob(t *testing.T) {
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "a.mp4"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inFile, gate := make(chan struct{}), make(chan struct{})
+	defer close(gate)
+	repo := &mock.VideoRepository{
+		FindBySourceAndPathFunc: func(context.Context, string, string) (*model.Video, error) {
+			close(inFile)
+			<-gate
+			return &model.Video{ID: "existing"}, nil
+		},
+	}
+	importSvc := service.NewImportService(repo, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	job, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-inFile
+
+	if w := serveImportCancel(importSvc, job.ID); w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204; body=%s", w.Code, w.Body.String())
+	}
 }
 
 func TestGetActiveImportJobHandler_NoJob(t *testing.T) {

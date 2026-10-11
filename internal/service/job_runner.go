@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -90,6 +91,18 @@ type jobLane interface {
 	Cancel(jobID string) error
 }
 
+// JobLaneBusyError is why a Job did not start: another Job, of RunningKind,
+// holds the lane. It matches model.ErrConflict.
+type JobLaneBusyError struct {
+	RunningKind string
+}
+
+func (e *JobLaneBusyError) Error() string {
+	return fmt.Sprintf("a %s job is running on this lane", e.RunningKind)
+}
+
+func (e *JobLaneBusyError) Unwrap() error { return model.ErrConflict }
+
 // JobRunner runs one Job at a time in the background, keeping only the latest
 // in memory (ADR-0003). Cancellation takes effect between items, never
 // interrupting one in flight.
@@ -106,13 +119,13 @@ func NewJobRunner() *JobRunner {
 }
 
 // Start launches a Job and returns a snapshot of it. The Job runs detached
-// from any request. Returns model.ErrConflict until the previous Job has
-// reported Finished.
+// from any request. Until the previous Job has reported Finished, returns a
+// *JobLaneBusyError, which matches model.ErrConflict.
 func (r *JobRunner) Start(spec JobSpec) (*Job, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.busy {
-		return nil, model.ErrConflict
+		return nil, &JobLaneBusyError{RunningKind: r.latest.Kind}
 	}
 	job := &Job{ID: uuid.NewString(), Kind: spec.Kind, Meta: spec.Meta, Status: "running", StartedAt: time.Now()}
 	r.latest, r.busy, r.cancelCh = job, true, make(chan struct{})
@@ -154,6 +167,9 @@ type jobRun struct {
 	runner *JobRunner
 	job    *Job
 	spec   JobSpec
+	// end is how the Job ends ("" means completed). It reaches job only in
+	// finish, together with freeing the lane.
+	end string
 }
 
 func (j *jobRun) execute(cancelCh <-chan struct{}) {
@@ -163,8 +179,11 @@ func (j *jobRun) execute(cancelCh <-chan struct{}) {
 	ctx := context.Background()
 	items, err := j.spec.Task.Items(ctx)
 	if err != nil {
-		j.runner.update(j.job, func(job *Job) { job.Status, job.ListError = "failed", err.Error() })
-		j.spec.Reporter.Failed(j.runner.snapshot(j.job, false), err)
+		j.end = "failed"
+		j.runner.update(j.job, func(job *Job) { job.ListError = err.Error() })
+		failed := j.runner.snapshot(j.job, false)
+		failed.Status = j.end
+		j.spec.Reporter.Failed(failed, err)
 		return
 	}
 	j.runner.update(j.job, func(job *Job) { job.Total = len(items) })
@@ -172,7 +191,7 @@ func (j *jobRun) execute(cancelCh <-chan struct{}) {
 	for i, it := range items {
 		select {
 		case <-cancelCh:
-			j.runner.update(j.job, func(job *Job) { job.Status = "cancelled" })
+			j.end = "cancelled"
 			return
 		default:
 		}
@@ -201,21 +220,21 @@ func (j *jobRun) runItem(ctx context.Context, it JobItem, current int) {
 	j.spec.Reporter.ItemDone(j.runner.snapshot(j.job, false), JobItemResult{Item: it, Current: current, Err: err})
 }
 
-// finish stamps the end of the Job and reports it; only then may the next
-// Job start, so a kind's complete message always precedes the next Job's.
+// finish reports the end of the Job, then records it and frees the lane in
+// one step: a poller that sees the Job finished can start the next one, and
+// a kind's complete message always precedes the next Job's.
 func (j *jobRun) finish() {
-	finished := time.Now()
-	j.runner.update(j.job, func(job *Job) {
-		job.FinishedAt = &finished
-		job.Current = JobItem{}
-		if job.Status == "running" {
-			job.Status = "completed"
-		}
-	})
-	j.spec.Reporter.Finished(j.runner.snapshot(j.job, true))
+	final := j.runner.snapshot(j.job, true)
+	now := time.Now()
+	final.FinishedAt, final.Current, final.Status = &now, JobItem{}, "completed"
+	if j.end != "" {
+		final.Status = j.end
+	}
+	j.spec.Reporter.Finished(final)
 
 	j.runner.mu.Lock()
 	defer j.runner.mu.Unlock()
+	j.job.FinishedAt, j.job.Current, j.job.Status = final.FinishedAt, JobItem{}, final.Status
 	j.runner.busy = false
 }
 

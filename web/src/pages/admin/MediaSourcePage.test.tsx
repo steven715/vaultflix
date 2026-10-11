@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { deleteMediaSource, importVideos, listMediaSources } from '../../api/admin'
+import { cancelImportJob, deleteMediaSource, importVideos, listMediaSources } from '../../api/admin'
 import { wsHarness } from '../../test/wsHarness'
 import MediaSourcePage from './MediaSourcePage'
 
@@ -11,6 +11,7 @@ vi.mock('../../api/admin', () => ({
   ])),
   getActiveImportJob: vi.fn(() => Promise.resolve(null)),
   createMediaSource: vi.fn(), updateMediaSource: vi.fn(), deleteMediaSource: vi.fn(), importVideos: vi.fn(),
+  cancelImportJob: vi.fn(() => Promise.resolve()),
 }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
@@ -61,5 +62,15 @@ describe('MediaSourcePage (reskin)', () => {
     fireEvent.click(await screen.findByRole('button', { name: '確認' }))
     await waitFor(() => expect(deleteMediaSource).toHaveBeenCalledWith('s1'))
     await waitFor(() => expect(screen.queryByText('匯入完成')).toBeNull())
+  })
+
+  it('cancels a running Import from its panel', async () => {
+    vi.mocked(importVideos).mockResolvedValue(runningJob as never)
+    renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
+    fireEvent.click(await screen.findByText('掃描匯入'))
+    await screen.findByText('匯入中')
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(cancelImportJob).toHaveBeenCalledWith('j1'))
   })
 })

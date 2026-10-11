@@ -39,7 +39,7 @@ type startBackfillRequest struct {
 
 // Start launches a Backfill Job of the requested kind. Returns 202 Accepted
 // with the job id, 400 for a missing or unknown kind, or 409 Conflict when
-// another Backfill Job is already running.
+// another Job holds the Media Lane (the message names it).
 // POST /api/admin/backfill-jobs {"kind": "preview"|"codec"|"keyframe"|"code"}
 func (h *BackfillHandler) Start(c *gin.Context) {
 	var req startBackfillRequest
@@ -54,10 +54,7 @@ func (h *BackfillHandler) Start(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "backfill_in_progress",
-				Message: "另一個 backfill 任務正在執行",
-			})
+			c.JSON(http.StatusConflict, jobLaneBusy(err))
 			return
 		}
 		slog.Error("failed to start backfill", "error", err, "kind", req.Kind)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/steven/vaultflix/internal/mock"
 	"github.com/steven/vaultflix/internal/model"
+	"github.com/steven/vaultflix/internal/service"
 )
 
 func serveBackfill(h *BackfillHandler, method, url, body string) *httptest.ResponseRecorder {
@@ -74,5 +75,17 @@ func TestBackfillGetActive_ReturnsLatestJob(t *testing.T) {
 	w := serveBackfill(h, http.MethodGet, "/api/admin/backfill-jobs/active", "")
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"kind":"codec"`) {
 		t.Errorf("status = %d body = %s, want 200 with the codec job", w.Code, w.Body.String())
+	}
+}
+
+func TestBackfillStart_LaneBusyNamesTheRunningJob(t *testing.T) {
+	jobs := &mock.BackfillJobs{StartErr: &service.JobLaneBusyError{RunningKind: service.JobKindImport}}
+	w := serveBackfill(NewBackfillHandler(jobs), http.MethodPost, "/api/admin/backfill-jobs", `{"kind":"code"}`)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "匯入") {
+		t.Errorf("body = %s, want it to name the running Import Job", w.Body.String())
 	}
 }
