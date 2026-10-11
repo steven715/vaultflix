@@ -4,11 +4,6 @@
 
 ### 🎯 進行中（優先）
 
-- [ ] **Enrichment 第 ②③ 階段** — 第 ① 階段（Scraper：javbus / avid，以 Code 比對，產出 Metadata Suggestion 待審）已完成（PR #17/#18）。尚待：
-  - ② LLM（Claude API）依 Metadata 產出 Suggestion
-  - ③（選用）抽幀畫面分析產出 Suggestion
-  - 前提：依 ADR-0010，所有來源一律只產 Suggestion、不自動套用；LLM 設計前先完成下方「Performer / Maker 遷移」，否則 LLM 不知道演員該進 Tag 還是 Performer。
-
 - [ ] **Transcode Play Mode（即時轉碼）** — 把 remux 的即時 HLS 管線從 `ffmpeg -c copy` 擴充成 `libx264` 即時軟轉，讓目前**不能播的 89 部 / 143GB（18% Library）**能播。
   - **重要性=正確性**：這批片現在前端顯示「此格式將於 Phase 2 支援」、完全打不開。依重要性排序（正確性 > 開發速度 > 體驗）嚴格說高於 Enrichment；順序待定（已知張力）。
   - **現況（2026-07-05 核實）**：codec 回填 498/498 完成、Play Mode Classification live。分佈：direct 285(521GB) / remux 124(200GB，已解) / **transcode 89(143GB，本項)**。不能播主因：`mpeg4`(65)、`wmv1/2/3`(16)、`vc1`(5)、`hevc`(2) + `wmav2/wmapro/ac3` 音訊。
@@ -21,11 +16,15 @@
   - **識別字**：Watch Progress 欄位（`progress_seconds` vs `watch_progress`）、裸用的 `label` / `source` / `scope` 視改動成本決定是否改名
   - 觸發：開始 Enrichment ② 之前（Performer 遷移是其前提）
 
-- [ ] **前端 Enrichment UI** — 後端 `/enrich`、`/suggestions`、`/enrich-jobs` 已存在，前端完全沒有對應 UI（types 也沒有）。需要：Suggestion 審核介面、Performer 頁 / Avatar、卡片顯示 **Cover 優先、Thumbnail 後備**（GLOSSARY.md 已定此規則，`PosterThumb` 目前只吃 thumbnail）。
+### ⏸ 暫停
 
-### 小型 bug（順手修）
+- **Enrichment（2026-10-11 起）** — 實際想要的方向需要影像辨識，爭議與可行性都還沒評估，先不推進。既有後端（Scraper、Metadata Suggestion、Enrichment Lane）維持可用，重構時照常保持它能動；番號 Backfill 也暫不放進前端選單。恢復時從下面兩項接續：
 
-- [ ] 前端 `ImportJob.status` 型別缺 `cancelled`（後端有此狀態）
+  - [ ] **Enrichment 第 ②③ 階段** — 第 ① 階段（Scraper：javbus / avid，以 Code 比對，產出 Metadata Suggestion 待審）已完成（PR #17/#18）。尚待：
+    - ② LLM（Claude API）依 Metadata 產出 Suggestion
+    - ③（選用）抽幀畫面分析產出 Suggestion
+    - 前提：依 ADR-0010，所有來源一律只產 Suggestion、不自動套用；LLM 設計前先完成下方「Performer / Maker 遷移」，否則 LLM 不知道演員該進 Tag 還是 Performer。
+  - [ ] **前端 Enrichment UI** — 後端 `/enrich`、`/suggestions`、`/enrich-jobs` 已存在，前端完全沒有對應 UI（types 也沒有）。需要：Suggestion 審核介面、Performer 頁 / Avatar、卡片顯示 **Cover 優先、Thumbnail 後備**（GLOSSARY.md 已定此規則，`PosterThumb` 目前只吃 thumbnail）。
 
 ### 其他未來功能
 
@@ -67,6 +66,10 @@
 ---
 
 ## 架構演進
+
+- [ ] **統一 Job 的對外格式**（架構回顧 #5 第 3 步，ADR-0014）— Import、Backfill、Enrichment Job 已共用 `JobRunner`，但 API 與 WebSocket 仍是三種形狀（`ImportJob`／`BackfillJob`／`EnrichJob`、九種 `*_progress/complete/error` 訊息），由各自的 reporter 轉換。統一成一個 `Job`（帶 `kind`、`subject`）與 `job_*` 三種訊息後，可刪掉後端三個 reporter 的轉換與前端 `jobKinds` 的大半。
+  - **觸發條件**：前端要接第三種 Job（例如 Enrichment 恢復），或某個 Job kind 的格式需要改動時。
+  - **目前不做的原因**：前端只有 Import 與 Backfill 兩種且已接好；要動後端、前端、`docs/api.md` 與整合測試，收益要等新的 Job kind 才兌現。
 
 - [ ] **前端 Client / Admin 拆分為獨立專案** — **觸發條件已滿足（2026-09-28）**：admin 已有 6 頁（Analytics、MediaSource、RecommendationManage、TagManage、UserManage、VideoManage），超過 5 頁門檻。
   - **動機**：敏感度劃分（admin 操作不應與 client 共享攻擊面）、獨立演進（技術選型與部署節奏脫鉤）
