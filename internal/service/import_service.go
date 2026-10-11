@@ -88,7 +88,7 @@ func (s *ImportService) GetJob(jobID string) (*model.ImportJob, error) {
 // Cancel asks the running Import Job jobID to stop after its current file;
 // the files already imported stay. Cancelling a finished Job is a no-op.
 // Returns model.ErrNotFound when jobID is not the latest Import Job.
-func (s *ImportService) Cancel(jobID string) error {
+func (s *ImportService) Cancel(ctx context.Context, jobID string) error {
 	if _, err := s.GetJob(jobID); err != nil {
 		return fmt.Errorf("cancel import job %s: %w", jobID, err)
 	}

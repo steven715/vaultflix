@@ -41,7 +41,7 @@ func (h *VideoHandler) GetActiveImportJob(c *gin.Context) {
 // POST /api/import-jobs/:id/cancel
 func (h *VideoHandler) CancelImportJob(c *gin.Context) {
 	jobID := c.Param("id")
-	if err := h.importService.Cancel(jobID); err != nil {
+	if err := h.importService.Cancel(c.Request.Context(), jobID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "import job not found"})
 			return

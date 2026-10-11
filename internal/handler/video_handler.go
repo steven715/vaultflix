@@ -91,10 +91,7 @@ func (h *VideoHandler) Import(c *gin.Context) {
 	job, err := h.importService.StartAsync(ctx, source, userID)
 	if err != nil {
 		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "import_in_progress",
-				Message: jobLaneBusyMessage(err),
-			})
+			c.JSON(http.StatusConflict, jobLaneBusy(err))
 			return
 		}
 		slog.Error("failed to start import", "error", err, "source_id", req.SourceID)

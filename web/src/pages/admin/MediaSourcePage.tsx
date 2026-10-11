@@ -9,6 +9,7 @@ import { useToast } from '../../contexts/ToastContext'
 import { getErrorMessage } from '../../utils/error'
 import { useJob } from '../../hooks/useJob'
 import { importJobs } from '../../lib/jobKinds'
+import { useJobCancel } from '../../hooks/useJobCancel'
 
 export default function MediaSourcePage() {
   const [sources, setSources] = useState<MediaSource[]>([])
@@ -18,6 +19,7 @@ export default function MediaSourcePage() {
 
   // Import Job (the panel shows under the Media Source it runs on)
   const importJob = useJob(importJobs, { onFinished: () => refreshSources() })
+  const cancelImport = useJobCancel(importJob.cancel)
   const importBusy = importJob.starting || importJob.view?.phase === 'running'
   // The card whose Import Job is shown: it stays after the job ends, until closed.
   const shownSourceId = importJob.view?.subject ?? null
@@ -66,14 +68,6 @@ export default function MediaSourcePage() {
     if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
   }
 
-  async function handleCancelImport() {
-    try {
-      await importJob.cancel?.()
-    } catch (err) {
-      console.warn('failed to cancel import', err)
-      toast.error('取消失敗')
-    }
-  }
 
   async function handleToggleEnabled(source: MediaSource) {
     try {
@@ -182,7 +176,7 @@ export default function MediaSourcePage() {
 
               {/* Import progress inline */}
               {shownSourceId === source.id && importJob.view && (
-                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onCancel={handleCancelImport} onDismiss={importJob.dismiss} />
+                <JobProgressPanel key={importJob.view.id} view={importJob.view} labels={importLabels} onCancel={cancelImport} onDismiss={importJob.dismiss} />
               )}
             </div>
           ))}

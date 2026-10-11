@@ -240,3 +240,27 @@ func TestJobRunner_BusyErrorNamesTheRunningKind(t *testing.T) {
 	close(release)
 	rec.wait(t)
 }
+
+func TestJobRunner_ShowsTheEndOnlyOnceTheLaneIsFree(t *testing.T) {
+	r := NewJobRunner()
+	rep := &blockingFinish{inFinish: make(chan struct{}), release: make(chan struct{})}
+	_, _ = r.Start(JobSpec{Kind: "backfill", Task: listTask{}, Reporter: rep})
+	<-rep.inFinish
+
+	// While the complete message is still going out, pollers must not see a
+	// finished Job they cannot yet follow with another.
+	if got := r.Latest(); got.Status != "running" {
+		t.Errorf("Latest during Finished = %q, want running until the lane is free", got.Status)
+	}
+	close(rep.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for r.Latest().Status == "running" {
+		if time.Now().After(deadline) {
+			t.Fatal("job never showed as finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := r.Start(JobSpec{Kind: "import", Task: listTask{}, Reporter: newRecorder()}); err != nil {
+		t.Errorf("Start once the Job shows finished = %v, want the lane free", err)
+	}
+}

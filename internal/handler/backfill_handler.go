@@ -54,10 +54,7 @@ func (h *BackfillHandler) Start(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "backfill_in_progress",
-				Message: jobLaneBusyMessage(err),
-			})
+			c.JSON(http.StatusConflict, jobLaneBusy(err))
 			return
 		}
 		slog.Error("failed to start backfill", "error", err, "kind", req.Kind)

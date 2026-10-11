@@ -47,7 +47,7 @@ interface ImportModalProps {
   onClose: () => void
   onStartImport: () => void
   /** Stop the running Import Job after its current file. */
-  onCancelImport: () => Promise<void>
+  onCancelImport?: () => Promise<void>
   /** Forget the shown job, back to picking a Media Source. */
   onResetImport: () => void
 }

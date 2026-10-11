@@ -81,7 +81,7 @@ func (r *BackfillRunner) Active(ctx context.Context) *model.BackfillJob {
 // is not the latest job.
 func (r *BackfillRunner) Cancel(ctx context.Context, jobID string) error {
 	if latest := r.jobs.Latest(); latest == nil || latest.Kind != JobKindBackfill || latest.ID != jobID {
-		return model.ErrNotFound
+		return fmt.Errorf("cancel backfill %s: %w", jobID, model.ErrNotFound)
 	}
 	if err := r.jobs.Cancel(jobID); err != nil {
 		return fmt.Errorf("cancel backfill %s: %w", jobID, err)

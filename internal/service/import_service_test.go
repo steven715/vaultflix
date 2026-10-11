@@ -231,7 +231,7 @@ func TestCancel_StopsTheImportBetweenFiles(t *testing.T) {
 	b := newBlockedImport(t, 2)
 	job := b.start(t)
 
-	if err := b.svc.Cancel(job.ID); err != nil {
+	if err := b.svc.Cancel(context.Background(), job.ID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 	b.release()
@@ -244,7 +244,7 @@ func TestCancel_StopsTheImportBetweenFiles(t *testing.T) {
 
 func TestCancel_UnknownImportJob(t *testing.T) {
 	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
-	if err := svc.Cancel("nope"); !errors.Is(err, model.ErrNotFound) {
+	if err := svc.Cancel(context.Background(), "nope"); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -272,7 +272,7 @@ func TestMediaLane_ImportBlocksBackfill(t *testing.T) {
 	if backfill.Active(context.Background()) != nil {
 		t.Error("Backfill Active must not report the running Import Job")
 	}
-	if err := b.svc.Cancel("not-" + job.ID); !errors.Is(err, model.ErrNotFound) {
+	if err := b.svc.Cancel(context.Background(), "not-"+job.ID); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("cancel of an unknown id = %v", err)
 	}
 	b.release()
@@ -300,7 +300,7 @@ func TestMediaLane_BackfillBlocksImport(t *testing.T) {
 	if b.svc.GetActiveJob() != nil {
 		t.Error("Import GetActiveJob must not report the running Backfill Job")
 	}
-	if err := b.svc.Cancel(bf.ID); !errors.Is(err, model.ErrNotFound) {
+	if err := b.svc.Cancel(context.Background(), bf.ID); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("Import Cancel of a Backfill Job = %v, want ErrNotFound", err)
 	}
 }

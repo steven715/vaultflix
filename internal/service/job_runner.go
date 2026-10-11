@@ -167,6 +167,9 @@ type jobRun struct {
 	runner *JobRunner
 	job    *Job
 	spec   JobSpec
+	// end is how the Job ends ("" means completed). It reaches job only in
+	// finish, together with freeing the lane.
+	end string
 }
 
 func (j *jobRun) execute(cancelCh <-chan struct{}) {
@@ -176,8 +179,11 @@ func (j *jobRun) execute(cancelCh <-chan struct{}) {
 	ctx := context.Background()
 	items, err := j.spec.Task.Items(ctx)
 	if err != nil {
-		j.runner.update(j.job, func(job *Job) { job.Status, job.ListError = "failed", err.Error() })
-		j.spec.Reporter.Failed(j.runner.snapshot(j.job, false), err)
+		j.end = "failed"
+		j.runner.update(j.job, func(job *Job) { job.ListError = err.Error() })
+		failed := j.runner.snapshot(j.job, false)
+		failed.Status = j.end
+		j.spec.Reporter.Failed(failed, err)
 		return
 	}
 	j.runner.update(j.job, func(job *Job) { job.Total = len(items) })
@@ -185,7 +191,7 @@ func (j *jobRun) execute(cancelCh <-chan struct{}) {
 	for i, it := range items {
 		select {
 		case <-cancelCh:
-			j.runner.update(j.job, func(job *Job) { job.Status = "cancelled" })
+			j.end = "cancelled"
 			return
 		default:
 		}
@@ -214,21 +220,21 @@ func (j *jobRun) runItem(ctx context.Context, it JobItem, current int) {
 	j.spec.Reporter.ItemDone(j.runner.snapshot(j.job, false), JobItemResult{Item: it, Current: current, Err: err})
 }
 
-// finish stamps the end of the Job and reports it; only then may the next
-// Job start, so a kind's complete message always precedes the next Job's.
+// finish reports the end of the Job, then records it and frees the lane in
+// one step: a poller that sees the Job finished can start the next one, and
+// a kind's complete message always precedes the next Job's.
 func (j *jobRun) finish() {
-	finished := time.Now()
-	j.runner.update(j.job, func(job *Job) {
-		job.FinishedAt = &finished
-		job.Current = JobItem{}
-		if job.Status == "running" {
-			job.Status = "completed"
-		}
-	})
-	j.spec.Reporter.Finished(j.runner.snapshot(j.job, true))
+	final := j.runner.snapshot(j.job, true)
+	now := time.Now()
+	final.FinishedAt, final.Current, final.Status = &now, JobItem{}, "completed"
+	if j.end != "" {
+		final.Status = j.end
+	}
+	j.spec.Reporter.Finished(final)
 
 	j.runner.mu.Lock()
 	defer j.runner.mu.Unlock()
+	j.job.FinishedAt, j.job.Current, j.job.Status = final.FinishedAt, JobItem{}, final.Status
 	j.runner.busy = false
 }
 
