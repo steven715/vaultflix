@@ -185,7 +185,7 @@ func main() {
 
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
-	tagHandler := handler.NewTagHandler(tagRepo, videoRepo)
+	tagHandler := handler.NewTagHandler(service.NewTagService(tagRepo, videoRepo))
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
 	recHandler := handler.NewRecommendationHandler(recService)

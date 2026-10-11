@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,41 +10,44 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/steven/vaultflix/internal/model"
-	"github.com/steven/vaultflix/internal/repository"
 )
 
-func isAllowedCategory(category string) bool {
-	switch category {
-	case "genre", "actor", "studio", "custom":
-		return true
+// tagService is what TagHandler needs (implemented by *service.TagService).
+type tagService interface {
+	// List returns model.ErrInvalidInput (wrapped) for an unknown category.
+	List(ctx context.Context, category string) ([]model.TagWithCount, error)
+	// Create returns model.ErrInvalidInput or model.ErrAlreadyExists (wrapped).
+	Create(ctx context.Context, tag *model.Tag) error
+	// AddVideoTag returns a *model.NotFoundError naming the missing resource.
+	AddVideoTag(ctx context.Context, videoID string, tagID int) (created bool, err error)
+	// RemoveVideoTag returns model.ErrNotFound (wrapped) when not tagged.
+	RemoveVideoTag(ctx context.Context, videoID string, tagID int) error
+}
+
+// badCategory is the 400 body for a category outside the allowed list.
+func badCategory() model.ErrorResponse {
+	return model.ErrorResponse{
+		Error:   "bad_request",
+		Message: "category must be one of: genre, actor, studio, custom",
 	}
-	return false
 }
 
 type TagHandler struct {
-	tagRepo   repository.TagRepository
-	videoRepo repository.VideoRepository
+	tags tagService
 }
 
-func NewTagHandler(tagRepo repository.TagRepository, videoRepo repository.VideoRepository) *TagHandler {
-	return &TagHandler{
-		tagRepo:   tagRepo,
-		videoRepo: videoRepo,
-	}
+func NewTagHandler(tags tagService) *TagHandler {
+	return &TagHandler{tags: tags}
 }
 
 func (h *TagHandler) List(c *gin.Context) {
 	category := c.Query("category")
-	if category != "" && !isAllowedCategory(category) {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "category must be one of: genre, actor, studio, custom",
-		})
-		return
-	}
-
-	tags, err := h.tagRepo.List(c.Request.Context(), category)
+	tags, err := h.tags.List(c.Request.Context(), category)
 	if err != nil {
+		if errors.Is(err, model.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, badCategory())
+			return
+		}
 		slog.Error("failed to list tags", "error", err)
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "internal_error",
@@ -72,24 +76,16 @@ func (h *TagHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if req.Category == "" {
-		req.Category = "custom"
-	}
-
-	if !isAllowedCategory(req.Category) {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "category must be one of: genre, actor, studio, custom",
-		})
-		return
-	}
-
 	tag := &model.Tag{
 		Name:     req.Name,
 		Category: req.Category,
 	}
 
-	if err := h.tagRepo.Create(c.Request.Context(), tag); err != nil {
+	if err := h.tags.Create(c.Request.Context(), tag); err != nil {
+		if errors.Is(err, model.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, badCategory())
+			return
+		}
 		if errors.Is(err, model.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, model.ErrorResponse{
 				Error:   "conflict",
@@ -126,46 +122,15 @@ func (h *TagHandler) AddVideoTag(c *gin.Context) {
 		return
 	}
 
-	// Verify video exists
-	if _, err := h.videoRepo.GetByID(c.Request.Context(), videoID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
+	created, err := h.tags.AddVideoTag(c.Request.Context(), videoID, req.TagID)
+	if err != nil {
+		var missing *model.NotFoundError
+		if errors.As(err, &missing) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: missing.Error()})
 			return
 		}
-		slog.Error("failed to check video", "error", err, "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to add tag to video",
-		})
-		return
-	}
-
-	// Verify tag exists
-	if _, err := h.tagRepo.GetByID(c.Request.Context(), req.TagID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "tag not found",
-			})
-			return
-		}
-		slog.Error("failed to check tag", "error", err, "tag_id", req.TagID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to add tag to video",
-		})
-		return
-	}
-
-	if err := h.tagRepo.AddVideoTag(c.Request.Context(), videoID, req.TagID); err != nil {
-		if errors.Is(err, model.ErrConflict) {
-			// Silently succeed — idempotent behavior
-			c.JSON(http.StatusOK, model.SuccessResponse{
-				Data: gin.H{"video_id": videoID, "tag_id": req.TagID},
-			})
+		if errors.Is(err, model.ErrNotFound) { // removed between the checks and the insert
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video or tag not found"})
 			return
 		}
 		slog.Error("failed to add video tag", "error", err, "video_id", videoID, "tag_id", req.TagID)
@@ -176,7 +141,12 @@ func (h *TagHandler) AddVideoTag(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, model.SuccessResponse{
+	// Tagging again is idempotent: 200 instead of 201.
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	c.JSON(status, model.SuccessResponse{
 		Data: gin.H{"video_id": videoID, "tag_id": req.TagID},
 	})
 }
@@ -194,7 +164,7 @@ func (h *TagHandler) RemoveVideoTag(c *gin.Context) {
 		return
 	}
 
-	if err := h.tagRepo.RemoveVideoTag(c.Request.Context(), videoID, tagID); err != nil {
+	if err := h.tags.RemoveVideoTag(c.Request.Context(), videoID, tagID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			c.JSON(http.StatusNotFound, model.ErrorResponse{
 				Error:   "not_found",

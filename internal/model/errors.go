@@ -35,3 +35,13 @@ var ErrSourceUnavailable = errors.New("scrape source unavailable")
 // ErrJobItemSkipped 表示 Job 中的一項被略過（例如重複的檔案、Media Source 已停用），
 // 不算成功也不算失敗。
 var ErrJobItemSkipped = errors.New("job item skipped")
+
+// NotFoundError names which resource is missing when an operation touches
+// several (e.g. tagging a Video: the Video or the Tag). It matches ErrNotFound.
+type NotFoundError struct {
+	What string // e.g. "video", "tag"
+}
+
+func (e *NotFoundError) Error() string { return e.What + " not found" }
+
+func (e *NotFoundError) Unwrap() error { return ErrNotFound }

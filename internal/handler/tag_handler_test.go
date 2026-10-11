@@ -11,11 +11,12 @@ import (
 
 	"github.com/steven/vaultflix/internal/mock"
 	"github.com/steven/vaultflix/internal/model"
+	"github.com/steven/vaultflix/internal/service"
 )
 
 func setupTagRouter(tagRepo *mock.TagRepository, videoRepo *mock.VideoRepository) *gin.Engine {
 	r := gin.New()
-	h := NewTagHandler(tagRepo, videoRepo)
+	h := NewTagHandler(service.NewTagService(tagRepo, videoRepo))
 	r.GET("/api/tags", h.List)
 	r.POST("/api/tags", h.Create)
 	r.POST("/api/videos/:id/tags", h.AddVideoTag)
@@ -205,5 +206,21 @@ func TestRemoveVideoTag_Success(t *testing.T) {
 	w := doRequest(r, http.MethodDelete, "/api/videos/v1/tags/5", "")
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
+	}
+}
+
+func TestAddVideoTag_RemovedBeforeInsert(t *testing.T) {
+	// Both exist at the checks, then one is deleted before the insert: the
+	// foreign key turns it into ErrNotFound, which is still a 404.
+	r := setupTagRouter(&mock.TagRepository{
+		GetByIDFunc:     func(context.Context, int) (*model.Tag, error) { return &model.Tag{ID: 3}, nil },
+		AddVideoTagFunc: func(context.Context, string, int) error { return model.ErrNotFound },
+	}, &mock.VideoRepository{
+		GetByIDFunc: func(context.Context, string) (*model.Video, error) { return &model.Video{ID: "v1"}, nil },
+	})
+
+	w := doRequest(r, http.MethodPost, "/api/videos/v1/tags", `{"tag_id":3}`)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404; body=%s", w.Code, w.Body.String())
 	}
 }

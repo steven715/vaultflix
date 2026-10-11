@@ -130,7 +130,7 @@ Repository（資料存取層）
 
 | 層 | 做什麼 | 不做什麼 |
 |---|--------|---------|
-| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯、不跳過 service 直接呼叫 repository |
+| Handler | 解析 HTTP request、呼叫 service、組裝 HTTP response、log error | 不寫 SQL、不直接操作 MinIO、不處理業務邏輯、不跳過 service 直接呼叫 repository（golangci-lint `depguard` 檢查） |
 | Service | 業務邏輯、跨 repository 協調、呼叫外部服務（MinIO） | 不碰 HTTP request/response、不寫 SQL |
 | Repository | 執行 SQL 查詢、回傳 model struct | 不處理業務邏輯、不碰 HTTP、不呼叫其他 repository |
 
