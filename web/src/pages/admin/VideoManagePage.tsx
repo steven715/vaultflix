@@ -13,10 +13,7 @@ import { backfillLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
-import { useJob } from '../../hooks/useJob'
-import { useJobCancel } from '../../hooks/useJobCancel'
-import { backfillJobs, importJobs } from '../../lib/jobKinds'
-import { getErrorMessage } from '../../utils/error'
+import { useMediaLane } from '../../hooks/useMediaLane'
 
 export default function VideoManagePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -90,8 +87,6 @@ export default function VideoManagePage() {
       .catch((err) => { console.warn('failed to load media sources', err); setMediaSources([]) })
   }, [showImport])
 
-  // Import Job: a running one keeps the import dialog open (also when it was
-  // already running as the page opened); finishing goes back to page 1.
   // Show the newest Videos on page 1, loaded once: navigating to the page
   // already shown does not refetch (frontend.md「同路徑重新導航的 refetch」),
   // and a page change commits in a later render than reloadKey would.
@@ -100,39 +95,19 @@ export default function VideoManagePage() {
     else updateParams({ page: '1' })
   }
 
-  // An Import that added Videos shows them; one that added none leaves the
-  // admin where they were.
-  const importJob = useJob(importJobs, {
-    onFinished: (view) => { if (view.counts.succeeded > 0) showFromPageOne() },
+  // The Media Lane's two Jobs. An Import that added Videos shows them; one
+  // that added none leaves the admin where they were. A Backfill changes
+  // Videos in place: reload the page being looked at, quietly.
+  const lane = useMediaLane({
+    onImportFinished: (view) => { if (view.counts.succeeded > 0) showFromPageOne() },
+    onBackfillFinished: () => { quietReloadRef.current = true; setReloadKey((k) => k + 1) },
   })
-  // An adopted job keeps the dialog open until its summary is closed.
-  const importModalOpen = showImport || importJob.view !== null
-  // A Backfill changes Videos in place: reload the page being looked at.
-  const backfillJob = useJob(backfillJobs, {
-    onFinished: () => { quietReloadRef.current = true; setReloadKey((k) => k + 1) },
-  })
-  const cancelImport = useJobCancel(importJob.cancel)
-  const cancelBackfill = useJobCancel(backfillJob.cancel)
-
-  // Import and Backfill share the Media Lane: while one runs, the other's
-  // start control says so instead of drawing a 409.
-  const importBusy = importJob.starting || importJob.view?.phase === 'running'
-  const backfillBusy = backfillJob.starting || backfillJob.view?.phase === 'running'
-  const backfillDisabledReason = importBusy ? '匯入執行中' : backfillBusy ? '補齊執行中' : null
-
-  async function handleStartBackfill(kind: BackfillKind) {
-    const { outcome, error } = await backfillJob.start(kind)
-    if (outcome === 'adopted') toast.error('已有任務進行中')
-    // A busy Media Lane says which Job holds it (e.g. an Import).
-    else if (outcome === 'failed') toast.error(getErrorMessage(error, '啟動 backfill 失敗'))
-  }
+  // An adopted Import keeps the dialog open until its summary is closed.
+  const importModalOpen = showImport || lane.import.view !== null
 
   async function handleStartImport() {
-    if (!selectedSourceID) return
-    const { outcome, error } = await importJob.start(selectedSourceID)
-    if (outcome === 'failed') toast.error(getErrorMessage(error, '匯入啟動失敗'))
+    if (selectedSourceID) await lane.import.start(selectedSourceID)
   }
-
 
   function openEdit(video: VideoWithTags) {
     setEditingVideo(video); setEditTitle(video.title); setEditDesc(video.description)
@@ -192,23 +167,23 @@ export default function VideoManagePage() {
       <h1 className="font-display font-bold tracking-tight text-cream text-xl mb-4">影片庫</h1>
       <LibraryToolbar
         total={total} sortBy={sortBy} sortOrder={sortOrder} tagIdsStr={tagIdsStr}
-        allTags={allTags} selected={selected} backfillDisabledReason={backfillDisabledReason}
+        allTags={allTags} selected={selected} backfillDisabledReason={lane.backfillBlockedReason}
         onSort={(p) => updateParams({ sort_by: p.sort_by, sort_order: p.sort_order, page: '1' })}
         onTagFilter={(tag_ids) => updateParams({ tag_ids, page: '1' })}
-        onStartBackfill={handleStartBackfill}
-        onOpenImport={() => { importJob.dismiss(); setShowImport(true) }}
+        onStartBackfill={(kind) => { void lane.backfill.start(kind) }}
+        onOpenImport={() => { lane.import.dismiss(); setShowImport(true) }}
         onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
         onBatchDelete={handleBatchDelete}
         onClearSelection={() => setSelected([])}
       />
 
-      {backfillJob.view && (
+      {lane.backfill.view && (
         <div className="mb-5">
           <JobProgressPanel
-            view={backfillJob.view}
-            labels={backfillLabels(backfillJob.view.subject as BackfillKind)}
-            onCancel={cancelBackfill}
-            onDismiss={backfillJob.dismiss}
+            view={lane.backfill.view}
+            labels={backfillLabels(lane.backfill.view.subject as BackfillKind)}
+            onCancel={lane.backfill.cancel}
+            onDismiss={lane.backfill.dismiss}
           />
         </div>
       )}
@@ -235,10 +210,10 @@ export default function VideoManagePage() {
       )}
 
       {importModalOpen && (
-        <ImportModal job={importJob.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
-          onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); importJob.dismiss() }}
-          onStartImport={handleStartImport} onCancelImport={cancelImport} onResetImport={importJob.dismiss}
-          startDisabledReason={backfillBusy ? '補齊執行中，完成或取消後再匯入' : null} />
+        <ImportModal job={lane.import.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
+          onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); lane.import.dismiss() }}
+          onStartImport={handleStartImport} onCancelImport={lane.import.cancel} onResetImport={lane.import.dismiss}
+          startDisabledReason={lane.importBlockedReason} />
       )}
 
       {editingVideo && (

@@ -110,7 +110,7 @@ describe('VideoManagePage (library)', () => {
     renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
 
     await waitFor(() => expect(screen.getByRole('button', { name: '補齊 ▾' })).toBeDisabled())
-    expect(screen.getByRole('button', { name: '補齊 ▾' })).toHaveAttribute('title', '匯入執行中')
+    expect(screen.getByRole('button', { name: '補齊 ▾' })).toHaveAttribute('title', '匯入執行中，完成或取消後再補齊')
   })
 
   it('disables 開始匯入 while a Backfill holds the Media Lane', async () => {
