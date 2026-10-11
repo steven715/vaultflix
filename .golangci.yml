@@ -1,5 +1,8 @@
 version: "2"
 
+run:
+  build-tags: [smoke] # also check preview_clip_smoke_test.go
+
 # The mechanical half of CLAUDE.md's Go rules; `task verify` runs it.
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused

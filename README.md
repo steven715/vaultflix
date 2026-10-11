@@ -69,7 +69,7 @@ and [CLAUDE.md](CLAUDE.md). For the native dev workflow you also need:
 | Tool | Why it's needed | Install (macOS) | Install (Windows) | Install (Linux / WSL) |
 |------|-----------------|-----------------|-------------------|------------------------|
 | `task` (go-task) | Single entry point (`task --list`); `task verify` is the Stop-hook gate | `brew install go-task` | `winget install Task.Task` | `sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin` |
-| Go 1.25+ | `task verify` runs `go vet` / `go test`, plus golangci-lint (pinned in `Taskfile.yml`, installed into `.bin/` on first run; [`.golangci.yml`](.golangci.yml)) | `brew install go` | `winget install GoLang.Go` | official tarball into `~/.local/go` ([go.dev/dl](https://go.dev/dl)) |
+| Go 1.25+ | `task verify` runs `go vet` / `go test`, plus golangci-lint (pinned in `Taskfile.yml`, installed into `.bin/` on first run; [`.golangci.yml`](.golangci.yml); on Windows run `task` from Git Bash) | `brew install go` | `winget install GoLang.Go` | official tarball into `~/.local/go` ([go.dev/dl](https://go.dev/dl)) |
 | Node.js 20+ | `task verify` runs `tsc` + `eslint` + `vitest` (web); `npx` runs the Chrome DevTools MCP | `brew install node` | `winget install OpenJS.NodeJS.LTS` | nvm or [nodesource](https://github.com/nodesource/distributions) |
 | `gh` (GitHub CLI) | Push branches and open PRs (`gh auth login` first) | `brew install gh` | `winget install GitHub.cli` | [cli.github.com](https://cli.github.com) (apt repo or release tarball) |
 | Google Chrome | Browser debugging via the Chrome DevTools MCP registered in [`.mcp.json`](.mcp.json) (optional) | `brew install --cask google-chrome` | `winget install Google.Chrome` | distro package |
