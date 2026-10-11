@@ -25,8 +25,9 @@ type keyframeIndexRepo interface {
 	Upsert(ctx context.Context, idx *model.KeyframeIndex) error
 }
 
-// KeyframeService 提供 Keyframe Index 查詢與非同步探測(去重);
-// 對既有 Video 的批次補算見 KeyframeBackfill。
+// KeyframeService 擁有 Keyframe Index:何種 Video 需要它、何時建立。
+// Media Lane 上的 Job(Import、Codec/Keyframe Backfill)以 EnsureIndex 同步建立;
+// 播放時仍缺少的,由 LookupOrProbe 觸發非同步探測(去重)。
 type KeyframeService struct {
 	repo  keyframeIndexRepo
 	probe keyframeProbeFunc
@@ -50,7 +51,7 @@ func NewKeyframeService(repo keyframeIndexRepo) *KeyframeService {
 func (s *KeyframeService) LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error) {
 	idx, err := s.repo.Get(ctx, videoID)
 	if errors.Is(err, model.ErrNotFound) {
-		s.TriggerProbe(videoID, absPath)
+		s.triggerProbe(videoID, absPath)
 		return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrStreamPreparing)
 	}
 	if err != nil {
@@ -59,8 +60,29 @@ func (s *KeyframeService) LookupOrProbe(ctx context.Context, videoID, absPath st
 	return idx.Segments, nil
 }
 
-// TriggerProbe 非同步探測 absPath 並寫入邊界表;同片探測進行中時重複觸發為 no-op。
-func (s *KeyframeService) TriggerProbe(videoID, absPath string) {
+// EnsureIndex builds v's Keyframe Index from absPath when v plays by remux,
+// bounded by probeTimeout; other Play Modes never read one, so it is a no-op
+// for them. Returns a wrapped probe or store error.
+func (s *KeyframeService) EnsureIndex(ctx context.Context, v *model.Video, absPath string) error {
+	if !usesKeyframeIndex(v) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	if err := s.IndexFile(ctx, v.ID, absPath); err != nil {
+		return fmt.Errorf("failed to build keyframe index of video %s: %w", v.ID, err)
+	}
+	return nil
+}
+
+// usesKeyframeIndex reports whether v plays by remux, the only Play Mode that
+// reads a Keyframe Index.
+func usesKeyframeIndex(v *model.Video) bool {
+	return videoPlayMode(v) == model.PlayModeRemux
+}
+
+// triggerProbe 非同步探測 absPath 並寫入邊界表;同片探測進行中時重複觸發為 no-op。
+func (s *KeyframeService) triggerProbe(videoID, absPath string) {
 	s.mu.Lock()
 	if _, busy := s.inflight[videoID]; busy {
 		s.mu.Unlock()

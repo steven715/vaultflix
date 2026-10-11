@@ -119,9 +119,9 @@ func TestTriggerProbe_DedupesConcurrentTriggers(t *testing.T) {
 		return []float64{0, 8}, 16, nil
 	}
 
-	s.TriggerProbe("v1", "/in.avi")
+	s.triggerProbe("v1", "/in.avi")
 	<-probeStarted
-	s.TriggerProbe("v1", "/in.avi") // 探測進行中的重複觸發應被去重
+	s.triggerProbe("v1", "/in.avi") // 探測進行中的重複觸發應被去重
 	close(probeRelease)
 
 	deadline := time.After(2 * time.Second)
@@ -146,5 +146,41 @@ func TestTriggerProbe_DedupesConcurrentTriggers(t *testing.T) {
 	}
 	if repo.upserts != 1 {
 		t.Errorf("upserts = %d, want 1", repo.upserts)
+	}
+}
+
+func TestEnsureIndex_OnlyRemuxVideosGetAnIndex(t *testing.T) {
+	tests := []struct {
+		name      string
+		video     model.Video
+		wantIndex bool
+	}{
+		{"remux", model.Video{ID: "v1", OriginalFilename: "a.mkv", VideoCodec: "h264", AudioCodec: "aac"}, true},
+		{"direct", model.Video{ID: "v1", OriginalFilename: "a.mp4", VideoCodec: "h264", AudioCodec: "aac"}, false},
+		{"transcode", model.Video{ID: "v1", OriginalFilename: "a.wmv", VideoCodec: "wmv3", AudioCodec: "wmav2"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newFakeKeyframeRepo()
+			s := NewKeyframeService(repo)
+			s.probe = func(context.Context, string) ([]float64, float64, error) { return []float64{0, 8}, 16, nil }
+
+			if err := s.EnsureIndex(context.Background(), &tt.video, "/mnt/host/D/a"); err != nil {
+				t.Fatalf("EnsureIndex: %v", err)
+			}
+			if _, got := repo.stored["v1"]; got != tt.wantIndex {
+				t.Errorf("Keyframe Index stored = %v, want %v", got, tt.wantIndex)
+			}
+		})
+	}
+}
+
+func TestEnsureIndex_ProbeFailure(t *testing.T) {
+	s := NewKeyframeService(newFakeKeyframeRepo())
+	s.probe = func(context.Context, string) ([]float64, float64, error) { return nil, 0, errors.New("boom") }
+	v := model.Video{ID: "v1", OriginalFilename: "a.mkv", VideoCodec: "h264", AudioCodec: "aac"}
+
+	if err := s.EnsureIndex(context.Background(), &v, "/mnt/host/D/a.mkv"); err == nil {
+		t.Error("EnsureIndex succeeded although the probe failed")
 	}
 }

@@ -19,7 +19,8 @@ type importFixture struct {
 	svc       *ImportService
 	notifier  *mock.Notifier
 	tool      *mock.MediaTool
-	keyframes *mock.KeyframeProber
+	keyframes *KeyframeService
+	indexes   *fakeKeyframeRepo
 	mu        sync.Mutex
 	created   []model.Video
 }
@@ -32,7 +33,9 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 			t.Fatal(err)
 		}
 	}
-	f := &importFixture{tool: &mock.MediaTool{Dir: t.TempDir(), ProbeOutput: files}, keyframes: &mock.KeyframeProber{}}
+	f := &importFixture{tool: &mock.MediaTool{Dir: t.TempDir(), ProbeOutput: files}, indexes: newFakeKeyframeRepo()}
+	f.keyframes = NewKeyframeService(f.indexes)
+	f.keyframes.probe = func(context.Context, string) ([]float64, float64, error) { return []float64{0, 8}, 16, nil }
 	repo := &mock.VideoRepository{
 		FindBySourceAndPathFunc: func(_ context.Context, _, path string) (*model.Video, error) {
 			for _, dup := range alreadyImported {
@@ -55,7 +58,7 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 	}
 	f.notifier = &mock.Notifier{}
 	f.svc = NewImportService(repo, NewMediaProcessor(f.tool, minio), f.notifier)
-	f.svc.SetKeyframeProber(f.keyframes)
+	f.svc.SetKeyframeIndexer(f.keyframes)
 	return f, &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
 }
 
@@ -116,8 +119,21 @@ func TestImportStartAsync_RegistersEveryNewFile(t *testing.T) {
 	if home := f.video(t, "home.mp4"); home.EnrichmentStatus != model.EnrichmentNoCode || home.MimeType != "video/mp4" {
 		t.Errorf("home.mp4 = %+v", home)
 	}
-	if got := f.keyframes.Files(); len(got) != 1 || got[0] != "DASD-626.mkv" {
-		t.Errorf("Keyframe Index probes = %v, want only the remux DASD-626.mkv", got)
+	if _, ok := f.indexes.stored[mkv.ID]; !ok || len(f.indexes.stored) != 1 {
+		t.Errorf("Keyframe Indexes = %v, want only the remux DASD-626.mkv's", f.indexes.stored)
+	}
+}
+
+// A Video whose Keyframe Index can't be built is still imported: the first
+// play probes it again.
+func TestImportStartAsync_KeyframeIndexFailureStillImports(t *testing.T) {
+	f, source := newImportFixture(t, map[string][]byte{"a.mkv": mock.ProbeJSONFor(10, "h264", "aac")})
+	f.keyframes.probe = func(context.Context, string) ([]float64, float64, error) { return nil, 0, errors.New("ffprobe exit 1") }
+
+	job := f.run(t, source)
+
+	if job.Imported != 1 || job.Failed != 0 || len(f.indexes.stored) != 0 {
+		t.Errorf("job = %+v, indexes %v, want imported without a Keyframe Index", job, f.indexes.stored)
 	}
 }
 

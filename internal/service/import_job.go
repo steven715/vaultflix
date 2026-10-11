@@ -26,14 +26,7 @@ func (im *importItems) Items(ctx context.Context) ([]JobItem, error) {
 	items := make([]JobItem, len(files))
 	for i, path := range files {
 		items[i] = JobItem{ID: path, Name: filepath.Base(path), Run: func(ctx context.Context) error {
-			result := im.svc.processOneFile(ctx, im.source, path)
-			switch result.Status {
-			case "skipped":
-				return model.ErrJobItemSkipped
-			case "error":
-				return errors.New(result.Error)
-			}
-			return nil
+			return im.svc.processOneFile(ctx, im.source, path)
 		}}
 	}
 	return items, nil

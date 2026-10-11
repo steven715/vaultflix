@@ -38,7 +38,7 @@ func TestKeyframeBackfill_ProcessOne_StoresIndex(t *testing.T) {
 		probed = absPath
 		return []float64{0, 8}, 16, nil
 	}
-	v := &model.Video{ID: "remux1", SourceID: strPtr("s1"), FilePath: strPtr("a.avi")}
+	v := remuxAVI()
 
 	if err := b.ProcessOne(context.Background(), v); err != nil {
 		t.Fatalf("ProcessOne: %v", err)
@@ -56,7 +56,7 @@ func TestKeyframeBackfill_ProcessOne_ProbeFailure(t *testing.T) {
 	svc.probe = func(ctx context.Context, absPath string) ([]float64, float64, error) {
 		return nil, 0, errors.New("boom")
 	}
-	v := &model.Video{ID: "remux1", SourceID: strPtr("s1"), FilePath: strPtr("a.avi")}
+	v := remuxAVI()
 
 	if err := b.ProcessOne(context.Background(), v); err == nil {
 		t.Error("ProcessOne succeeded although the probe failed")
@@ -69,9 +69,13 @@ func TestKeyframeBackfill_ProcessOne_DisabledMediaSourceSkipsProbe(t *testing.T)
 		t.Error("ffprobe ran for a Video on a disabled Media Source")
 		return nil, 0, nil
 	}
-	v := &model.Video{ID: "remux1", SourceID: strPtr("s1"), FilePath: strPtr("a.avi")}
+	v := remuxAVI()
 
 	if err := b.ProcessOne(context.Background(), v); !errors.Is(err, model.ErrMediaSourceDisabled) {
 		t.Errorf("err = %v, want ErrMediaSourceDisabled", err)
 	}
+}
+
+func remuxAVI() *model.Video {
+	return &model.Video{ID: "remux1", SourceID: strPtr("s1"), FilePath: strPtr("a.avi"), OriginalFilename: "a.avi", VideoCodec: "h264", AudioCodec: "aac"}
 }

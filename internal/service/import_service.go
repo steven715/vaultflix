@@ -20,17 +20,12 @@ func isSupportedExtension(ext string) bool {
 	return false
 }
 
-type fileResult struct {
-	Status string // "success", "skipped", "error"
-	Error  string
-}
-
 type ImportService struct {
 	videoRepo repository.VideoRepository
 	media     mediaDeriver
 	notifier  websocket.Notifier
-	jobs      jobLane        // runs Import Jobs, one at a time
-	keyframes keyframeProber // optional;nil 時不觸發
+	jobs      jobLane         // runs Import Jobs, one at a time
+	keyframes keyframeIndexer // optional;nil 時不建 Keyframe Index
 }
 
 func NewImportService(videoRepo repository.VideoRepository, media mediaDeriver, notifier websocket.Notifier) *ImportService {
@@ -42,14 +37,9 @@ func NewImportService(videoRepo repository.VideoRepository, media mediaDeriver, 
 	}
 }
 
-// keyframeProber 觸發影片的非同步 keyframe 探測(由 *KeyframeService 實作)。
-type keyframeProber interface {
-	TriggerProbe(videoID, absPath string)
-}
-
-// SetKeyframeProber 注入 keyframe prober(比照 VideoService.SetUserServices 的後注入模式)。
-func (s *ImportService) SetKeyframeProber(p keyframeProber) {
-	s.keyframes = p
+// SetKeyframeIndexer 注入 Keyframe Index 的建立者(比照 VideoService.SetUserServices 的後注入模式)。
+func (s *ImportService) SetKeyframeIndexer(k keyframeIndexer) {
+	s.keyframes = k
 }
 
 // UseJobRunner runs Import Jobs on r, the Media Lane shared with Backfill

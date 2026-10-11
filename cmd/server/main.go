@@ -181,7 +181,7 @@ func main() {
 	keyframeService := service.NewKeyframeService(keyframeIndexRepo)
 	hlsService := service.NewHLSService(videoService, keyframeService, segmentCache)
 	hlsHandler := handler.NewHLSHandler(hlsService)
-	importService.SetKeyframeProber(keyframeService)
+	importService.SetKeyframeIndexer(keyframeService)
 
 	authHandler := handler.NewAuthHandler(authService)
 	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
@@ -197,7 +197,7 @@ func main() {
 
 	backfillRunner := service.NewBackfillRunner(hub, map[model.BackfillKind]service.BackfillTask{
 		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, mediaProcessor),
-		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService, mediaProcessor),
+		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService, mediaProcessor, keyframeService),
 		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
 		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
 	})

@@ -127,6 +127,10 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 
 Media Info、Thumbnail、Preview 的產生只能呼叫 `service.MediaProcessor`（`ProbeMediaInfo` / `MakeThumbnail` / `MakePreview`），不在 Import 或 Backfill 裡直接 `exec` ffprobe/ffmpeg。它擁有 ffprobe 解析、MIME 規則、暫存檔清理、object key 與上傳；碰 `exec` 的只有它的 `mediaTool` port 的正式 adapter（`FFmpegTool`，Preview 剪輯細節在它呼叫的 `preview_clip.go`），測試換成 `mock.MediaTool`。串流專用的 keyframe 探測與 HLS Segment 切割留在 `internal/streaming`，各有自己的 seam。
 
+### Keyframe Index 何時建立，只由 `KeyframeService` 決定
+
+產生或改變 Video Play Mode 依據（容器、codec）的 Job 項目，完成後呼叫 `KeyframeService.EnsureIndex(ctx, video, absPath)`，不自己判斷「是不是 remux」：非 remux 時它是 no-op。目前呼叫者是 Import、Codec Backfill、Keyframe Backfill，都在 Media Lane 的項目內**同步**執行，所以探測與其他 ffmpeg 工作一樣一次只跑一個（ADR-0014）。Import 與 Codec Backfill 的主要產物（Video、codec）已寫入，建立失敗只記 warn、不讓項目失敗（Keyframe Backfill 則算失敗）：首次播放時 `LookupOrProbe` 會再觸發探測（唯一的非同步路徑，per-video 去重）。新增會改變 Play Mode 的流程時，比照呼叫 `EnsureIndex`，不要另開 goroutine。
+
 ### Input seek 落點不可信，邊界在輸出端裁定
 
 ffmpeg CLI 的 input seek（`-ss` 在 `-i` 前）落點**不保證**等於請求的時間：對含 B-frames 的輸入（`video_delay > 0`）它會把目標自動減 3/23s（dts heuristic），在 mkv 上因此系統性落到前一個 keyframe。這不是浮點精度問題，加 epsilon 無效。
