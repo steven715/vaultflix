@@ -23,7 +23,7 @@
   - [ ] **Enrichment 第 ②③ 階段** — 第 ① 階段（Scraper：javbus / avid，以 Code 比對，產出 Metadata Suggestion 待審）已完成（PR #17/#18）。尚待：
     - ② LLM（Claude API）依 Metadata 產出 Suggestion
     - ③（選用）抽幀畫面分析產出 Suggestion
-    - 前提：依 ADR-0010，所有來源一律只產 Suggestion、不自動套用；LLM 設計前先完成下方「Performer / Maker 遷移」，否則 LLM 不知道演員該進 Tag 還是 Performer。
+    - 前提：依 ADR-0010，所有來源一律只產 Suggestion、不自動套用；LLM 設計前先完成「程式碼對齊術語表」中的「Performer / Maker 遷移」，否則 LLM 不知道演員該進 Tag 還是 Performer。
   - [ ] **前端 Enrichment UI** — 後端 `/enrich`、`/suggestions`、`/enrich-jobs` 已存在，前端完全沒有對應 UI（types 也沒有）。需要：Suggestion 審核介面、Performer 頁 / Avatar、卡片顯示 **Cover 優先、Thumbnail 後備**（GLOSSARY.md 已定此規則，`PosterThumb` 目前只吃 thumbnail）。
 
 ### 其他未來功能
