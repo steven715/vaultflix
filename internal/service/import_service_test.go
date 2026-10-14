@@ -41,8 +41,8 @@ func newBlockedImport(t *testing.T, n int) *blockedImport {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	b.svc = newTestImportService(repo, &mock.Notifier{})
-	b.source = &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
+	b.source = &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount, Enabled: true}
+	b.svc = newTestImportService(repo, &mock.Notifier{}, b.source)
 	b.release = func() { released.Do(func() { close(gate) }) }
 	t.Cleanup(b.release)
 	return b
@@ -51,7 +51,7 @@ func newBlockedImport(t *testing.T, n int) *blockedImport {
 // start launches the Import Job and waits until its first file is in progress.
 func (b *blockedImport) start(t *testing.T) *model.ImportJob {
 	t.Helper()
-	job, err := b.svc.StartAsync(context.Background(), b.source, "user-1")
+	job, err := b.svc.StartAsync(context.Background(), b.source.ID, "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestGetActiveJob_None(t *testing.T) {
 func TestStartAsync_Conflict(t *testing.T) {
 	svc, _, _ := startBlockedImport(t)
 
-	_, err := svc.StartAsync(context.Background(), &model.MediaSource{ID: "src-2", MountPath: t.TempDir()}, "user-1")
+	_, err := svc.StartAsync(context.Background(), "src-1", "user-1")
 	if !errors.Is(err, model.ErrConflict) {
 		t.Errorf("expected ErrConflict, got %v", err)
 	}
@@ -133,15 +133,16 @@ func TestStartAsync_Conflict(t *testing.T) {
 
 func TestStartAsync_EmptyDirectory(t *testing.T) {
 	notifier := &mock.Notifier{}
-	svc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	source := &model.MediaSource{
 		ID:        "src-1",
 		Label:     "Empty Source",
+		Enabled:   true,
 		MountPath: t.TempDir(),
 	}
+	svc := newTestImportService(&mock.VideoRepository{}, notifier, source)
 
-	job, err := svc.StartAsync(context.Background(), source, "user-1")
+	job, err := svc.StartAsync(context.Background(), source.ID, "user-1")
 	if err != nil {
 		t.Fatalf("StartAsync failed: %v", err)
 	}
@@ -182,15 +183,16 @@ func TestStartAsync_EmptyDirectory(t *testing.T) {
 
 func TestStartAsync_ScanError(t *testing.T) {
 	notifier := &mock.Notifier{}
-	svc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	source := &model.MediaSource{
 		ID:        "src-1",
 		Label:     "Bad Source",
+		Enabled:   true,
 		MountPath: "/nonexistent/path/that/does/not/exist",
 	}
+	svc := newTestImportService(&mock.VideoRepository{}, notifier, source)
 
-	job, err := svc.StartAsync(context.Background(), source, "user-1")
+	job, err := svc.StartAsync(context.Background(), source.ID, "user-1")
 	if err != nil {
 		t.Fatalf("StartAsync failed: %v", err)
 	}
@@ -249,11 +251,38 @@ func TestCancel_UnknownImportJob(t *testing.T) {
 	}
 }
 
-// newTestImportService is an ImportService on a Job Lane of its own that builds
-// no Keyframe Index.
-func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier) *ImportService {
+// newTestImportService is an ImportService on a Job Lane of its own that knows
+// only sources and builds no Keyframe Index.
+func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier, sources ...*model.MediaSource) *ImportService {
 	return NewImportService(ImportServiceDeps{
-		Videos: repo, Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
+		Videos: repo, Sources: mock.MediaSources(sources), Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
 		Lane: NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
 	})
+}
+
+// An Import reads its Media Source's directory, so a disabled or unknown
+// Media Source starts no Import Job.
+func TestStartAsync_UnusableMediaSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		sources mock.MediaSources
+		want    error
+	}{
+		{"disabled", mock.MediaSources{{ID: "src-1", MountPath: t.TempDir(), Enabled: false}}, model.ErrMediaSourceDisabled},
+		{"unknown", nil, model.ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestImportService(&mock.VideoRepository{}, &mock.Notifier{}, tt.sources...)
+
+			_, err := svc.StartAsync(context.Background(), "src-1", "user-1")
+
+			if !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+			if svc.GetActiveJob() != nil {
+				t.Error("an Import Job started")
+			}
+		})
+	}
 }

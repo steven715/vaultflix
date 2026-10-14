@@ -293,15 +293,8 @@ func TestImportHandler_MissingSourceID(t *testing.T) {
 }
 
 func TestImportHandler_SourceNotFound(t *testing.T) {
-	mediaSourceRepo := &mock.MediaSourceRepository{
-		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
-			return nil, model.ErrNotFound
-		},
-	}
-	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
-
 	r := gin.New()
-	h := NewVideoHandler(nil, nil, mediaSourceSvc, "")
+	h := NewVideoHandler(newTestImportService(&mock.VideoRepository{}, &mock.Notifier{}), nil, nil, "")
 	r.POST("/api/videos/import", h.Import)
 
 	body := strings.NewReader(`{"source_id": "nonexistent-id"}`)
@@ -324,20 +317,11 @@ func TestImportHandler_SourceNotFound(t *testing.T) {
 }
 
 func TestImportHandler_SourceDisabled(t *testing.T) {
-	mediaSourceRepo := &mock.MediaSourceRepository{
-		FindByIDFunc: func(ctx context.Context, id string) (*model.MediaSource, error) {
-			return &model.MediaSource{
-				ID:        "src-1",
-				Label:     "Test",
-				MountPath: "/mnt/host/videos",
-				Enabled:   false,
-			}, nil
-		},
-	}
-	mediaSourceSvc := service.NewMediaSourceService(mediaSourceRepo, "/mnt/host/")
+	importSvc := newTestImportService(&mock.VideoRepository{}, &mock.Notifier{},
+		&model.MediaSource{ID: "src-1", Label: "Test", MountPath: "/mnt/host/videos", Enabled: false})
 
 	r := gin.New()
-	h := NewVideoHandler(nil, nil, mediaSourceSvc, "")
+	h := NewVideoHandler(importSvc, nil, nil, "")
 	r.POST("/api/videos/import", h.Import)
 
 	body := strings.NewReader(`{"source_id": "src-1"}`)
@@ -346,8 +330,8 @@ func TestImportHandler_SourceDisabled(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d, body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d, body: %s", w.Code, w.Body.String())
 	}
 
 	var resp model.ErrorResponse
@@ -674,8 +658,11 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	importSvc := newTestImportService(repo, &mock.Notifier{})
-	if _, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "test-user"); err != nil {
+	importSvc := newTestImportService(repo, &mock.Notifier{},
+		&model.MediaSource{ID: "src-0", MountPath: mount, Enabled: true},
+		&model.MediaSource{ID: "src-1", Label: "Test", MountPath: "/tmp", Enabled: true},
+	)
+	if _, err := importSvc.StartAsync(context.Background(), "src-0", "test-user"); err != nil {
 		t.Fatal(err)
 	}
 	<-inFile
@@ -738,8 +725,8 @@ func TestCancelImportJobHandler_RunningJob(t *testing.T) {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	importSvc := newTestImportService(repo, &mock.Notifier{})
-	job, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "u")
+	importSvc := newTestImportService(repo, &mock.Notifier{}, &model.MediaSource{ID: "src-0", MountPath: mount, Enabled: true})
+	job, err := importSvc.StartAsync(context.Background(), "src-0", "u")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,11 +781,11 @@ func TestGetImportJobHandler_NotFound(t *testing.T) {
 	}
 }
 
-// newTestImportService is an ImportService on a Job Lane of its own that builds
-// no Keyframe Index.
-func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier) *service.ImportService {
+// newTestImportService is an ImportService on a Job Lane of its own that knows
+// only sources and builds no Keyframe Index.
+func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier, sources ...*model.MediaSource) *service.ImportService {
 	return service.NewImportService(service.ImportServiceDeps{
-		Videos: repo, Media: service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
+		Videos: repo, Sources: mock.MediaSources(sources), Media: service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
 		Lane: service.NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
 	})
 }

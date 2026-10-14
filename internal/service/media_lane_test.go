@@ -9,11 +9,18 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-func mediaLaneDeps(t *testing.T, repo *mock.VideoRepository) MediaLaneDeps {
+// laneSources is a Media Source lookup plus a file resolver, as
+// MediaSourceService is both.
+type laneSources struct {
+	mock.MediaSources
+	*mock.MediaFileResolver
+}
+
+func mediaLaneDeps(t *testing.T, repo *mock.VideoRepository, sources ...*model.MediaSource) MediaLaneDeps {
 	t.Helper()
 	return MediaLaneDeps{
 		Videos:    repo,
-		Files:     mock.ResolveUnder(t.TempDir()),
+		Sources:   laneSources{MediaSources: sources, MediaFileResolver: mock.ResolveUnder(t.TempDir())},
 		Media:     NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
 		Keyframes: NewKeyframeService(newFakeKeyframeRepo()),
 		Notifier:  &mock.Notifier{},
@@ -32,14 +39,15 @@ func TestNewMediaLane_ImportAndBackfillShareTheLane(t *testing.T) {
 			return nil, nil
 		},
 	}
-	lane := NewMediaLane(mediaLaneDeps(t, repo))
+	source := &model.MediaSource{ID: "src-1", MountPath: t.TempDir(), Enabled: true}
+	lane := NewMediaLane(mediaLaneDeps(t, repo, source))
 	if _, err := lane.Backfill.Start(context.Background(), model.BackfillCode, "user-1"); err != nil {
 		t.Fatalf("Backfill Start: %v", err)
 	}
 	defer close(gate)
 	<-listing
 
-	_, err := lane.Import.StartAsync(context.Background(), &model.MediaSource{ID: "src-1", MountPath: t.TempDir()}, "user-1")
+	_, err := lane.Import.StartAsync(context.Background(), source.ID, "user-1")
 
 	var busy *JobLaneBusyError
 	if !errors.As(err, &busy) || busy.RunningKind != JobKindBackfill {
@@ -61,7 +69,7 @@ func TestNewMediaLane_ServesEveryBackfillKind(t *testing.T) {
 // instead of degrading silently or crashing in the middle of a Job.
 func TestNewImportService_MissingDependencyPanics(t *testing.T) {
 	full := ImportServiceDeps{
-		Videos: &mock.VideoRepository{}, Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
+		Videos: &mock.VideoRepository{}, Sources: mock.MediaSources{}, Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
 		Notifier: &mock.Notifier{}, Lane: NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
 	}
 	tests := []struct {
@@ -126,7 +134,7 @@ func TestMediaLane_BackfillBlocksImport(t *testing.T) {
 	}
 	defer close(gate)
 
-	_, err = b.svc.StartAsync(context.Background(), b.source, "user-1")
+	_, err = b.svc.StartAsync(context.Background(), b.source.ID, "user-1")
 	var busy *JobLaneBusyError
 	if !errors.As(err, &busy) || busy.RunningKind != JobKindBackfill {
 		t.Fatalf("Import Start = %v, want a busy lane naming the Backfill Job", err)

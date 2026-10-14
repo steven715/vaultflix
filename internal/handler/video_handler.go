@@ -61,44 +61,9 @@ func (h *VideoHandler) Import(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	source, err := h.mediaSourceService.GetByID(ctx, req.SourceID)
+	job, err := h.importService.StartAsync(ctx, req.SourceID, c.GetString("user_id"))
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "media source not found",
-			})
-			return
-		}
-		slog.Error("failed to get media source", "error", err, "source_id", req.SourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get media source",
-		})
-		return
-	}
-
-	if !source.Enabled {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "source_disabled",
-			Message: "media source is currently disabled",
-		})
-		return
-	}
-
-	userID := c.GetString("user_id")
-
-	job, err := h.importService.StartAsync(ctx, source, userID)
-	if err != nil {
-		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, jobLaneBusy(err))
-			return
-		}
-		slog.Error("failed to start import", "error", err, "source_id", req.SourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to start import",
-		})
+		writeImportStartError(c, req.SourceID, err)
 		return
 	}
 
@@ -345,6 +310,22 @@ func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
 	}
 
 	return filter, nil
+}
+
+// writeImportStartError maps ImportService.StartAsync errors to the Import
+// endpoint's HTTP responses; anything else is logged as a 500.
+func writeImportStartError(c *gin.Context, sourceID string, err error) {
+	switch {
+	case errors.Is(err, model.ErrNotFound):
+		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "media source not found"})
+	case errors.Is(err, model.ErrMediaSourceDisabled):
+		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_disabled", Message: "media source is currently disabled"})
+	case errors.Is(err, model.ErrConflict):
+		c.JSON(http.StatusConflict, jobLaneBusy(err))
+	default:
+		slog.Error("failed to start import", "error", err, "source_id", sourceID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to start import"})
+	}
 }
 
 // writeStreamResolveError maps VideoService.ResolvePlayback errors to the
