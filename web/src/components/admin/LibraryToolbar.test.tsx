@@ -4,7 +4,7 @@ import LibraryToolbar from './LibraryToolbar'
 
 function toolbar(over: Partial<Parameters<typeof LibraryToolbar>[0]> = {}) {
   const props = {
-    total: 1, sortBy: 'created_at' as const, sortOrder: 'desc' as const, tagIdsStr: '', allTags: [], selected: [],
+    total: 1, sortBy: 'created_at' as const, sortOrder: 'desc' as const, tagIds: [], allTags: [], selected: [],
     backfillDisabledReason: null, onSort: vi.fn(), onTagFilter: vi.fn(), onStartBackfill: vi.fn(),
     onOpenImport: vi.fn(), onBatchTag: vi.fn(), onBatchDelete: vi.fn(), onClearSelection: vi.fn(),
     ...over,

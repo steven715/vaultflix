@@ -88,6 +88,10 @@ const items = await listRecommendationsByDate(selectedDate)
 setRecs(items)
 ```
 
+## 片庫的 URL 參數用 `useLibraryParams`
+
+片庫查詢（頁碼、排序、搜尋字串、Tag 篩選）存在 URL，讀寫一律經 `hooks/useLibraryParams`，不要在頁面裡手寫 `searchParams.get` 與 `setSearchParams`。它套用後端的預設值（第 1 頁、每頁 20、最新在前），而且**任何排序或篩選的改變都回到第 1 頁**：舊頁碼指向的是另一份清單（影片管理頁的欄位排序曾經停在原頁碼）。元件只回報使用者點了哪一欄、選了哪些 Tag，排序方向與換頁由 hook 決定。
+
 ## 假時鐘測試：前置條件要用 tick 逼出來，不要靠真實時間燒過去
 
 `vi.useFakeTimers({ shouldAdvanceTime: true })` 讓假時鐘跟著真實時間前進，方便 awaited 的資料載入正常解析。代價是：**任何「靠這段等待剛好燒掉 N 毫秒」才成立的前置條件都是 flaky**，會隨機器快慢、CI 負載翻面 —— 同一份 tree 可以一次綠一次紅。

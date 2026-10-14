@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
 import type { BackfillKind, TagWithCount } from '../../types'
-import { parseTagIds, serializeTagIds, toggleTagId, toggleSort } from '../../lib/libraryParams'
+import { toggleTagId } from '../../lib/libraryParams'
 import { backfillKindName, backfillMenu } from '../../lib/jobLabels'
 
 interface SortChip {
@@ -20,13 +20,14 @@ interface LibraryToolbarProps {
   total: number
   sortBy: LibrarySortBy
   sortOrder: SortOrder
-  tagIdsStr: string
+  tagIds: number[]
   allTags: TagWithCount[]
   selected: string[]
   /** Why Backfill cannot start now (e.g. an Import holds the Media Lane); null when it can. */
   backfillDisabledReason: string | null
-  onSort: (params: { sort_by: string; sort_order: string }) => void
-  onTagFilter: (tag_ids: string) => void
+  /** A sort chip was clicked; the page decides the order (useLibraryParams.sortByColumn). */
+  onSort: (col: LibrarySortBy) => void
+  onTagFilter: (tagIds: number[]) => void
   onStartBackfill: (kind: BackfillKind) => void
   onOpenImport: () => void
   onBatchTag: () => void
@@ -38,7 +39,7 @@ export default function LibraryToolbar({
   total,
   sortBy,
   sortOrder,
-  tagIdsStr,
+  tagIds: selectedTagIds,
   allTags,
   selected,
   backfillDisabledReason,
@@ -50,20 +51,8 @@ export default function LibraryToolbar({
   onBatchDelete,
   onClearSelection,
 }: LibraryToolbarProps) {
-  const selectedTagIds = parseTagIds(tagIdsStr)
-
-  function handleSortChip(value: LibrarySortBy) {
-    const next = toggleSort({ by: sortBy, order: sortOrder }, value)
-    onSort({ sort_by: next.by, sort_order: next.order })
-  }
-
   function handleTagChip(id: number | null) {
-    if (id === null) {
-      onTagFilter('')
-      return
-    }
-    const next = toggleTagId(selectedTagIds, id)
-    onTagFilter(serializeTagIds(next))
+    onTagFilter(id === null ? [] : toggleTagId(selectedTagIds, id))
   }
 
   return (
@@ -77,7 +66,7 @@ export default function LibraryToolbar({
             return (
               <button
                 key={chip.value}
-                onClick={() => handleSortChip(chip.value)}
+                onClick={() => onSort(chip.value)}
                 className={`text-xs px-2.5 py-1 rounded-btn transition-colors ${
                   active
                     ? 'bg-accent text-accent-ink'

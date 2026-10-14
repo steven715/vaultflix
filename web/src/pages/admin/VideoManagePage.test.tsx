@@ -133,4 +133,17 @@ describe('VideoManagePage (library)', () => {
     await screen.findByText(/補齊 Keyframe Index 中/)
     expect(screen.queryByRole('button', { name: '關閉' })).toBeNull()
   })
+  // Sorting by a column changes the whole order: staying on page 3 would show
+  // an arbitrary slice of it.
+  it('goes back to page 1 when sorting by a column', async () => {
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library?page=3' })
+    await screen.findByText('片A')
+    expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3 }))
+
+    fireEvent.click(screen.getByRole('columnheader', { name: /影片/ }))
+
+    await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, sort_by: 'title', sort_order: 'desc' }),
+    ))
+  })
 })
