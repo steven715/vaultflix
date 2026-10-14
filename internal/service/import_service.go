@@ -24,28 +24,52 @@ type ImportService struct {
 	videoRepo repository.VideoRepository
 	media     mediaDeriver
 	notifier  websocket.Notifier
-	jobs      jobLane         // runs Import Jobs, one at a time
-	keyframes keyframeIndexer // optional;nil 時不建 Keyframe Index
+	jobs      jobLane
+	keyframes keyframeIndexer
 }
 
-func NewImportService(videoRepo repository.VideoRepository, media mediaDeriver, notifier websocket.Notifier) *ImportService {
+// ImportServiceDeps is what an ImportService runs on; every field is required.
+type ImportServiceDeps struct {
+	Videos   repository.VideoRepository
+	Media    mediaDeriver
+	Notifier websocket.Notifier
+	// Lane runs the Import Jobs; in production the Media Lane shared with
+	// Backfill Jobs (see NewMediaLane).
+	Lane jobLane
+	// Keyframes builds the Keyframe Index of each new remux Video.
+	Keyframes keyframeIndexer
+}
+
+// NewImportService creates an ImportService. Production code gets one from
+// NewMediaLane. Panics when a dependency is missing: a wiring mistake that
+// must stop the server at startup, not crash it in the middle of a Job.
+func NewImportService(d ImportServiceDeps) *ImportService {
+	if m := d.missing(); m != "" {
+		panic("service.NewImportService: missing " + m)
+	}
 	return &ImportService{
-		videoRepo: videoRepo,
-		media:     media,
-		notifier:  notifier,
-		jobs:      NewJobRunner(),
+		videoRepo: d.Videos,
+		media:     d.Media,
+		notifier:  d.Notifier,
+		jobs:      d.Lane,
+		keyframes: d.Keyframes,
 	}
 }
 
-// SetKeyframeIndexer 注入 Keyframe Index 的建立者(比照 VideoService.SetUserServices 的後注入模式)。
-func (s *ImportService) SetKeyframeIndexer(k keyframeIndexer) {
-	s.keyframes = k
-}
-
-// UseJobRunner runs Import Jobs on r, the Media Lane shared with Backfill
-// Jobs, instead of a runner of their own.
-func (s *ImportService) UseJobRunner(r *JobRunner) {
-	s.jobs = r
+func (d ImportServiceDeps) missing() string {
+	switch {
+	case d.Videos == nil:
+		return "Videos"
+	case d.Media == nil:
+		return "Media"
+	case d.Notifier == nil:
+		return "Notifier"
+	case d.Lane == nil:
+		return "Lane"
+	case d.Keyframes == nil:
+		return "Keyframes"
+	}
+	return ""
 }
 
 // JobKindImport tags Import Jobs on the JobRunner.
