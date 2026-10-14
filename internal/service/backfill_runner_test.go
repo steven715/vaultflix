@@ -47,7 +47,7 @@ func TestBackfillRunner_Start_CountsEachOutcome(t *testing.T) {
 			return nil
 		},
 	}
-	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillCodec: task})
+	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillCodec: task}, NewJobRunner())
 
 	job, err := r.Start(context.Background(), model.BackfillCodec, "user-1")
 	if err != nil {
@@ -68,7 +68,7 @@ func TestBackfillRunner_Start_CountsEachOutcome(t *testing.T) {
 }
 
 func TestBackfillRunner_Start_UnknownKind(t *testing.T) {
-	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{})
+	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{}, NewJobRunner())
 	if _, err := r.Start(context.Background(), "thumbnail", "user-1"); !errors.Is(err, model.ErrInvalidInput) {
 		t.Errorf("err = %v, want ErrInvalidInput", err)
 	}
@@ -84,7 +84,7 @@ func TestBackfillRunner_Start_ConflictWhileAnyKindRuns(t *testing.T) {
 	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{
 		model.BackfillKeyframe: slow,
 		model.BackfillCode:     &mock.BackfillTask{},
-	})
+	}, NewJobRunner())
 	job, err := r.Start(context.Background(), model.BackfillKeyframe, "user-1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -104,7 +104,7 @@ func TestBackfillRunner_Cancel_StopsBetweenVideos(t *testing.T) {
 		<-release
 		return nil
 	}}
-	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillPreview: task})
+	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillPreview: task}, NewJobRunner())
 	job, err := r.Start(context.Background(), model.BackfillPreview, "user-1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -122,7 +122,7 @@ func TestBackfillRunner_Cancel_StopsBetweenVideos(t *testing.T) {
 }
 
 func TestBackfillRunner_Cancel_UnknownJob(t *testing.T) {
-	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{})
+	r := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{}, NewJobRunner())
 	if err := r.Cancel(context.Background(), "nope"); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
@@ -132,7 +132,7 @@ func TestBackfillRunner_Start_ListFailureFailsJob(t *testing.T) {
 	notifier := &mock.Notifier{}
 	r := NewBackfillRunner(notifier, map[model.BackfillKind]BackfillTask{
 		model.BackfillCode: &mock.BackfillTask{ListErr: errors.New("db down")},
-	})
+	}, NewJobRunner())
 	job, err := r.Start(context.Background(), model.BackfillCode, "user-1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -147,7 +147,7 @@ func TestBackfillRunner_Start_ProgressCarriesKind(t *testing.T) {
 	notifier := &mock.Notifier{}
 	r := NewBackfillRunner(notifier, map[model.BackfillKind]BackfillTask{
 		model.BackfillKeyframe: &mock.BackfillTask{Videos: videosNamed("a", "b")},
-	})
+	}, NewJobRunner())
 	job, err := r.Start(context.Background(), model.BackfillKeyframe, "user-1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -193,7 +193,7 @@ func TestBackfillRunner_Start_ProgressCarriesJobCounts(t *testing.T) {
 		}
 		return nil
 	}}
-	r := NewBackfillRunner(notifier, map[model.BackfillKind]BackfillTask{model.BackfillCodec: task})
+	r := NewBackfillRunner(notifier, map[model.BackfillKind]BackfillTask{model.BackfillCodec: task}, NewJobRunner())
 	job, err := r.Start(context.Background(), model.BackfillCodec, "user-1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)

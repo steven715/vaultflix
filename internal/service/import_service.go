@@ -24,28 +24,31 @@ type ImportService struct {
 	videoRepo repository.VideoRepository
 	media     mediaDeriver
 	notifier  websocket.Notifier
-	jobs      jobLane         // runs Import Jobs, one at a time
-	keyframes keyframeIndexer // optional;nil 時不建 Keyframe Index
+	jobs      jobLane
+	keyframes keyframeIndexer
 }
 
-func NewImportService(videoRepo repository.VideoRepository, media mediaDeriver, notifier websocket.Notifier) *ImportService {
+// ImportServiceDeps is what an ImportService runs on; every field is required.
+type ImportServiceDeps struct {
+	Videos   repository.VideoRepository
+	Media    mediaDeriver
+	Notifier websocket.Notifier
+	// Lane runs the Import Jobs; in production the Media Lane shared with
+	// Backfill Jobs (see NewMediaPipeline).
+	Lane      jobLane
+	Keyframes keyframeIndexer
+}
+
+// NewImportService creates an ImportService. Production code gets one from
+// NewMediaPipeline, which puts it on the Media Lane.
+func NewImportService(d ImportServiceDeps) *ImportService {
 	return &ImportService{
-		videoRepo: videoRepo,
-		media:     media,
-		notifier:  notifier,
-		jobs:      NewJobRunner(),
+		videoRepo: d.Videos,
+		media:     d.Media,
+		notifier:  d.Notifier,
+		jobs:      d.Lane,
+		keyframes: d.Keyframes,
 	}
-}
-
-// SetKeyframeIndexer 注入 Keyframe Index 的建立者(比照 VideoService.SetUserServices 的後注入模式)。
-func (s *ImportService) SetKeyframeIndexer(k keyframeIndexer) {
-	s.keyframes = k
-}
-
-// UseJobRunner runs Import Jobs on r, the Media Lane shared with Backfill
-// Jobs, instead of a runner of their own.
-func (s *ImportService) UseJobRunner(r *JobRunner) {
-	s.jobs = r
 }
 
 // JobKindImport tags Import Jobs on the JobRunner.

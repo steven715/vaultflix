@@ -18,7 +18,6 @@ import (
 	"github.com/steven/vaultflix/internal/config"
 	"github.com/steven/vaultflix/internal/handler"
 	"github.com/steven/vaultflix/internal/middleware"
-	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/repository"
 	"github.com/steven/vaultflix/internal/scraper"
 	"github.com/steven/vaultflix/internal/service"
@@ -139,7 +138,6 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiryHours, cfg.StreamTokenExpiryMinutes)
 	userService := service.NewUserService(userRepo)
 	mediaProcessor := service.NewMediaProcessor(service.NewFFmpegTool(), minioService)
-	importService := service.NewImportService(videoRepo, mediaProcessor, hub)
 	mediaSourceService := service.NewMediaSourceService(mediaSourceRepo, service.AllowedMountPrefix)
 	videoService := service.NewVideoService(videoRepo, mediaSourceService, tagRepo, minioService)
 	historyService := service.NewWatchHistoryService(historyRepo, videoRepo, minioService)
@@ -181,10 +179,15 @@ func main() {
 	keyframeService := service.NewKeyframeService(keyframeIndexRepo)
 	hlsService := service.NewHLSService(videoService, keyframeService, segmentCache)
 	hlsHandler := handler.NewHLSHandler(hlsService)
-	importService.SetKeyframeIndexer(keyframeService)
+
+	// Import and Backfill Jobs share the Media Lane (ADR-0014). Enrichment Jobs
+	// keep a lane of their own.
+	media := service.NewMediaPipeline(service.MediaPipelineDeps{
+		Videos: videoRepo, Files: mediaSourceService, Media: mediaProcessor, Keyframes: keyframeService, Notifier: hub,
+	})
 
 	authHandler := handler.NewAuthHandler(authService)
-	videoHandler := handler.NewVideoHandler(importService, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
+	videoHandler := handler.NewVideoHandler(media.Import, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
 	tagHandler := handler.NewTagHandler(service.NewTagService(tagRepo, videoRepo))
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
@@ -195,18 +198,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
-	backfillRunner := service.NewBackfillRunner(hub, map[model.BackfillKind]service.BackfillTask{
-		model.BackfillPreview:  service.NewPreviewBackfill(videoRepo, mediaSourceService, mediaProcessor),
-		model.BackfillCodec:    service.NewCodecBackfill(videoRepo, mediaSourceService, mediaProcessor, keyframeService),
-		model.BackfillKeyframe: service.NewKeyframeBackfill(keyframeService, videoRepo, mediaSourceService),
-		model.BackfillCode:     service.NewCodeBackfill(videoRepo),
-	})
-	// The Media Lane: Import and Backfill Jobs share disks and ffmpeg, so one
-	// runs at a time (ADR-0014). Enrichment Jobs keep a lane of their own.
-	mediaLane := service.NewJobRunner()
-	importService.UseJobRunner(mediaLane)
-	backfillRunner.UseJobRunner(mediaLane)
-	backfillHandler := handler.NewBackfillHandler(backfillRunner)
+	backfillHandler := handler.NewBackfillHandler(media.Backfill)
 
 	wsHandler := handler.NewWSHandler(hub)
 

@@ -674,7 +674,7 @@ func TestImportHandler_Async_Conflict(t *testing.T) {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	importSvc := service.NewImportService(repo, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	importSvc := newTestImportService(repo, &mock.Notifier{})
 	if _, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "test-user"); err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +718,7 @@ func serveImportCancel(importSvc *service.ImportService, jobID string) *httptest
 }
 
 func TestCancelImportJobHandler_UnknownJob(t *testing.T) {
-	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	importSvc := newTestImportService(&mock.VideoRepository{}, &mock.Notifier{})
 	if w := serveImportCancel(importSvc, "nope"); w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
 	}
@@ -738,7 +738,7 @@ func TestCancelImportJobHandler_RunningJob(t *testing.T) {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	importSvc := service.NewImportService(repo, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	importSvc := newTestImportService(repo, &mock.Notifier{})
 	job, err := importSvc.StartAsync(context.Background(), &model.MediaSource{ID: "src-0", MountPath: mount}, "u")
 	if err != nil {
 		t.Fatal(err)
@@ -752,7 +752,7 @@ func TestCancelImportJobHandler_RunningJob(t *testing.T) {
 
 func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
 	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	importSvc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	r := gin.New()
 	h := NewVideoHandler(importSvc, nil, nil, "")
@@ -779,7 +779,7 @@ func TestGetActiveImportJobHandler_NoJob(t *testing.T) {
 
 func TestGetImportJobHandler_NotFound(t *testing.T) {
 	notifier := &mock.Notifier{}
-	importSvc := service.NewImportService(&mock.VideoRepository{}, service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	importSvc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	r := gin.New()
 	h := NewVideoHandler(importSvc, nil, nil, "")
@@ -792,4 +792,13 @@ func TestGetImportJobHandler_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
+}
+
+// newTestImportService is an ImportService on a Job Lane of its own that builds
+// no Keyframe Index.
+func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier) *service.ImportService {
+	return service.NewImportService(service.ImportServiceDeps{
+		Videos: repo, Media: service.NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
+		Lane: service.NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
+	})
 }

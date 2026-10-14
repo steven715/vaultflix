@@ -57,8 +57,9 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 		UploadPreviewFunc:   func(context.Context, string, string) error { return nil },
 	}
 	f.notifier = &mock.Notifier{}
-	f.svc = NewImportService(repo, NewMediaProcessor(f.tool, minio), f.notifier)
-	f.svc.SetKeyframeIndexer(f.keyframes)
+	f.svc = NewImportService(ImportServiceDeps{
+		Videos: repo, Media: NewMediaProcessor(f.tool, minio), Notifier: f.notifier, Lane: NewJobRunner(), Keyframes: f.keyframes,
+	})
 	return f, &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
 }
 

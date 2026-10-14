@@ -56,10 +56,8 @@ func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaS
 		return fmt.Errorf("failed to save video record for %s: %w", filename, err)
 	}
 
-	if s.keyframes != nil {
-		if err := s.keyframes.EnsureIndex(ctx, video, filePath); err != nil {
-			slog.Warn("keyframe index not built at import", "video_id", video.ID, "file", filename, "error", err)
-		}
+	if err := s.keyframes.EnsureIndex(ctx, video, filePath); err != nil {
+		slog.Warn("keyframe index not built at import", "video_id", video.ID, "file", filename, "error", err)
 	}
 	slog.Info("video imported",
 		"video_id", video.ID, "file", filename, "source_id", source.ID, "file_path", relPath,

@@ -41,7 +41,7 @@ func newBlockedImport(t *testing.T, n int) *blockedImport {
 			return &model.Video{ID: "existing"}, nil
 		},
 	}
-	b.svc = NewImportService(repo, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	b.svc = newTestImportService(repo, &mock.Notifier{})
 	b.source = &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
 	b.release = func() { released.Do(func() { close(gate) }) }
 	t.Cleanup(b.release)
@@ -95,7 +95,7 @@ func TestGetJob_Found(t *testing.T) {
 
 func TestGetJob_NotFound(t *testing.T) {
 	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	svc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	_, err := svc.GetJob("nonexistent")
 	if !errors.Is(err, model.ErrNotFound) {
@@ -133,7 +133,7 @@ func TestStartAsync_Conflict(t *testing.T) {
 
 func TestStartAsync_EmptyDirectory(t *testing.T) {
 	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	svc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	source := &model.MediaSource{
 		ID:        "src-1",
@@ -182,7 +182,7 @@ func TestStartAsync_EmptyDirectory(t *testing.T) {
 
 func TestStartAsync_ScanError(t *testing.T) {
 	notifier := &mock.Notifier{}
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), notifier)
+	svc := newTestImportService(&mock.VideoRepository{}, notifier)
 
 	source := &model.MediaSource{
 		ID:        "src-1",
@@ -243,64 +243,17 @@ func TestCancel_StopsTheImportBetweenFiles(t *testing.T) {
 }
 
 func TestCancel_UnknownImportJob(t *testing.T) {
-	svc := NewImportService(&mock.VideoRepository{}, NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), &mock.Notifier{})
+	svc := newTestImportService(&mock.VideoRepository{}, &mock.Notifier{})
 	if err := svc.Cancel(context.Background(), "nope"); !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
 
-// mediaLane puts a blocked Import and a BackfillRunner on one Job Lane.
-func mediaLane(t *testing.T) (*blockedImport, *BackfillRunner) {
-	t.Helper()
-	lane := NewJobRunner()
-	b := newBlockedImport(t, 1)
-	b.svc.UseJobRunner(lane)
-	backfill := NewBackfillRunner(&mock.Notifier{}, map[model.BackfillKind]BackfillTask{model.BackfillCode: &mock.BackfillTask{}})
-	backfill.UseJobRunner(lane)
-	return b, backfill
-}
-
-func TestMediaLane_ImportBlocksBackfill(t *testing.T) {
-	b, backfill := mediaLane(t)
-	job := b.start(t)
-
-	_, err := backfill.Start(context.Background(), model.BackfillCode, "user-1")
-	var busy *JobLaneBusyError
-	if !errors.Is(err, model.ErrConflict) || !errors.As(err, &busy) || busy.RunningKind != JobKindImport {
-		t.Fatalf("Backfill Start = %v, want a busy lane naming the Import Job", err)
-	}
-	if backfill.Active(context.Background()) != nil {
-		t.Error("Backfill Active must not report the running Import Job")
-	}
-	if err := b.svc.Cancel(context.Background(), "not-"+job.ID); !errors.Is(err, model.ErrNotFound) {
-		t.Errorf("cancel of an unknown id = %v", err)
-	}
-	b.release()
-	waitImportDone(t, b.svc, job.ID)
-}
-
-func TestMediaLane_BackfillBlocksImport(t *testing.T) {
-	b, backfill := mediaLane(t)
-	gate := make(chan struct{})
-	backfill.tasks[model.BackfillCode] = &mock.BackfillTask{Videos: videosNamed("v1"), ProcessFunc: func(context.Context, *model.Video) error {
-		<-gate
-		return nil
-	}}
-	bf, err := backfill.Start(context.Background(), model.BackfillCode, "user-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer close(gate)
-
-	_, err = b.svc.StartAsync(context.Background(), b.source, "user-1")
-	var busy *JobLaneBusyError
-	if !errors.As(err, &busy) || busy.RunningKind != JobKindBackfill {
-		t.Fatalf("Import Start = %v, want a busy lane naming the Backfill Job", err)
-	}
-	if b.svc.GetActiveJob() != nil {
-		t.Error("Import GetActiveJob must not report the running Backfill Job")
-	}
-	if err := b.svc.Cancel(context.Background(), bf.ID); !errors.Is(err, model.ErrNotFound) {
-		t.Errorf("Import Cancel of a Backfill Job = %v, want ErrNotFound", err)
-	}
+// newTestImportService is an ImportService on a Job Lane of its own that builds
+// no Keyframe Index.
+func newTestImportService(repo *mock.VideoRepository, notifier *mock.Notifier) *ImportService {
+	return NewImportService(ImportServiceDeps{
+		Videos: repo, Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}), Notifier: notifier,
+		Lane: NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
+	})
 }

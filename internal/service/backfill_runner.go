@@ -31,15 +31,10 @@ type BackfillRunner struct {
 	jobs     jobLane
 }
 
-// NewBackfillRunner creates a BackfillRunner serving the given kinds.
-func NewBackfillRunner(notifier websocket.Notifier, tasks map[model.BackfillKind]BackfillTask) *BackfillRunner {
-	return &BackfillRunner{notifier: notifier, tasks: tasks, jobs: NewJobRunner()}
-}
-
-// UseJobRunner runs Backfill Jobs on r, the Media Lane shared with Import
-// Jobs, instead of a runner of their own.
-func (r *BackfillRunner) UseJobRunner(jr *JobRunner) {
-	r.jobs = jr
+// NewBackfillRunner creates a BackfillRunner serving the given kinds on lane;
+// in production the Media Lane shared with Import Jobs (see NewMediaPipeline).
+func NewBackfillRunner(notifier websocket.Notifier, tasks map[model.BackfillKind]BackfillTask, lane jobLane) *BackfillRunner {
+	return &BackfillRunner{notifier: notifier, tasks: tasks, jobs: lane}
 }
 
 // JobKindBackfill tags Backfill Jobs on the JobRunner.
