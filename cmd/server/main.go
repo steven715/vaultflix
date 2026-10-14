@@ -182,12 +182,12 @@ func main() {
 
 	// Import and Backfill Jobs share the Media Lane (ADR-0014). Enrichment Jobs
 	// keep a lane of their own.
-	media := service.NewMediaPipeline(service.MediaPipelineDeps{
+	mediaLane := service.NewMediaLane(service.MediaLaneDeps{
 		Videos: videoRepo, Files: mediaSourceService, Media: mediaProcessor, Keyframes: keyframeService, Notifier: hub,
 	})
 
 	authHandler := handler.NewAuthHandler(authService)
-	videoHandler := handler.NewVideoHandler(media.Import, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
+	videoHandler := handler.NewVideoHandler(mediaLane.Import, videoService, mediaSourceService, cfg.VideoXAccelPrefix)
 	tagHandler := handler.NewTagHandler(service.NewTagService(tagRepo, videoRepo))
 	historyHandler := handler.NewHistoryHandler(historyService)
 	favoriteHandler := handler.NewFavoriteHandler(favoriteService)
@@ -198,7 +198,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	playbackTelemetryHandler := handler.NewPlaybackTelemetryHandler(playbackTelemetryService)
 
-	backfillHandler := handler.NewBackfillHandler(media.Backfill)
+	backfillHandler := handler.NewBackfillHandler(mediaLane.Backfill)
 
 	wsHandler := handler.NewWSHandler(hub)
 

@@ -6,30 +6,37 @@ import (
 	"github.com/steven/vaultflix/internal/websocket"
 )
 
-// MediaPipeline is the Media Lane (ADR-0014) with the Jobs that run on it:
-// Import Jobs and the four kinds of Backfill Job. They read the same disks,
-// run ffmpeg/ffprobe and write the same Videos, so one runs at a time.
-type MediaPipeline struct {
+// MediaLane is the Media Lane (GLOSSARY.md「Job Lane」, ADR-0014) with the
+// Jobs that run on it: Import Jobs and the four kinds of Backfill Job. They
+// read the same disks, run ffmpeg/ffprobe and write the same Videos, so one
+// runs at a time.
+type MediaLane struct {
 	Import   *ImportService
 	Backfill *BackfillRunner
 }
 
-// MediaPipelineDeps is what the Media Lane's Jobs run on; every field is
-// required.
-type MediaPipelineDeps struct {
+// MediaLaneDeps is what the Media Lane's Jobs run on; every field is required.
+type MediaLaneDeps struct {
 	Videos repository.VideoRepository
 	// Files resolves a Video's file on its Media Source (MediaSourceService).
-	Files     mediaFileResolver
-	Media     mediaDeriver
+	Files mediaFileResolver
+	// Media derives Media Info, Thumbnails and Previews (MediaProcessor).
+	Media mediaDeriver
+	// Keyframes builds Keyframe Indexes (KeyframeService).
 	Keyframes keyframeIndexer
 	Notifier  websocket.Notifier
 }
 
-// NewMediaPipeline puts the Import and Backfill Jobs on one Media Lane of
-// their own; the only way their Jobs can share it is to come from here.
-func NewMediaPipeline(d MediaPipelineDeps) *MediaPipeline {
+// NewMediaLane puts the Import and Backfill Jobs on one lane of their own;
+// the only way their Jobs share it is to come from here. Panics when a
+// dependency is missing: a wiring mistake that must stop the server at
+// startup.
+func NewMediaLane(d MediaLaneDeps) *MediaLane {
+	if d.Files == nil {
+		panic("service.NewMediaLane: missing Files")
+	}
 	lane := NewJobRunner()
-	return &MediaPipeline{
+	return &MediaLane{
 		Import: NewImportService(ImportServiceDeps{
 			Videos: d.Videos, Media: d.Media, Notifier: d.Notifier, Lane: lane, Keyframes: d.Keyframes,
 		}),

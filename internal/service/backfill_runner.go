@@ -32,8 +32,12 @@ type BackfillRunner struct {
 }
 
 // NewBackfillRunner creates a BackfillRunner serving the given kinds on lane;
-// in production the Media Lane shared with Import Jobs (see NewMediaPipeline).
+// in production the Media Lane shared with Import Jobs (see NewMediaLane).
+// Panics without a lane: a wiring mistake that must stop the server at startup.
 func NewBackfillRunner(notifier websocket.Notifier, tasks map[model.BackfillKind]BackfillTask, lane jobLane) *BackfillRunner {
+	if lane == nil {
+		panic("service.NewBackfillRunner: missing lane")
+	}
 	return &BackfillRunner{notifier: notifier, tasks: tasks, jobs: lane}
 }
 

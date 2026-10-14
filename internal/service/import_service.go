@@ -34,14 +34,19 @@ type ImportServiceDeps struct {
 	Media    mediaDeriver
 	Notifier websocket.Notifier
 	// Lane runs the Import Jobs; in production the Media Lane shared with
-	// Backfill Jobs (see NewMediaPipeline).
-	Lane      jobLane
+	// Backfill Jobs (see NewMediaLane).
+	Lane jobLane
+	// Keyframes builds the Keyframe Index of each new remux Video.
 	Keyframes keyframeIndexer
 }
 
 // NewImportService creates an ImportService. Production code gets one from
-// NewMediaPipeline, which puts it on the Media Lane.
+// NewMediaLane. Panics when a dependency is missing: a wiring mistake that
+// must stop the server at startup, not crash it in the middle of a Job.
 func NewImportService(d ImportServiceDeps) *ImportService {
+	if m := d.missing(); m != "" {
+		panic("service.NewImportService: missing " + m)
+	}
 	return &ImportService{
 		videoRepo: d.Videos,
 		media:     d.Media,
@@ -49,6 +54,22 @@ func NewImportService(d ImportServiceDeps) *ImportService {
 		jobs:      d.Lane,
 		keyframes: d.Keyframes,
 	}
+}
+
+func (d ImportServiceDeps) missing() string {
+	switch {
+	case d.Videos == nil:
+		return "Videos"
+	case d.Media == nil:
+		return "Media"
+	case d.Notifier == nil:
+		return "Notifier"
+	case d.Lane == nil:
+		return "Lane"
+	case d.Keyframes == nil:
+		return "Keyframes"
+	}
+	return ""
 }
 
 // JobKindImport tags Import Jobs on the JobRunner.

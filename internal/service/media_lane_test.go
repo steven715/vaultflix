@@ -9,9 +9,20 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 )
 
-// The pipeline's Import and Backfill Jobs share one Media Lane (ADR-0014):
-// while a Backfill runs, an Import is refused, naming the Backfill.
-func TestNewMediaPipeline_ImportAndBackfillShareTheMediaLane(t *testing.T) {
+func mediaLaneDeps(t *testing.T, repo *mock.VideoRepository) MediaLaneDeps {
+	t.Helper()
+	return MediaLaneDeps{
+		Videos:    repo,
+		Files:     mock.ResolveUnder(t.TempDir()),
+		Media:     NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
+		Keyframes: NewKeyframeService(newFakeKeyframeRepo()),
+		Notifier:  &mock.Notifier{},
+	}
+}
+
+// The Media Lane's Import and Backfill Jobs share one lane (ADR-0014): while
+// a Backfill runs, an Import is refused, naming the Backfill.
+func TestNewMediaLane_ImportAndBackfillShareTheLane(t *testing.T) {
 	listing := make(chan struct{})
 	gate := make(chan struct{})
 	repo := &mock.VideoRepository{
@@ -21,24 +32,57 @@ func TestNewMediaPipeline_ImportAndBackfillShareTheMediaLane(t *testing.T) {
 			return nil, nil
 		},
 	}
-	p := NewMediaPipeline(MediaPipelineDeps{
-		Videos:    repo,
-		Files:     mock.ResolveUnder(t.TempDir()),
-		Media:     NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
-		Keyframes: NewKeyframeService(newFakeKeyframeRepo()),
-		Notifier:  &mock.Notifier{},
-	})
-	if _, err := p.Backfill.Start(context.Background(), model.BackfillCode, "user-1"); err != nil {
+	lane := NewMediaLane(mediaLaneDeps(t, repo))
+	if _, err := lane.Backfill.Start(context.Background(), model.BackfillCode, "user-1"); err != nil {
 		t.Fatalf("Backfill Start: %v", err)
 	}
 	defer close(gate)
 	<-listing
 
-	_, err := p.Import.StartAsync(context.Background(), &model.MediaSource{ID: "src-1", MountPath: t.TempDir()}, "user-1")
+	_, err := lane.Import.StartAsync(context.Background(), &model.MediaSource{ID: "src-1", MountPath: t.TempDir()}, "user-1")
 
 	var busy *JobLaneBusyError
 	if !errors.As(err, &busy) || busy.RunningKind != JobKindBackfill {
 		t.Errorf("Import Start = %v, want a busy Media Lane naming the Backfill Job", err)
+	}
+}
+
+func TestNewMediaLane_ServesEveryBackfillKind(t *testing.T) {
+	lane := NewMediaLane(mediaLaneDeps(t, &mock.VideoRepository{}))
+
+	for _, kind := range []model.BackfillKind{model.BackfillPreview, model.BackfillCodec, model.BackfillKeyframe, model.BackfillCode} {
+		if lane.Backfill.tasks[kind] == nil {
+			t.Errorf("Backfill kind %q is not served", kind)
+		}
+	}
+}
+
+// A missing dependency is a wiring mistake: it stops the server at startup,
+// instead of degrading silently or crashing in the middle of a Job.
+func TestNewImportService_MissingDependencyPanics(t *testing.T) {
+	full := ImportServiceDeps{
+		Videos: &mock.VideoRepository{}, Media: NewMediaProcessor(&mock.MediaTool{}, &mock.MinIOClient{}),
+		Notifier: &mock.Notifier{}, Lane: NewJobRunner(), Keyframes: &mock.KeyframeIndexer{},
+	}
+	tests := []struct {
+		name string
+		omit func(*ImportServiceDeps)
+	}{
+		{"no Lane", func(d *ImportServiceDeps) { d.Lane = nil }},
+		{"no Keyframes", func(d *ImportServiceDeps) { d.Keyframes = nil }},
+		{"no Videos", func(d *ImportServiceDeps) { d.Videos = nil }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := full
+			tt.omit(&d)
+			defer func() {
+				if recover() == nil {
+					t.Error("NewImportService accepted a missing dependency")
+				}
+			}()
+			NewImportService(d)
+		})
 	}
 }
 
