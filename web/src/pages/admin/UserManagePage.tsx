@@ -1,44 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { listUsers, createUser, deleteUser, enableUser, resetUserPassword } from '../../api/admin'
+import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
+import { useRemoteResource } from '../../hooks/useRemoteResource'
 import type { User } from '../../types'
 
 export default function UserManagePage() {
   const toast = useToast()
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
+  const userList = useRemoteResource(listUsers)
+  const users = userList.data ?? []
 
   const [showCreate, setShowCreate] = useState(false)
   const [resetTarget, setResetTarget] = useState<User | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    const fetchUsers = async () => {
-      try {
-        const data = await listUsers()
-        if (!cancelled) setUsers(data)
-      } catch (err) {
-        console.error('failed to list users', err)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    fetchUsers()
-    return () => { cancelled = true }
-  }, [])
-
   const handleCreate = async (username: string, password: string, role: string) => {
     await createUser(username, password, role)
-    const data = await listUsers()
-    setUsers(data)
     setShowCreate(false)
+    userList.reload().catch(() => toast.error('無法更新使用者列表'))
   }
 
   const handleDelete = async (id: string) => {
     try {
       await deleteUser(id)
-      setUsers(users.map(u => u.id === id ? { ...u, disabled_at: new Date().toISOString() } : u))
+      userList.mutate((prev) => prev.map(u => u.id === id ? { ...u, disabled_at: new Date().toISOString() } : u))
       setDeleteTarget(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'failed to disable user')
@@ -48,7 +33,7 @@ export default function UserManagePage() {
   const handleEnable = async (id: string) => {
     try {
       await enableUser(id)
-      setUsers(users.map(u => u.id === id ? { ...u, disabled_at: null } : u))
+      userList.mutate((prev) => prev.map(u => u.id === id ? { ...u, disabled_at: null } : u))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'failed to enable user')
     }
@@ -75,8 +60,10 @@ export default function UserManagePage() {
         </button>
       </div>
 
-      {loading ? (
+      {userList.status === 'loading' ? (
         <div className="text-faint text-center py-20">載入中...</div>
+      ) : userList.status === 'error' ? (
+        <ErrorBanner message="無法載入使用者，請確認服務是否正常運作" onRetry={userList.retry} />
       ) : (
         <table className="w-full text-sm text-left">
           <thead>

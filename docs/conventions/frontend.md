@@ -70,6 +70,24 @@ const fetchData = useCallback(async () => { ... }, [id])
 useEffect(() => { fetchData() }, [fetchData])
 ```
 
+## 頁面顯示的 API 資料用 `useRemoteResource`
+
+頁面要載入並顯示後端資料（列表、搜尋結果、某日的推薦）時，用 `hooks/useRemoteResource`，不要再手寫 `useState` + `useEffect` + `cancelled`。手寫版本在各頁漏掉的地方都不一樣：錯誤看起來像空列表、沒有 loading、過期回應蓋掉新資料、重整時列表閃爍。
+
+- 資料由某個值決定（日期、搜尋字串），把它當 `key` 傳入：key 變了就從 `loading` 重抓，舊 key 的資料與回應都會被丟掉。
+- 畫面三態都要畫：`loading`、`error`（`ErrorBanner` + `onRetry={resource.retry}`）、`ready`。空列表只在 `ready` 時代表「沒有資料」。
+- 編輯後重抓用 `reload()`：舊資料留在畫面上，失敗時 reject，頁面自己 toast；本地就能算出結果的（刪除、停用）用 `mutate()`，不必重抓。
+
+```tsx
+// ✅ 正確
+const recList = useRemoteResource(() => listRecommendationsByDate(date), date)
+recList.reload().catch(() => toast.error('無法更新推薦列表'))
+
+// ❌ 錯誤：重抓沒有過期防護，換日期後舊日期的回應會蓋掉新列表
+const items = await listRecommendationsByDate(selectedDate)
+setRecs(items)
+```
+
 ## 假時鐘測試：前置條件要用 tick 逼出來，不要靠真實時間燒過去
 
 `vi.useFakeTimers({ shouldAdvanceTime: true })` 讓假時鐘跟著真實時間前進，方便 awaited 的資料載入正常解析。代價是：**任何「靠這段等待剛好燒掉 N 毫秒」才成立的前置條件都是 flaky**，會隨機器快慢、CI 負載翻面 —— 同一份 tree 可以一次綠一次紅。

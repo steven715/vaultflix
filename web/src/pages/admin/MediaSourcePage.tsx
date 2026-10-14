@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource } from '../../api/admin'
 import type { MediaSource } from '../../types'
 import NavIcon from '../../components/admin/NavIcon'
@@ -7,12 +7,18 @@ import { importLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { useMediaLane } from '../../hooks/useMediaLane'
+import { useRemoteResource } from '../../hooks/useRemoteResource'
 
 export default function MediaSourcePage() {
-  const [sources, setSources] = useState<MediaSource[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  const sourceList = useRemoteResource(listMediaSources)
+  const sources: MediaSource[] = sourceList.data ?? []
   const toast = useToast()
+
+  // Refresh the list in place (after an edit, or new Video counts after an
+  // Import), so the cards and the Import summary on them stay up.
+  function refreshSources() {
+    sourceList.reload().catch(() => toast.error('無法更新媒體來源列表'))
+  }
 
   // The Media Lane: Import Jobs run here, and a Backfill started elsewhere
   // holds the lane too, so 掃描匯入 waits for it (ADR-0014).
@@ -26,46 +32,11 @@ export default function MediaSourcePage() {
   const [editingSource, setEditingSource] = useState<MediaSource | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ type: 'disable' | 'enable' | 'delete'; source: MediaSource } | null>(null)
 
-  async function fetchSources() {
-    setLoading(true)
-    setLoadError(false)
-    try {
-      const data = await listMediaSources()
-      setSources(data)
-    } catch {
-      setLoadError(true)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Refresh the list in place (e.g. new Video counts after an Import), so the
-  // cards and the Import summary on them stay up.
-  async function refreshSources() {
-    try {
-      setSources(await listMediaSources())
-    } catch {
-      toast.error('無法更新媒體來源列表')
-    }
-  }
-
-  // Fetch sources on mount
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    listMediaSources()
-      .then((data) => { if (!cancelled) setSources(data) })
-      .catch(() => { if (!cancelled) setLoadError(true) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-
   async function handleToggleEnabled(source: MediaSource) {
     try {
       await updateMediaSource(source.id, { label: source.label, enabled: !source.enabled })
       setConfirmAction(null)
-      fetchSources()
+      refreshSources()
     } catch {
       toast.error('操作失敗，請重試')
     }
@@ -76,7 +47,7 @@ export default function MediaSourcePage() {
       await deleteMediaSource(source.id)
       setConfirmAction(null)
       if (shownSourceId === source.id && !importJob.busy) importJob.dismiss()
-      fetchSources()
+      refreshSources()
     } catch {
       toast.error('刪除失敗，請重試')
     }
@@ -96,12 +67,12 @@ export default function MediaSourcePage() {
       </div>
 
       {/* Content */}
-      {loading ? (
+      {sourceList.status === 'loading' ? (
         <div className="text-faint text-center py-20">載入中...</div>
-      ) : loadError ? (
+      ) : sourceList.status === 'error' ? (
         <ErrorBanner
           message="無法載入媒體來源，請確認服務是否正常運作"
-          onRetry={fetchSources}
+          onRetry={sourceList.retry}
         />
       ) : sources.length === 0 ? (
         <div className="text-faint text-center py-20">
@@ -182,7 +153,7 @@ export default function MediaSourcePage() {
       {showCreate && (
         <CreateSourceModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); fetchSources() }}
+          onCreated={() => { setShowCreate(false); refreshSources() }}
         />
       )}
 
@@ -191,7 +162,7 @@ export default function MediaSourcePage() {
         <EditSourceModal
           source={editingSource}
           onClose={() => setEditingSource(null)}
-          onSaved={() => { setEditingSource(null); fetchSources() }}
+          onSaved={() => { setEditingSource(null); refreshSources() }}
         />
       )}
 

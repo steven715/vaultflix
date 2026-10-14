@@ -7,6 +7,8 @@ import AppShell, { Container } from '../components/AppShell'
 import VideoCard from '../components/VideoCard'
 import Skeleton from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
+import ErrorBanner from '../components/ErrorBanner'
+import { useRemoteResource } from '../hooks/useRemoteResource'
 import { SearchIcon } from '../components/icons'
 
 const RECENT_KEY = 'vaultflix-recent-searches'
@@ -24,8 +26,6 @@ export default function SearchPage() {
   const navigate = useNavigate()
   const query = searchParams.get('q') || ''
   const [value, setValue] = useState(query)
-  const [results, setResults] = useState<VideoWithTags[]>([])
-  const [loading, setLoading] = useState(false)
   const [tags, setTags] = useState<TagWithCount[]>([])
   const [recent, setRecent] = useState<string[]>(loadRecent)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -48,21 +48,11 @@ export default function SearchPage() {
   }, [])
 
   // Run the search whenever the URL query changes.
-  useEffect(() => {
-    if (!query) {
-      setResults([])
-      return
-    }
-    let cancelled = false
-    setLoading(true)
-    listVideos({ page: 1, page_size: 40, q: query })
-      .then((res) => !cancelled && setResults(res.data))
-      .catch(() => !cancelled && setResults([]))
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
-    }
-  }, [query])
+  const search = useRemoteResource(
+    (): Promise<VideoWithTags[]> => (query ? listVideos({ page: 1, page_size: 40, q: query }).then((res) => res.data) : Promise.resolve([])),
+    query,
+  )
+  const results = search.data ?? []
 
   function commit(next: string) {
     const params = new URLSearchParams(searchParams)
@@ -152,7 +142,7 @@ export default function SearchPage() {
               </section>
             )}
           </div>
-        ) : loading ? (
+        ) : search.status === 'loading' ? (
           <div className="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i}>
@@ -160,6 +150,10 @@ export default function SearchPage() {
                 <Skeleton className="mt-2.5 h-4 w-3/4 rounded" />
               </div>
             ))}
+          </div>
+        ) : search.status === 'error' ? (
+          <div className="mt-6">
+            <ErrorBanner message="搜尋失敗，請確認服務是否正常運作" onRetry={search.retry} />
           </div>
         ) : results.length === 0 ? (
           <EmptyState
