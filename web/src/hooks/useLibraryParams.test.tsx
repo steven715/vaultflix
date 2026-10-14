@@ -20,6 +20,11 @@ describe('useLibraryParams', () => {
     expect([p.page, p.pageSize, p.sortBy, p.sortOrder, p.query, p.tagIds]).toEqual([2, 50, 'title', 'asc', 'abc', [1, 2]])
   })
 
+  it('falls back to the defaults for sort values it does not know', () => {
+    const p = params('/?sort_by=x&sort_order=up').current
+    expect([p.sortBy, p.sortOrder]).toEqual(['created_at', 'desc'])
+  })
+
   it('moves between pages', () => {
     const result = params('/?q=abc')
     act(() => result.current.setPage(3))

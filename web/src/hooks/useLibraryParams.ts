@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { parseTagIds, serializeTagIds, toggleSort, type LibrarySortBy, type SortOrder } from '../lib/libraryParams'
+import {
+  parseSortBy, parseSortOrder, parseTagIds, serializeTagIds, toggleSort, type LibrarySortBy, type SortOrder,
+} from '../lib/libraryParams'
 
 /** The Library query a page shows, kept in the URL. */
 export interface LibraryParams {
@@ -22,16 +24,16 @@ export interface LibraryParams {
 const defaultPageSize = 20
 
 // useLibraryParams reads and writes the Library query in the URL with the
-// backend's defaults (page 1, 20 per page, newest first). Any change of sort
-// or filter goes back to page 1, because the old page number points into a
-// different list.
+// backend's defaults (page 1, 20 per page, newest first); a garbled value
+// falls back to its default. Any change of sort or filter goes back to page 1,
+// because the old page number points into a different list.
 export function useLibraryParams(): LibraryParams {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const page = Number(searchParams.get('page')) || 1
   const pageSize = Number(searchParams.get('page_size')) || defaultPageSize
-  const sortBy = (searchParams.get('sort_by') as LibrarySortBy) || 'created_at'
-  const sortOrder = (searchParams.get('sort_order') as SortOrder) || 'desc'
+  const sortBy = parseSortBy(searchParams.get('sort_by')) ?? 'created_at'
+  const sortOrder = parseSortOrder(searchParams.get('sort_order')) ?? 'desc'
   const query = searchParams.get('q') || ''
   const tagIdsParam = searchParams.get('tag_ids') || ''
   const tagIds = useMemo(() => parseTagIds(tagIdsParam), [tagIdsParam])

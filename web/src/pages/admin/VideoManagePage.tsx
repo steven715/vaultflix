@@ -40,7 +40,6 @@ export default function VideoManagePage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
-
   // A quiet reload (after a Job) keeps the rows on screen while it loads.
   const quietReloadRef = useRef(false)
   useEffect(() => {

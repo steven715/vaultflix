@@ -28,7 +28,7 @@ const SORT_OPTIONS: { value: LibrarySortBy; label: string }[] = [
 
 export default function BrowsePage() {
   const params = useLibraryParams()
-  const { page, pageSize, sortBy, sortOrder, query, tagIds: selectedTagIds, tagIdsParam: tagIdsStr } = params
+  const { page, pageSize, sortBy, sortOrder, query, tagIds, tagIdsParam } = params
   const location = useLocation()
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [total, setTotal] = useState(0)
@@ -38,13 +38,11 @@ export default function BrowsePage() {
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const [continueWatching, setContinueWatching] = useState<WatchHistoryItem[]>([])
 
-
   const totalPages = Math.ceil(total / pageSize)
-  const isHome = !query && selectedTagIds.length === 0
+  const isHome = !query && tagIds.length === 0
   const showHero = isHome && page === 1 && videos.length > 0
   const heroVideo = showHero ? videos[0] : null
   const gridVideos = showHero ? videos.slice(1) : videos
-
 
   // Browse rails (recommendations + continue watching) only on the home view.
   // location.key changes on every navigation to "/" — including clicking the
@@ -78,7 +76,7 @@ export default function BrowsePage() {
           sort_by: sortBy,
           sort_order: sortOrder,
           q: query || undefined,
-          tag_ids: tagIdsStr || undefined,
+          tag_ids: tagIdsParam || undefined,
         })
         if (cancelled) return
         setVideos(res.data)
@@ -96,7 +94,7 @@ export default function BrowsePage() {
     return () => {
       cancelled = true
     }
-  }, [page, pageSize, sortBy, sortOrder, query, tagIdsStr, reloadKey])
+  }, [page, pageSize, sortBy, sortOrder, query, tagIdsParam, reloadKey])
 
   return (
     <AppShell>
@@ -178,7 +176,7 @@ export default function BrowsePage() {
         {!query && (
           <div className="mb-6">
             <TagFilterBar
-              selectedTagIds={selectedTagIds}
+              selectedTagIds={tagIds}
               onTagsChange={params.setTagIds}
             />
           </div>
@@ -201,7 +199,7 @@ export default function BrowsePage() {
           />
         ) : gridVideos.length === 0 ? (
           <div className="py-20 text-center text-muted">
-            {query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}
+            {query || tagIdsParam ? '沒有符合條件的影片' : '尚無影片'}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">

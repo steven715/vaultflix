@@ -1,6 +1,20 @@
 export type LibrarySortBy = 'created_at' | 'title' | 'duration_seconds' | 'file_size_bytes'
 export type SortOrder = 'asc' | 'desc'
 
+/** sort_by from the URL, or null when it is not a Library sort key. */
+export function parseSortBy(raw: string | null): LibrarySortBy | null {
+  switch (raw) {
+    case 'created_at': case 'title': case 'duration_seconds': case 'file_size_bytes':
+      return raw
+  }
+  return null
+}
+
+/** sort_order from the URL, or null when it is neither asc nor desc. */
+export function parseSortOrder(raw: string | null): SortOrder | null {
+  return raw === 'asc' || raw === 'desc' ? raw : null
+}
+
 export function toggleSort(
   current: { by: LibrarySortBy; order: SortOrder },
   clicked: LibrarySortBy,
