@@ -45,3 +45,13 @@ type NotFoundError struct {
 func (e *NotFoundError) Error() string { return e.What + " not found" }
 
 func (e *NotFoundError) Unwrap() error { return ErrNotFound }
+
+// InvalidParamError says which request parameter is invalid and how, in words
+// for the API caller. It matches ErrInvalidInput.
+type InvalidParamError struct {
+	Message string // e.g. "page must be a positive integer"
+}
+
+func (e *InvalidParamError) Error() string { return e.Message }
+
+func (e *InvalidParamError) Unwrap() error { return ErrInvalidInput }

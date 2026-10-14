@@ -1,7 +1,9 @@
 package service
 
 import (
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/steven/vaultflix/internal/model"
@@ -60,8 +62,9 @@ func TestParseVideoFilter_InvalidParameters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := ParseVideoFilter(queryOf(map[string]string{tt.param: tt.value})); err == nil {
-				t.Errorf("%s=%q accepted", tt.param, tt.value)
+			_, err := ParseVideoFilter(queryOf(map[string]string{tt.param: tt.value}))
+			if !errors.Is(err, model.ErrInvalidInput) || !strings.HasPrefix(err.Error(), tt.param+" must") {
+				t.Errorf("%s=%q: err = %v, want an invalid-input error naming %s", tt.param, tt.value, err, tt.param)
 			}
 		})
 	}

@@ -64,6 +64,15 @@ const (
 	SortRandom VideoSort = "random"
 )
 
+// Valid reports whether s is one of the sort keys above.
+func (s VideoSort) Valid() bool {
+	switch s {
+	case SortByCreatedAt, SortByTitle, SortByDuration, SortByFileSize, SortRandom:
+		return true
+	}
+	return false
+}
+
 // VideoFilter is one page of a Library query; service.ParseVideoFilter
 // builds it from the request with its defaults and limits.
 type VideoFilter struct {
