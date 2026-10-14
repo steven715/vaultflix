@@ -59,13 +59,13 @@ type VideoRepository interface {
 }
 
 // sortColumn maps an allowed sort key to its column, defaulting to v.created_at.
-func sortColumn(sortBy string) string {
+func sortColumn(sortBy model.VideoSort) string {
 	switch sortBy {
-	case "title":
+	case model.SortByTitle:
 		return "v.title"
-	case "duration_seconds":
+	case model.SortByDuration:
 		return "v.duration_seconds"
-	case "file_size_bytes":
+	case model.SortByFileSize:
 		return "v.file_size_bytes"
 	}
 	return "v.created_at"
@@ -203,7 +203,7 @@ func (r *videoRepository) List(ctx context.Context, filter model.VideoFilter) ([
 	limitOffset := " LIMIT $" + strconv.Itoa(nextArg) + " OFFSET $" + strconv.Itoa(nextArg+1)
 
 	var dataQuery string
-	if filter.SortBy == "random" {
+	if filter.SortBy == model.SortRandom {
 		// SELECT DISTINCT forbids ORDER BY RANDOM() (the ORDER BY expression must
 		// appear in the select list), so wrap the DISTINCT rows in a subquery and
 		// shuffle the outer result. sort_order is irrelevant for a random sample.
