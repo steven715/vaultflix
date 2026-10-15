@@ -51,11 +51,35 @@ type UpdateVideoInput struct {
 	Description string
 }
 
+// VideoSort is the Library's sort key (the sort_by parameter).
+type VideoSort string
+
+const (
+	SortByCreatedAt VideoSort = "created_at"
+	SortByTitle     VideoSort = "title"
+	SortByDuration  VideoSort = "duration_seconds"
+	SortByFileSize  VideoSort = "file_size_bytes"
+	// SortRandom is a shuffled sample, used by the player's up-next column so
+	// the list differs on every Video; SortOrder is ignored for it.
+	SortRandom VideoSort = "random"
+)
+
+// Valid reports whether s is one of the sort keys above.
+func (s VideoSort) Valid() bool {
+	switch s {
+	case SortByCreatedAt, SortByTitle, SortByDuration, SortByFileSize, SortRandom:
+		return true
+	}
+	return false
+}
+
+// VideoFilter is one page of a Library query; service.ParseVideoFilter
+// builds it from the request with its defaults and limits.
 type VideoFilter struct {
 	Page      int
 	PageSize  int
-	SortBy    string
-	SortOrder string
+	SortBy    VideoSort
+	SortOrder string // "asc" or "desc"
 	Query     string
 	TagIDs    []int
 }

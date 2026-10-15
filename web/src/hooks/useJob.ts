@@ -39,13 +39,16 @@ function eventFor<TArgs>(kind: JobKind<TArgs>, msg: WSMessage): JobEvent | null 
   }
 }
 
-function isConflict(err: unknown): boolean {
-  return (err as { response?: { status?: number } })?.response?.status === 409
+// A busy Job Lane (ADR-0014) is the one 409 that means a job is running;
+// others, such as a disabled Media Source, are this start's own failure.
+function isLaneBusy(err: unknown): boolean {
+  const res = (err as { response?: { status?: number; data?: { error?: string } } })?.response
+  return res?.status === 409 && res.data?.error === 'job_lane_busy'
 }
 
 // useJob runs one kind of job for an admin page: it takes over a job already
 // running when the page opens, starts new ones (taking over the running job on
-// 409), follows its WebSocket progress, and reports when it finishes. `kind`
+// a busy lane's 409), follows its WebSocket progress, and reports when it finishes. `kind`
 // must be a stable object (see jobKinds.ts).
 export function useJob<TArgs>(
   kind: JobKind<TArgs>,
@@ -108,7 +111,7 @@ export function useJob<TArgs>(
         show(await kind.start(args))
         return { outcome: 'started' }
       } catch (err) {
-        if (!isConflict(err)) return { outcome: 'failed', error: err }
+        if (!isLaneBusy(err)) return { outcome: 'failed', error: err }
         // The job behind the 409 may have ended since; then there is nothing to adopt.
         const running = await kind.active().catch(() => null)
         if (running?.phase !== 'running') return { outcome: 'failed', error: err }

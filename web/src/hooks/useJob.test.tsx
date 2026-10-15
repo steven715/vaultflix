@@ -56,7 +56,7 @@ describe('useJob', () => {
 
   it('reports a started job, and adopts the running one on 409', async () => {
     const ws = wsHarness()
-    const conflict = Object.assign(new Error('409'), { response: { status: 409 } })
+    const conflict = laneBusy()
     const kind = fakeKind({
       start: vi.fn(async () => { throw conflict }),
       active: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(view('running-one')),
@@ -68,9 +68,27 @@ describe('useJob', () => {
     expect(result.current.view?.id).toBe('running-one')
   })
 
+  // Another 409, such as a disabled Media Source, is that start's own failure,
+  // even while some other job happens to run.
+  it('fails, without adopting the running job, on a 409 other than a busy lane', async () => {
+    const ws = wsHarness()
+    const disabled = Object.assign(new Error('409'), {
+      response: { status: 409, data: { error: 'source_disabled', message: 'media source is currently disabled' } },
+    })
+    const kind = fakeKind({
+      start: vi.fn(async () => { throw disabled }),
+      active: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(view('running-one')),
+    })
+    const { result } = renderHook(() => useJob(kind), { wrapper: ws.Provider })
+    let res: { outcome: string; error?: unknown } = { outcome: '' }
+    await act(async () => { res = await result.current.start('src') })
+    expect(res).toEqual({ outcome: 'failed', error: disabled })
+    expect(result.current.view).toBeNull()
+  })
+
   it('does not adopt a job that ended right after the 409', async () => {
     const ws = wsHarness()
-    const conflict = Object.assign(new Error('409'), { response: { status: 409 } })
+    const conflict = laneBusy()
     const kind = fakeKind({
       start: vi.fn(async () => { throw conflict }),
       active: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(view('gone', { phase: 'completed' })),
@@ -156,3 +174,9 @@ describe('useJob', () => {
     expect(result.current.view).toBeNull()
   })
 })
+
+function laneBusy() {
+  return Object.assign(new Error('409'), {
+    response: { status: 409, data: { error: 'job_lane_busy', message: '匯入正在執行，完成或取消後再試' } },
+  })
+}

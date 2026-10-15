@@ -183,7 +183,7 @@ func main() {
 	// Import and Backfill Jobs share the Media Lane (ADR-0014). Enrichment Jobs
 	// keep a lane of their own.
 	mediaLane := service.NewMediaLane(service.MediaLaneDeps{
-		Videos: videoRepo, Files: mediaSourceService, Media: mediaProcessor, Keyframes: keyframeService, Notifier: hub,
+		Videos: videoRepo, Sources: mediaSourceService, Media: mediaProcessor, Keyframes: keyframeService, Notifier: hub,
 	})
 
 	authHandler := handler.NewAuthHandler(authService)

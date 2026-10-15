@@ -57,15 +57,17 @@ func newImportFixture(t *testing.T, files map[string][]byte, alreadyImported ...
 		UploadPreviewFunc:   func(context.Context, string, string) error { return nil },
 	}
 	f.notifier = &mock.Notifier{}
+	source := &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount, Enabled: true}
 	f.svc = NewImportService(ImportServiceDeps{
-		Videos: repo, Media: NewMediaProcessor(f.tool, minio), Notifier: f.notifier, Lane: NewJobRunner(), Keyframes: f.keyframes,
+		Videos: repo, Sources: mock.MediaSources{source}, Media: NewMediaProcessor(f.tool, minio), Notifier: f.notifier,
+		Lane: NewJobRunner(), Keyframes: f.keyframes,
 	})
-	return f, &model.MediaSource{ID: "src-1", Label: "D", MountPath: mount}
+	return f, source
 }
 
 func (f *importFixture) run(t *testing.T, source *model.MediaSource) *model.ImportJob {
 	t.Helper()
-	job, err := f.svc.StartAsync(context.Background(), source, "user-1")
+	job, err := f.svc.StartAsync(context.Background(), source.ID, "user-1")
 	if err != nil {
 		t.Fatalf("StartAsync: %v", err)
 	}

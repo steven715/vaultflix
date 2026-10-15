@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,18 +12,6 @@ import (
 	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/service"
 )
-
-func isAllowedSortBy(sortBy string) bool {
-	switch sortBy {
-	case "created_at", "title", "duration_seconds", "file_size_bytes":
-		return true
-	case "random":
-		// A shuffled sample; used by the player's up-next column so the list
-		// differs on every video. sort_order is ignored for random.
-		return true
-	}
-	return false
-}
 
 type VideoHandler struct {
 	importService      *service.ImportService
@@ -61,44 +48,9 @@ func (h *VideoHandler) Import(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	source, err := h.mediaSourceService.GetByID(ctx, req.SourceID)
+	job, err := h.importService.StartAsync(ctx, req.SourceID, c.GetString("user_id"))
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "media source not found",
-			})
-			return
-		}
-		slog.Error("failed to get media source", "error", err, "source_id", req.SourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get media source",
-		})
-		return
-	}
-
-	if !source.Enabled {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "source_disabled",
-			Message: "media source is currently disabled",
-		})
-		return
-	}
-
-	userID := c.GetString("user_id")
-
-	job, err := h.importService.StartAsync(ctx, source, userID)
-	if err != nil {
-		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, jobLaneBusy(err))
-			return
-		}
-		slog.Error("failed to start import", "error", err, "source_id", req.SourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to start import",
-		})
+		writeImportStartError(c, req.SourceID, err)
 		return
 	}
 
@@ -106,7 +58,7 @@ func (h *VideoHandler) Import(c *gin.Context) {
 }
 
 func (h *VideoHandler) List(c *gin.Context) {
-	filter, err := parseVideoFilter(c)
+	filter, err := service.ParseVideoFilter(c.Query)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Error:   "bad_request",
@@ -292,59 +244,20 @@ func encodePathSegments(p string) string {
 	return strings.Join(parts, "/")
 }
 
-func parseVideoFilter(c *gin.Context) (model.VideoFilter, error) {
-	filter := model.VideoFilter{
-		Page:      1,
-		PageSize:  20,
-		SortBy:    "created_at",
-		SortOrder: "desc",
+// writeImportStartError maps ImportService.StartAsync errors to the Import
+// endpoint's HTTP responses; anything else is logged as a 500.
+func writeImportStartError(c *gin.Context, sourceID string, err error) {
+	switch {
+	case errors.Is(err, model.ErrNotFound):
+		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "media source not found"})
+	case errors.Is(err, model.ErrMediaSourceDisabled):
+		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_disabled", Message: "media source is currently disabled"})
+	case errors.Is(err, model.ErrConflict):
+		c.JSON(http.StatusConflict, jobLaneBusy(err))
+	default:
+		slog.Error("failed to start import", "error", err, "source_id", sourceID)
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to start import"})
 	}
-
-	if raw := c.Query("page"); raw != "" {
-		page, err := strconv.Atoi(raw)
-		if err != nil || page < 1 {
-			return filter, errors.New("page must be a positive integer")
-		}
-		filter.Page = page
-	}
-
-	if raw := c.Query("page_size"); raw != "" {
-		pageSize, err := strconv.Atoi(raw)
-		if err != nil || pageSize < 1 || pageSize > 100 {
-			return filter, errors.New("page_size must be between 1 and 100")
-		}
-		filter.PageSize = pageSize
-	}
-
-	if raw := c.Query("sort_by"); raw != "" {
-		if !isAllowedSortBy(raw) {
-			return filter, errors.New("sort_by must be one of: created_at, title, duration_seconds, file_size_bytes, random")
-		}
-		filter.SortBy = raw
-	}
-
-	if raw := c.Query("sort_order"); raw != "" {
-		lower := strings.ToLower(raw)
-		if lower != "asc" && lower != "desc" {
-			return filter, errors.New("sort_order must be asc or desc")
-		}
-		filter.SortOrder = lower
-	}
-
-	filter.Query = c.Query("q")
-
-	if raw := c.Query("tag_ids"); raw != "" {
-		parts := strings.Split(raw, ",")
-		for _, p := range parts {
-			id, err := strconv.Atoi(strings.TrimSpace(p))
-			if err != nil || id < 1 {
-				return filter, errors.New("tag_ids must be comma-separated positive integers")
-			}
-			filter.TagIDs = append(filter.TagIDs, id)
-		}
-	}
-
-	return filter, nil
 }
 
 // writeStreamResolveError maps VideoService.ResolvePlayback errors to the

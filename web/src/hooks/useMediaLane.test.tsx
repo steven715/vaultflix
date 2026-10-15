@@ -84,7 +84,9 @@ describe('useMediaLane', () => {
   })
 
   it('toasts when a start finds the same kind already running elsewhere', async () => {
-    const conflict = Object.assign(new Error('409'), { response: { status: 409 } })
+    const conflict = Object.assign(new Error('409'), {
+      response: { status: 409, data: { error: 'job_lane_busy', message: '匯入正在執行，完成或取消後再試' } },
+    })
     vi.mocked(importVideos).mockRejectedValue(conflict)
     vi.mocked(getActiveImportJob).mockResolvedValueOnce(null).mockResolvedValue(runningImport)
     const { result } = lane()
