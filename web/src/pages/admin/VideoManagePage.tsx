@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
 import { updateVideo, deleteVideo, listMediaSources, addVideoTag } from '../../api/admin'
@@ -12,11 +11,12 @@ import JobProgressPanel from '../../components/admin/JobProgressPanel'
 import { backfillLabels } from '../../lib/jobLabels'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
-import type { LibrarySortBy, SortOrder } from '../../lib/libraryParams'
 import { useMediaLane } from '../../hooks/useMediaLane'
+import { useLibraryParams } from '../../hooks/useLibraryParams'
 
 export default function VideoManagePage() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const params = useLibraryParams()
+  const { page, pageSize, query, tagIdsParam, sortBy, sortOrder } = params
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -38,24 +38,7 @@ export default function VideoManagePage() {
   const [saving, setSaving] = useState(false)
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
 
-  const page = Number(searchParams.get('page')) || 1
-  const pageSize = Number(searchParams.get('page_size')) || 20
-  const query = searchParams.get('q') || ''
-  const tagIdsStr = searchParams.get('tag_ids') || ''
-  const sortBy = (searchParams.get('sort_by') as LibrarySortBy) || 'created_at'
-  const sortOrder = (searchParams.get('sort_order') as SortOrder) || 'desc'
   const totalPages = Math.ceil(total / pageSize)
-
-  const updateParams = useCallback((updates: Record<string, string>) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      for (const [key, value] of Object.entries(updates)) {
-        if (value) next.set(key, value)
-        else next.delete(key)
-      }
-      return next
-    })
-  }, [setSearchParams])
 
   // A quiet reload (after a Job) keeps the rows on screen while it loads.
   const quietReloadRef = useRef(false)
@@ -65,12 +48,12 @@ export default function VideoManagePage() {
     quietReloadRef.current = false
     if (!quiet) setLoading(true)
     setLoadError(false)
-    listVideos({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsStr || undefined })
+    listVideos({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined })
       .then((res) => { if (!cancelled) { setVideos(res.data); setTotal(res.total) } })
       .catch(() => { if (!cancelled) { setVideos([]); setTotal(0); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [page, pageSize, query, tagIdsStr, sortBy, sortOrder, reloadKey])
+  }, [page, pageSize, query, tagIdsParam, sortBy, sortOrder, reloadKey])
 
   useEffect(() => {
     listTags().then(setAllTags).catch((err) => { console.warn('failed to load tags', err) })
@@ -92,7 +75,7 @@ export default function VideoManagePage() {
   // and a page change commits in a later render than reloadKey would.
   function showFromPageOne() {
     if (page === 1) setReloadKey((k) => k + 1)
-    else updateParams({ page: '1' })
+    else params.setPage(1)
   }
 
   // The Media Lane's two Jobs. An Import that added Videos shows them; one
@@ -152,24 +135,16 @@ export default function VideoManagePage() {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
-  const sortRef = useRef({ sortBy, sortOrder })
-  sortRef.current = { sortBy, sortOrder }
-  function handleColSort(col: LibrarySortBy) {
-    const { sortBy: by, sortOrder: order } = sortRef.current
-    const next = by === col ? (order === 'asc' ? 'desc' : 'asc') : 'desc'
-    updateParams({ sort_by: col, sort_order: next })
-  }
-
   function refreshTags() { listTags().then(setAllTags).catch((e) => console.warn('failed to refresh tags', e)) }
 
   return (
     <div className="p-7">
       <h1 className="font-display font-bold tracking-tight text-cream text-xl mb-4">影片庫</h1>
       <LibraryToolbar
-        total={total} sortBy={sortBy} sortOrder={sortOrder} tagIdsStr={tagIdsStr}
+        total={total} sortBy={sortBy} sortOrder={sortOrder} tagIds={params.tagIds}
         allTags={allTags} selected={selected} backfillDisabledReason={lane.backfillBlockedReason}
-        onSort={(p) => updateParams({ sort_by: p.sort_by, sort_order: p.sort_order, page: '1' })}
-        onTagFilter={(tag_ids) => updateParams({ tag_ids, page: '1' })}
+        onSort={params.sortByColumn}
+        onTagFilter={params.setTagIds}
         onStartBackfill={(kind) => { void lane.backfill.start(kind) }}
         onOpenImport={() => { lane.import.dismiss(); setShowImport(true) }}
         onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
@@ -193,16 +168,16 @@ export default function VideoManagePage() {
       ) : loadError ? (
         <ErrorBanner message="無法載入影片，請確認服務是否正常運作" onRetry={() => setReloadKey((k) => k + 1)} />
       ) : videos.length === 0 ? (
-        <div className="text-faint text-center py-20">{query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}</div>
+        <div className="text-faint text-center py-20">{query || tagIdsParam ? '沒有符合條件的影片' : '尚無影片'}</div>
       ) : (
         <LibraryTable
           videos={videos} allTags={allTags} selected={selected} sortBy={sortBy} sortOrder={sortOrder}
-          copyFeedback={copyFeedback} onSelect={setSelected} onColSort={handleColSort}
+          copyFeedback={copyFeedback} onSelect={setSelected} onColSort={params.sortByColumn}
           onCopyPath={handleCopyPath} onEdit={openEdit} onDelete={setDeletingVideo} onTagsChange={refreshTags}
         />
       )}
 
-      <Pagination page={page} totalPages={totalPages} onPageChange={(p) => updateParams({ page: String(p) })} />
+      <Pagination page={page} totalPages={totalPages} onPageChange={params.setPage} />
 
       {selected.length > 0 && batchTagPickerId !== null && (
         <BatchTagPicker selectedCount={selected.length} allTags={allTags} tagId={batchTagPickerId}

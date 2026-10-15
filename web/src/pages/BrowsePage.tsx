@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { listVideos } from '../api/videos'
 import { getTodayRecommendations } from '../api/recommendations'
 import { listWatchHistory } from '../api/watchHistory'
@@ -16,8 +16,10 @@ import VideoCard from '../components/VideoCard'
 import Pagination from '../components/Pagination'
 import Skeleton from '../components/Skeleton'
 import ErrorBanner from '../components/ErrorBanner'
+import { useLibraryParams } from '../hooks/useLibraryParams'
+import type { LibrarySortBy } from '../lib/libraryParams'
 
-const SORT_OPTIONS = [
+const SORT_OPTIONS: { value: LibrarySortBy; label: string }[] = [
   { value: 'created_at', label: '最新' },
   { value: 'title', label: '標題' },
   { value: 'duration_seconds', label: '時長' },
@@ -25,7 +27,8 @@ const SORT_OPTIONS = [
 ]
 
 export default function BrowsePage() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const params = useLibraryParams()
+  const { page, pageSize, sortBy, sortOrder, query, tagIds, tagIdsParam } = params
   const location = useLocation()
   const [videos, setVideos] = useState<VideoWithTags[]>([])
   const [total, setTotal] = useState(0)
@@ -35,33 +38,11 @@ export default function BrowsePage() {
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const [continueWatching, setContinueWatching] = useState<WatchHistoryItem[]>([])
 
-  const page = Number(searchParams.get('page')) || 1
-  const pageSize = Number(searchParams.get('page_size')) || 20
-  const sortBy = searchParams.get('sort_by') || 'created_at'
-  const sortOrder = searchParams.get('sort_order') || 'desc'
-  const query = searchParams.get('q') || ''
-  const tagIdsStr = searchParams.get('tag_ids') || ''
-  const selectedTagIds = tagIdsStr ? tagIdsStr.split(',').map(Number) : []
-
   const totalPages = Math.ceil(total / pageSize)
-  const isHome = !query && selectedTagIds.length === 0
+  const isHome = !query && tagIds.length === 0
   const showHero = isHome && page === 1 && videos.length > 0
   const heroVideo = showHero ? videos[0] : null
   const gridVideos = showHero ? videos.slice(1) : videos
-
-  const updateParams = useCallback(
-    (updates: Record<string, string>) => {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev)
-        for (const [key, value] of Object.entries(updates)) {
-          if (value) next.set(key, value)
-          else next.delete(key)
-        }
-        return next
-      })
-    },
-    [setSearchParams],
-  )
 
   // Browse rails (recommendations + continue watching) only on the home view.
   // location.key changes on every navigation to "/" — including clicking the
@@ -95,7 +76,7 @@ export default function BrowsePage() {
           sort_by: sortBy,
           sort_order: sortOrder,
           q: query || undefined,
-          tag_ids: tagIdsStr || undefined,
+          tag_ids: tagIdsParam || undefined,
         })
         if (cancelled) return
         setVideos(res.data)
@@ -113,7 +94,7 @@ export default function BrowsePage() {
     return () => {
       cancelled = true
     }
-  }, [page, pageSize, sortBy, sortOrder, query, tagIdsStr, reloadKey])
+  }, [page, pageSize, sortBy, sortOrder, query, tagIdsParam, reloadKey])
 
   return (
     <AppShell>
@@ -170,7 +151,7 @@ export default function BrowsePage() {
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => updateParams({ sort_by: opt.value, page: '1' })}
+                    onClick={() => params.setSort({ by: opt.value })}
                     className={`shrink-0 rounded-pill border px-3 py-1.5 text-sm font-medium transition-colors ${
                       active
                         ? 'border-accent/50 bg-accent/15 text-accent'
@@ -182,7 +163,7 @@ export default function BrowsePage() {
                 )
               })}
               <button
-                onClick={() => updateParams({ sort_order: sortOrder === 'asc' ? 'desc' : 'asc', page: '1' })}
+                onClick={() => params.setSort({ order: sortOrder === 'asc' ? 'desc' : 'asc' })}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill border border-border bg-surface text-muted transition-colors hover:text-cream"
                 title={sortOrder === 'asc' ? '升序' : '降序'}
               >
@@ -195,8 +176,8 @@ export default function BrowsePage() {
         {!query && (
           <div className="mb-6">
             <TagFilterBar
-              selectedTagIds={selectedTagIds}
-              onTagsChange={(ids) => updateParams({ tag_ids: ids.join(','), page: '1' })}
+              selectedTagIds={tagIds}
+              onTagsChange={params.setTagIds}
             />
           </div>
         )}
@@ -218,7 +199,7 @@ export default function BrowsePage() {
           />
         ) : gridVideos.length === 0 ? (
           <div className="py-20 text-center text-muted">
-            {query || tagIdsStr ? '沒有符合條件的影片' : '尚無影片'}
+            {query || tagIdsParam ? '沒有符合條件的影片' : '尚無影片'}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -228,7 +209,7 @@ export default function BrowsePage() {
           </div>
         )}
 
-        <Pagination page={page} totalPages={totalPages} onPageChange={(p) => updateParams({ page: String(p) })} />
+        <Pagination page={page} totalPages={totalPages} onPageChange={params.setPage} />
       </Container>
     </AppShell>
   )
