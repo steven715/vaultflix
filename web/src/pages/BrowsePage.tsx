@@ -17,6 +17,7 @@ import Pagination from '../components/Pagination'
 import Skeleton from '../components/Skeleton'
 import ErrorBanner from '../components/ErrorBanner'
 import { useLibraryParams } from '../hooks/useLibraryParams'
+import { usePagedList } from '../hooks/usePagedList'
 import type { LibrarySortBy } from '../lib/libraryParams'
 
 const SORT_OPTIONS: { value: LibrarySortBy; label: string }[] = [
@@ -30,15 +31,18 @@ export default function BrowsePage() {
   const params = useLibraryParams()
   const { page, pageSize, sortBy, sortOrder, query, tagIds, tagIdsParam } = params
   const location = useLocation()
-  const [videos, setVideos] = useState<VideoWithTags[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  // Retrying after an error also refreshes the rails.
+  const [railsKey, setRailsKey] = useState(0)
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const [continueWatching, setContinueWatching] = useState<WatchHistoryItem[]>([])
 
-  const totalPages = Math.ceil(total / pageSize)
+  const filter = { page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
+  const list = usePagedList<VideoWithTags>({
+    load: (p) => listVideos({ ...filter, page: p }),
+    page, pageSize, setPage: params.setPage,
+    key: JSON.stringify(filter),
+  })
+  const { items: videos, total, totalPages } = list
   const isHome = !query && tagIds.length === 0
   const showHero = isHome && page === 1 && videos.length > 0
   const heroVideo = showHero ? videos[0] : null
@@ -62,39 +66,7 @@ export default function BrowsePage() {
     return () => {
       cancelled = true
     }
-  }, [query, reloadKey, location.key])
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setLoadError(false)
-      try {
-        const res = await listVideos({
-          page,
-          page_size: pageSize,
-          sort_by: sortBy,
-          sort_order: sortOrder,
-          q: query || undefined,
-          tag_ids: tagIdsParam || undefined,
-        })
-        if (cancelled) return
-        setVideos(res.data)
-        setTotal(res.total)
-      } catch {
-        if (cancelled) return
-        setVideos([])
-        setTotal(0)
-        setLoadError(true)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [page, pageSize, sortBy, sortOrder, query, tagIdsParam, reloadKey])
+  }, [query, railsKey, location.key])
 
   return (
     <AppShell>
@@ -182,7 +154,7 @@ export default function BrowsePage() {
           </div>
         )}
 
-        {loading ? (
+        {list.status === 'loading' ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Array.from({ length: 10 }).map((_, i) => (
               <div key={i}>
@@ -192,10 +164,10 @@ export default function BrowsePage() {
               </div>
             ))}
           </div>
-        ) : loadError ? (
+        ) : list.status === 'error' ? (
           <ErrorBanner
             message="無法載入影片，請確認服務是否正常運作"
-            onRetry={() => setReloadKey((k) => k + 1)}
+            onRetry={() => { list.retry(); setRailsKey((k) => k + 1) }}
           />
         ) : gridVideos.length === 0 ? (
           <div className="py-20 text-center text-muted">

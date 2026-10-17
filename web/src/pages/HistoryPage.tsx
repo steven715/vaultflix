@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { listWatchHistory, clearWatchHistory } from '../api/watchHistory'
 import { useToast } from '../contexts/ToastContext'
@@ -11,6 +11,7 @@ import ErrorBanner from '../components/ErrorBanner'
 import EmptyState from '../components/EmptyState'
 import { formatDuration, formatRelativeTime, historyGroup, type HistoryGroup } from '../utils/format'
 import { ClockIcon, PlayIcon, CloseIcon } from '../components/icons'
+import { usePagedList } from '../hooks/usePagedList'
 
 const PAGE_SIZE = 20
 const GROUP_ORDER: HistoryGroup[] = ['今天', '本週', '更早']
@@ -18,45 +19,16 @@ const GROUP_ORDER: HistoryGroup[] = ['今天', '本週', '更早']
 export default function HistoryPage() {
   const navigate = useNavigate()
   const toast = useToast()
-  const [items, setItems] = useState<WatchHistoryItem[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearing, setClearing] = useState(false)
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setLoadError(false)
-      try {
-        const res = await listWatchHistory(page, PAGE_SIZE)
-        if (cancelled) return
-        setItems(res.data)
-        setTotal(res.total)
-      } catch {
-        if (cancelled) return
-        setItems([])
-        setTotal(0)
-        setLoadError(true)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [page, reloadKey])
+  const list = usePagedList<WatchHistoryItem>({ load: (p) => listWatchHistory(p, PAGE_SIZE), page, pageSize: PAGE_SIZE, setPage })
+  const { items, totalPages } = list
 
   // Remove a single row from the visible list (local-only, per the design).
   function handleRemove(id: string) {
-    setItems((prev) => prev.filter((i) => i.id !== id))
+    list.mutate((p) => ({ ...p, items: p.items.filter((i) => i.id !== id) }))
   }
 
   // Clear the entire watch history server-side, then reset the view to page 1.
@@ -65,10 +37,8 @@ export default function HistoryPage() {
     try {
       await clearWatchHistory()
       setConfirmClear(false)
-      setItems([])
-      setTotal(0)
-      setPage(1)
-      setReloadKey((k) => k + 1)
+      // Nothing is left: a later page is now past the end, and moves to page 1.
+      list.mutate(() => ({ items: [], total: 0 }))
       toast.success('已清除全部觀看記錄')
     } catch {
       toast.error('清除觀看記錄失敗，請重試')
@@ -87,7 +57,7 @@ export default function HistoryPage() {
       <Container width="narrow" className="py-8">
         <div className="mb-6 flex items-center justify-between gap-4">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-cream">觀看記錄</h1>
-          {!loading && !loadError && items.length > 0 && (
+          {list.status === 'ready' && items.length > 0 && (
             <button
               onClick={() => setConfirmClear(true)}
               className="shrink-0 rounded-pill border border-border bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:border-red-500/60 hover:text-red-400"
@@ -97,7 +67,7 @@ export default function HistoryPage() {
           )}
         </div>
 
-        {loading ? (
+        {list.status === 'loading' ? (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex gap-4">
@@ -109,10 +79,10 @@ export default function HistoryPage() {
               </div>
             ))}
           </div>
-        ) : loadError ? (
+        ) : list.status === 'error' ? (
           <ErrorBanner
             message="無法載入觀看記錄，請確認服務是否正常運作"
-            onRetry={() => setReloadKey((k) => k + 1)}
+            onRetry={list.retry}
           />
         ) : items.length === 0 ? (
           <EmptyState
