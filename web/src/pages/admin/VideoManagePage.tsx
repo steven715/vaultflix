@@ -209,7 +209,7 @@ export default function VideoManagePage() {
       )}
 
       {deletingVideo && (
-        <DeleteConfirm what={deletingVideo.title} onConfirm={handleDelete} onClose={() => setDeletingVideo(null)} />
+        <DeleteConfirm what={`「${deletingVideo.title}」`} onConfirm={handleDelete} onClose={() => setDeletingVideo(null)} />
       )}
       {confirmingBatchDelete && (
         <DeleteConfirm what={`選取的 ${selected.length} 部影片`} onConfirm={handleBatchDelete} onClose={() => setConfirmingBatchDelete(false)} />

@@ -130,7 +130,7 @@ export function EditModal({ title, desc, saving, onTitleChange, onDescChange, on
 /* ---------- Delete Confirm ---------- */
 
 interface DeleteConfirmProps {
-  /** What is deleted, as the question names it: a Video's title, or 選取的 N 部影片. */
+  /** What is deleted, as the question names it: 「a Video's title」, or 選取的 N 部影片. */
   what: string
   onConfirm: () => void
   onClose: () => void
@@ -141,7 +141,7 @@ export function DeleteConfirm({ what, onConfirm, onClose }: DeleteConfirmProps) 
     <div className="fixed inset-0 bg-[rgba(8,6,5,0.72)] backdrop-blur-[3px] flex items-center justify-center z-50" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title" className="bg-surface rounded-lg p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <h2 id="delete-confirm-title" className="font-display font-bold tracking-tight text-cream text-lg mb-2">確認刪除</h2>
-        <p className="text-sm text-muted mb-4">確定要刪除「<span className="text-cream">{what}</span>」嗎？此操作無法復原。</p>
+        <p className="text-sm text-muted mb-4">確定要刪除<span className="text-cream">{what}</span>嗎？此操作無法復原。</p>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="text-sm text-muted hover:text-cream px-3 py-1.5 rounded-btn">取消</button>
           <button onClick={onConfirm} className="bg-fav text-cream hover:brightness-110 text-sm px-4 py-1.5 rounded-btn">刪除</button>
