@@ -16,6 +16,7 @@ import { usePlaybackStats } from '../hooks/usePlaybackStats'
 import { useStreamSource } from '../hooks/useStreamSource'
 import { usePlaybackSession } from '../hooks/usePlaybackSession'
 import type { PositionReason, StreamFailure } from '../lib/streamSource'
+import { copyText } from '../lib/clipboard'
 
 const streamFailureMessage: Record<StreamFailure, string> = {
   'media-error': '影片載入失敗',
@@ -203,12 +204,8 @@ export default function PlayerPage() {
   }
 
   async function handleShare() {
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      toast.success('連結已複製')
-    } catch {
-      toast.error('複製連結失敗')
-    }
+    if (await copyText(window.location.href)) toast.success('連結已複製')
+    else toast.error('複製連結失敗')
   }
 
   if (loading) {

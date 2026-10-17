@@ -289,4 +289,25 @@ describe('VideoManagePage (library)', () => {
     expect(screen.queryByLabelText('選取 片A')).toBeNull()
     expect(screen.getByLabelText('選取 片B')).toBeInTheDocument()
   })
+  // Over plain http on the LAN there is no Clipboard API: copying must still work.
+  it('copies the file path without the Clipboard API', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    document.execCommand = vi.fn(() => true)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+
+    fireEvent.click(await screen.findByLabelText('複製路徑'))
+
+    expect(await screen.findByText('✓')).toBeInTheDocument()
+  })
+
+  it('says so when the file path cannot be copied', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    document.execCommand = vi.fn(() => false)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+
+    fireEvent.click(await screen.findByLabelText('複製路徑'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('複製失敗'))
+    expect(screen.queryByText('✓')).toBeNull()
+  })
 })
