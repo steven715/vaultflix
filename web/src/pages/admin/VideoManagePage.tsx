@@ -17,6 +17,7 @@ import { useMediaLane } from '../../hooks/useMediaLane'
 import { useLibraryParams } from '../../hooks/useLibraryParams'
 import { usePagedList } from '../../hooks/usePagedList'
 import { runOnEach } from '../../lib/batch'
+import { copyText } from '../../lib/clipboard'
 
 export default function VideoManagePage() {
   const params = useLibraryParams()
@@ -91,8 +92,11 @@ export default function VideoManagePage() {
     else toast.success(`已刪除 ${ids.length} 部影片`)
   }
 
-  function handleCopyPath(filename: string, id: string) {
-    navigator.clipboard.writeText(filename)
+  async function handleCopyPath(filename: string, id: string) {
+    if (!(await copyText(filename))) {
+      toast.error('複製失敗')
+      return
+    }
     setCopyFeedback((prev) => ({ ...prev, [id]: true }))
     clearTimeout(copyTimerRef.current)
     copyTimerRef.current = setTimeout(() => setCopyFeedback((prev) => ({ ...prev, [id]: false })), 1300)

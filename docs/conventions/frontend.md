@@ -108,6 +108,10 @@ setRecs(items)
 
 使用者眼中的「某一天」（推薦的日期、「今天」）是**本地**日曆日期。`Date.toISOString()` 是 UTC：在台灣（UTC+8）早上 8 點前它還是昨天，拿來 `.slice(0, 10)` 會差一天，加減日期也會跟著錯（推薦管理頁的 `>` 曾經按了沒反應、`<` 一次退兩天）。用 `localDate(date)` 產生 YYYY-MM-DD、用 `shiftLocalDate(date, days)` 加減。測試要用 `vi.stubEnv('TZ', 'Asia/Taipei')` 在 UTC 以東的時區跑，UTC 下重現不出來。
 
+## 複製到剪貼簿用 `lib/clipboard` 的 `copyText`
+
+`navigator.clipboard` 只在安全環境（https、localhost）存在；透過區網 http 存取（ADR-0009 的主要情境）時它是 `undefined`，直接呼叫會丟例外。用 `copyText(text)`：有 Clipboard API 就用，否則退回隱藏 textarea + `execCommand('copy')`，回傳是否成功；失敗時要告訴使用者，不要照樣顯示「已複製」。
+
 ## 假時鐘測試：前置條件要用 tick 逼出來，不要靠真實時間燒過去
 
 `vi.useFakeTimers({ shouldAdvanceTime: true })` 讓假時鐘跟著真實時間前進，方便 awaited 的資料載入正常解析。代價是：**任何「靠這段等待剛好燒掉 N 毫秒」才成立的前置條件都是 flaky**，會隨機器快慢、CI 負載翻面 —— 同一份 tree 可以一次綠一次紅。

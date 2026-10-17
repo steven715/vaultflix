@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
@@ -30,6 +30,10 @@ vi.mock('../../contexts/ToastContext', () => ({ useToast: () => toast }))
 
 describe('VideoManagePage (library)', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    delete (document as { execCommand?: unknown }).execCommand
+  })
   it('renders the video row and shows batch bar after selecting a row', async () => {
     renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
     await waitFor(() => expect(screen.getByText('片A')).toBeInTheDocument())
@@ -288,5 +292,26 @@ describe('VideoManagePage (library)', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('無法更新影片列表'))
     expect(screen.queryByLabelText('選取 片A')).toBeNull()
     expect(screen.getByLabelText('選取 片B')).toBeInTheDocument()
+  })
+  // Over plain http on the LAN there is no Clipboard API: copying must still work.
+  it('copies the file path without the Clipboard API', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    document.execCommand = vi.fn(() => true)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+
+    fireEvent.click(await screen.findByLabelText('複製路徑'))
+
+    expect(await screen.findByText('✓')).toBeInTheDocument()
+  })
+
+  it('says so when the file path cannot be copied', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    document.execCommand = vi.fn(() => false)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+
+    fireEvent.click(await screen.findByLabelText('複製路徑'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('複製失敗'))
+    expect(screen.queryByText('✓')).toBeNull()
   })
 })
