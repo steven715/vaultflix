@@ -12,6 +12,7 @@ export type StreamFailure =
   | 'media-error' // <video> 換過一次 token 後仍出錯
   | 'stream-load-failed' // hls.js 的致命錯誤：非「準備中」，或換過 token 仍 401
   | 'preparing-timeout' // Keyframe Index 準備中，輪詢到上限仍未就緒
+  | 'index-failed' // Keyframe Index 探測失敗（422），輪詢無用
   | 'token-unavailable' // 初次取得 stream token 失敗
   | 'token-refresh-failed' // 出錯後換新 token 失敗
   | 'unsupported' // 瀏覽器既無 MSE 也無原生 HLS
@@ -103,8 +104,10 @@ export function startStreamSource(opts: StreamSourceOptions): StreamSource {
         retryTimer = setTimeout(() => instance.loadSource(url), PREPARING_RETRY_DELAY_MS)
       } else if (action === 'refresh-token') {
         recover('stream-load-failed')
+      } else if (action === 'preparing-timeout' || action === 'index-failed') {
+        fail(action)
       } else if (action === 'fatal') {
-        fail(preparingRetries > 0 ? 'preparing-timeout' : 'stream-load-failed')
+        fail('stream-load-failed')
       }
     })
     instance.on(opts.hls.events.manifestParsed, () => {

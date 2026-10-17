@@ -19,7 +19,8 @@ type playbackResolver interface {
 // *KeyframeService).
 type segmentIndex interface {
 	// LookupOrProbe returns model.ErrStreamPreparing (wrapped) while the Keyframe
-	// Index is still being probed.
+	// Index is still being probed, and model.ErrKeyframeIndexFailed (wrapped)
+	// while a recent probe of the file has failed.
 	LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error)
 }
 

@@ -11,10 +11,11 @@ import (
 )
 
 type fakeKeyframeRepo struct {
-	mu      sync.Mutex
-	stored  map[string]*model.KeyframeIndex
-	getErr  error
-	upserts int
+	mu        sync.Mutex
+	stored    map[string]*model.KeyframeIndex
+	getErr    error
+	upsertErr error
+	upserts   int
 }
 
 func newFakeKeyframeRepo() *fakeKeyframeRepo {
@@ -37,6 +38,9 @@ func (f *fakeKeyframeRepo) Get(ctx context.Context, videoID string) (*model.Keyf
 func (f *fakeKeyframeRepo) Upsert(ctx context.Context, idx *model.KeyframeIndex) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
 	f.upserts++
 	f.stored[idx.VideoID] = idx
 	return nil
@@ -182,5 +186,149 @@ func TestEnsureIndex_ProbeFailure(t *testing.T) {
 
 	if err := s.EnsureIndex(context.Background(), &v, "/mnt/host/D/a.mkv"); err == nil {
 		t.Error("EnsureIndex succeeded although the probe failed")
+	}
+}
+
+// probeCounter is a probe that fails until told otherwise, counting its runs.
+type probeCounter struct {
+	mu   sync.Mutex
+	runs int
+	fail bool
+	done chan struct{}
+}
+
+func (p *probeCounter) probe(ctx context.Context, absPath string) ([]float64, float64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.runs++
+	defer func() { p.done <- struct{}{} }()
+	if p.fail {
+		return nil, 0, errors.New("ffprobe exit 1")
+	}
+	return []float64{0, 8}, 16, nil
+}
+
+func (p *probeCounter) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.runs
+}
+
+// lookupUntilSettled calls LookupOrProbe once, then waits for the probe it
+// triggered (if any) to finish.
+func lookupUntilSettled(t *testing.T, s *KeyframeService, p *probeCounter) error {
+	t.Helper()
+	_, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.mkv")
+	if errors.Is(err, model.ErrStreamPreparing) {
+		select {
+		case <-p.done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("triggered probe never finished")
+		}
+		// The probe's bookkeeping runs after it returns.
+		deadline := time.Now().Add(time.Second)
+		for {
+			s.mu.Lock()
+			_, busy := s.inflight["v1"]
+			s.mu.Unlock()
+			if !busy {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("triggered probe never cleared its in-flight mark")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	return err
+}
+
+// A failed probe is remembered: polling the manifest must not rerun ffprobe
+// every few seconds, and the player must hear it failed, not "preparing".
+func TestLookupOrProbe_RemembersAFailedProbe(t *testing.T) {
+	s := NewKeyframeService(newFakeKeyframeRepo())
+	p := &probeCounter{fail: true, done: make(chan struct{}, 4)}
+	s.probe = p.probe
+
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("first lookup = %v, want preparing", err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.mkv"); !errors.Is(err, model.ErrKeyframeIndexFailed) {
+			t.Fatalf("lookup after failure = %v, want ErrKeyframeIndexFailed", err)
+		}
+	}
+	if p.count() != 1 {
+		t.Errorf("probe ran %d times, want 1", p.count())
+	}
+}
+
+// A failure may be passing (a disk mounted late, a file replaced): after the
+// cooldown, the next play probes again.
+func TestLookupOrProbe_ProbesAgainAfterTheCooldown(t *testing.T) {
+	s := NewKeyframeService(newFakeKeyframeRepo())
+	p := &probeCounter{fail: true, done: make(chan struct{}, 4)}
+	s.probe = p.probe
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("first lookup = %v", err)
+	}
+
+	now = now.Add(probeFailureCooldown + time.Second)
+	p.mu.Lock()
+	p.fail = false
+	p.mu.Unlock()
+
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("lookup after cooldown = %v, want preparing (a new probe)", err)
+	}
+	if segs, err := s.LookupOrProbe(context.Background(), "v1", "/mnt/host/D/a.mkv"); err != nil || len(segs) == 0 {
+		t.Errorf("after a successful probe: segs %v, err %v", segs, err)
+	}
+}
+
+// Building the index on purpose (Import, Keyframe Backfill) forgets an
+// earlier failure.
+func TestEnsureIndex_ForgetsAnEarlierFailure(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	s := NewKeyframeService(repo)
+	p := &probeCounter{fail: true, done: make(chan struct{}, 4)}
+	s.probe = p.probe
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("first lookup = %v", err)
+	}
+
+	p.mu.Lock()
+	p.fail = false
+	p.mu.Unlock()
+	v := model.Video{ID: "v1", OriginalFilename: "a.mkv", VideoCodec: "h264", AudioCodec: "aac"}
+	if err := s.EnsureIndex(context.Background(), &v, "/mnt/host/D/a.mkv"); err != nil {
+		t.Fatalf("EnsureIndex: %v", err)
+	}
+	<-p.done
+	repo.mu.Lock()
+	delete(repo.stored, "v1") // the index goes away again (e.g. deleted by hand)
+	repo.mu.Unlock()
+
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Errorf("lookup = %v, want preparing: the old failure must be forgotten", err)
+	}
+}
+
+// Only the file is to blame for a failed probe: a database that could not
+// store the index (a passing outage) must not hold the Video back.
+func TestLookupOrProbe_StoreFailureIsNotAFailedProbe(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	repo.upsertErr = errors.New("db down")
+	s := NewKeyframeService(repo)
+	p := &probeCounter{done: make(chan struct{}, 4)}
+	s.probe = p.probe
+
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("first lookup = %v", err)
+	}
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Errorf("lookup after a store failure = %v, want preparing (a new probe)", err)
 	}
 }

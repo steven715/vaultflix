@@ -21,6 +21,7 @@ const streamFailureMessage: Record<StreamFailure, string> = {
   'media-error': '影片載入失敗',
   'stream-load-failed': '串流載入失敗',
   'preparing-timeout': '首次播放準備逾時,請稍後重試',
+  'index-failed': '這部影片無法建立串流索引,請重新執行 Keyframe 補齊',
   'token-unavailable': '無法載入影片',
   'token-refresh-failed': '影片串流憑證更新失敗',
   unsupported: '此瀏覽器不支援串流播放',

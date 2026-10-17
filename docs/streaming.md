@@ -35,7 +35,7 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 
 **HLS 的 503 只代表「準備中」。** hls.js 的錯誤只帶狀態碼、拿不到 body，播放器（`web/src/lib/hlsError.ts`）
 因此把任何 503 都當「Keyframe Index 探測中」輪詢重試（上限 20 次 ≈ 80s）。其他無法播放的狀態必須用別的狀態碼
-（Media Source 停用 → 409 `source_unavailable`），否則播放器會白等到重試上限才報錯。新增 HLS 錯誤時先決定它是否該被重試，
+（Media Source 停用 → 409 `source_unavailable`；Keyframe Index 探測失敗 → 422 `keyframe_index_failed`），否則播放器會白等到重試上限才報錯。探測失敗由 `KeyframeService` 記住 10 分鐘（`probeFailureCooldown`），期間的輪詢不會重跑 ffprobe；`EnsureIndex` 成功（Import、Keyframe Backfill）會清掉這筆紀錄。新增 HLS 錯誤時先決定它是否該被重試，
 再選狀態碼。
 
 片庫分布（2026-08-24 快照）：direct 285 部 / 521GB、remux 124 部 / 200GB、transcode 89 部 / 143GB。
@@ -59,8 +59,8 @@ remux 路徑的單一入口是 `HLSService`（`internal/service/hls_service.go`�
 - hls.js 不是 PC 專屬 —— 前提是 MSE，Android Chrome/PWA 完全支援，M/PC 走同一條路徑同一套參數。
 - 唯一例外是 **iOS Safari**（不開放 MSE），走 Stream Source（`web/src/lib/streamSource.ts`）的原生 HLS fallback，
   緩衝由 Safari 決定。這是所有網頁播放器的共同限制，Jellyfin/Plex 亦同。
-  已知缺口：原生 HLS 拿不到狀態碼，首播 503（Keyframe Index 準備中）不會走「準備中」輪詢，而是當成一般
-  media error（換一次 token 後失敗）。使用者環境為 Chrome/PWA，暫不處理。
+  已知缺口：原生 HLS 拿不到狀態碼，首播 503（Keyframe Index 準備中）不會走「準備中」輪詢，422（無法建立索引）
+  也看不到專屬訊息，都當成一般 media error（換一次 token 後失敗）。使用者環境為 Chrome/PWA，暫不處理。
 - 播放端的選路、準備中輪詢、stream token 換新與跳回原位全在 Stream Source；PlayerPage 只看它回報的狀態
   （loading／preparing／playing／failed＋原因）。新的播放恢復規則加在 Stream Source 並用 fake media／fake Hls 測，
   不要回到頁面加 ref。
@@ -129,7 +129,7 @@ Media Info、Thumbnail、Preview 的產生只能呼叫 `service.MediaProcessor`�
 
 ### Keyframe Index 何時建立，只由 `KeyframeService` 決定
 
-產生或改變 Video Play Mode 依據（容器、codec）的 Job 項目，完成後呼叫 `KeyframeService.EnsureIndex(ctx, video, absPath)`，不自己判斷「是不是 remux」：非 remux 時它是 no-op。目前呼叫者是 Import、Codec Backfill、Keyframe Backfill，都在 Media Lane 的項目內**同步**執行，所以探測與其他 ffmpeg 工作一樣一次只跑一個（ADR-0014）。Import 與 Codec Backfill 的主要產物（Video、codec）已寫入，建立失敗只記 warn、不讓項目失敗（Keyframe Backfill 則算失敗）：首次播放時 `LookupOrProbe` 會再觸發探測（唯一的非同步路徑，per-video 去重）。新增會改變 Play Mode 的流程時，比照呼叫 `EnsureIndex`，不要另開 goroutine。
+產生或改變 Video Play Mode 依據（容器、codec）的 Job 項目，完成後呼叫 `KeyframeService.EnsureIndex(ctx, video, absPath)`，不自己判斷「是不是 remux」：非 remux 時它是 no-op。目前呼叫者是 Import、Codec Backfill、Keyframe Backfill，都在 Media Lane 的項目內**同步**執行，所以探測與其他 ffmpeg 工作一樣一次只跑一個（ADR-0014）。Import 與 Codec Backfill 的主要產物（Video、codec）已寫入，建立失敗只記 warn、不讓項目失敗（Keyframe Backfill 則算失敗）：播放時 `LookupOrProbe` 會再觸發探測（唯一的非同步路徑，per-video 去重）；但檔案本身無法建立索引（ffprobe 失敗、找不到 keyframe）時，`KeyframeService` 會記住 10 分鐘，冷卻期內播放直接回 422、不重探。新增會改變 Play Mode 的流程時，比照呼叫 `EnsureIndex`，不要另開 goroutine。
 
 ### Input seek 落點不可信，邊界在輸出端裁定
 

@@ -170,6 +170,7 @@ HTTP Status Code 使用規則：
 - `403`：已認證但無權限（路由表的 Role／stream token 檢查拒絕，見 `cmd/server/routes.go`）
 - `404`：資源不存在
 - `409`：與資源當前狀態衝突（如重複執行中的作業、Media Source 已停用）
+- `422`：請求合法，但這個資源無法被處理（如 Keyframe Index 探測失敗，remux 串流無法播放）
 - `500`：伺服器內部錯誤
 
 ---

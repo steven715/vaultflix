@@ -17,6 +17,10 @@ var (
 // 稍後重試即可播放。
 var ErrStreamPreparing = errors.New("stream is preparing")
 
+// ErrKeyframeIndexFailed 表示 Video 的 Keyframe Index 最近一次探測失敗，在冷卻期內
+// 不再重探；remux 串流在那之前無法播放。
+var ErrKeyframeIndexFailed = errors.New("keyframe index probe failed")
+
 // ErrNotRemux 表示 Video 的 Play Mode 不是 remux，不經 HLS 播放。
 var ErrNotRemux = errors.New("video play mode is not remux")
 

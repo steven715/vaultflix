@@ -101,6 +101,9 @@ func writeHLSError(c *gin.Context, videoID string, err error) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "invalid segment name"})
 	case errors.Is(err, model.ErrStreamPreparing):
 		c.JSON(http.StatusServiceUnavailable, model.ErrorResponse{Error: "stream_not_ready", Message: "preparing stream for first playback, please retry"})
+	case errors.Is(err, model.ErrKeyframeIndexFailed):
+		// 422，不是 503：探測失敗後播放器要停止輪詢，並說明無法建立索引。
+		c.JSON(http.StatusUnprocessableEntity, model.ErrorResponse{Error: "keyframe_index_failed", Message: "the keyframe index of this video could not be built"})
 	case errors.Is(err, model.ErrMediaSourceDisabled):
 		// 409，不是 503：播放器把 503 一律當「準備中」輪詢重試（hlsError.ts）。
 		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_unavailable", Message: "media source is currently disabled"})

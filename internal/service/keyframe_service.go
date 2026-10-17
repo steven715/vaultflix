@@ -39,26 +39,40 @@ type keyframeIndexer interface {
 type KeyframeService struct {
 	repo  keyframeIndexRepo
 	probe keyframeProbeFunc
+	now   func() time.Time
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
+	// failedAt remembers when each Video's file last failed to index, so
+	// polling does not rerun ffprobe until probeFailureCooldown has passed.
+	failedAt map[string]time.Time
 }
+
+// probeFailureCooldown is how long a failed probe stands before the next play
+// probes again (a disk mounted late, a file replaced).
+const probeFailureCooldown = 10 * time.Minute
 
 // NewKeyframeService 建立 KeyframeService(使用真實 ffprobe 探測)。
 func NewKeyframeService(repo keyframeIndexRepo) *KeyframeService {
 	return &KeyframeService{
 		repo:     repo,
 		probe:    streaming.ProbeKeyframes,
+		now:      time.Now,
 		inflight: make(map[string]struct{}),
+		failedAt: make(map[string]time.Time),
 	}
 }
 
 // LookupOrProbe 回傳 Video 的 Segment Boundary 表。Keyframe Index 尚不存在時,
 // 以 absPath 觸發背景探測並回 model.ErrStreamPreparing(呼叫端稍後重試);
-// 其他讀取失敗回 wrapped error。
+// 最近一次探測在 probeFailureCooldown 內失敗時,不再重探,回
+// model.ErrKeyframeIndexFailed;其他讀取失敗回 wrapped error。
 func (s *KeyframeService) LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error) {
 	idx, err := s.repo.Get(ctx, videoID)
 	if errors.Is(err, model.ErrNotFound) {
+		if s.failedRecently(videoID) {
+			return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrKeyframeIndexFailed)
+		}
 		s.triggerProbe(videoID, absPath)
 		return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrStreamPreparing)
 	}
@@ -113,17 +127,46 @@ func (s *KeyframeService) triggerProbe(videoID, absPath string) {
 	}()
 }
 
-// indexFile 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
-// 失敗回 wrapped error(探測、空表或寫入失敗)。
+// failedRecently reports whether videoID's file failed to index within
+// probeFailureCooldown.
+func (s *KeyframeService) failedRecently(videoID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, failed := s.failedAt[videoID]
+	return failed && s.now().Sub(at) < probeFailureCooldown
+}
+
+// errUnindexable marks a failure the file is to blame for: ffprobe failed or
+// found no keyframes. A store failure or a cancelled context is not one.
+var errUnindexable = errors.New("file cannot be indexed")
+
+// indexFile builds the Keyframe Index and records the outcome: a file that
+// cannot be indexed is remembered for probeFailureCooldown, a success
+// forgets an earlier failure.
 func (s *KeyframeService) indexFile(ctx context.Context, videoID, absPath string) error {
+	err := s.buildIndex(ctx, videoID, absPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case err == nil:
+		delete(s.failedAt, videoID)
+	case errors.Is(err, errUnindexable) && !errors.Is(err, context.Canceled):
+		s.failedAt[videoID] = s.now()
+	}
+	return err
+}
+
+// buildIndex 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
+// 失敗回 wrapped error(探測、空表或寫入失敗)。
+func (s *KeyframeService) buildIndex(ctx context.Context, videoID, absPath string) error {
 	start := time.Now()
 	kf, total, err := s.probe(ctx, absPath)
 	if err != nil {
-		return fmt.Errorf("probe failed: %w", err)
+		return fmt.Errorf("probe failed (%w): %w", errUnindexable, err)
 	}
 	segs := streaming.GroupSegments(kf, total, streaming.DefaultSegmentTarget)
 	if len(segs) == 0 {
-		return fmt.Errorf("empty segment table for video %s", videoID)
+		return fmt.Errorf("empty segment table for video %s: %w", videoID, errUnindexable)
 	}
 	idx := &model.KeyframeIndex{VideoID: videoID, Segments: segs, ProbedAt: time.Now()}
 	if err := s.repo.Upsert(ctx, idx); err != nil {

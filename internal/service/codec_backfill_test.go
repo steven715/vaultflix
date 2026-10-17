@@ -85,7 +85,7 @@ func TestCodecBackfill_ProcessOne_StoresProbedCodecs(t *testing.T) {
 }
 
 // The codecs are the Codec Backfill's product: a Keyframe Index that can't be
-// built leaves the item a success, and the first play probes it again.
+// built leaves the item a success, and a play probes it again later.
 func TestCodecBackfill_ProcessOne_KeyframeIndexFailureKeepsCodecs(t *testing.T) {
 	repo := &fakeCodecRepo{}
 	svc, _, indexes := newTestCodecBackfillWithIndexes(repo, mock.ResolveUnder("/mnt/host/D"))

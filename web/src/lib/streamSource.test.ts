@@ -209,6 +209,29 @@ describe('startStreamSource: remux', () => {
     expect(last()).toEqual({ status: 'failed', reason: 'preparing-timeout' })
   })
 
+  it('stops polling when the Keyframe Index could not be built', async () => {
+    const { instances, last } = setup({ playMode: 'remux' })
+    await tick()
+    const hls = instances[0]
+    hls.emit('error', { fatal: true, response: { code: 503 } })
+    await vi.advanceTimersByTimeAsync(PREPARING_RETRY_DELAY_MS)
+    hls.emit('error', { fatal: true, response: { code: 422 } })
+    expect(last()).toEqual({ status: 'failed', reason: 'index-failed' })
+    await vi.advanceTimersByTimeAsync(PREPARING_RETRY_DELAY_MS * 3)
+    expect(hls.sources).toHaveLength(2)
+  })
+
+  // Polled for a while, then a different error: that error, not a timeout.
+  it('does not call a non-503 failure after polling a timeout', async () => {
+    const { instances, last } = setup({ playMode: 'remux' })
+    await tick()
+    const hls = instances[0]
+    hls.emit('error', { fatal: true, response: { code: 503 } })
+    await vi.advanceTimersByTimeAsync(PREPARING_RETRY_DELAY_MS)
+    hls.emit('error', { fatal: true, response: { code: 500 } })
+    expect(last()).toEqual({ status: 'failed', reason: 'stream-load-failed' })
+  })
+
   it('treats any other fatal hls.js error as a stream load failure', async () => {
     const { instances, last } = setup({ playMode: 'remux' })
     await tick()
