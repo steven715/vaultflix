@@ -11,8 +11,14 @@ describe('classifyHlsError', () => {
     expect(classifyHlsError({ fatal: true, response: { code: 503 } }, MAX_PREPARING_RETRIES - 1)).toBe('retry-preparing')
   })
 
-  it('fatal 503 at retry cap → fatal', () => {
-    expect(classifyHlsError({ fatal: true, response: { code: 503 } }, MAX_PREPARING_RETRIES)).toBe('fatal')
+  it('fatal 503 at retry cap → preparing-timeout', () => {
+    expect(classifyHlsError({ fatal: true, response: { code: 503 } }, MAX_PREPARING_RETRIES)).toBe('preparing-timeout')
+  })
+
+  // The probe failed: polling cannot help, and the player says why.
+  it('fatal 422 (Keyframe Index failed) → index-failed, never retried', () => {
+    expect(classifyHlsError({ fatal: true, response: { code: 422 } }, 0)).toBe('index-failed')
+    expect(classifyHlsError({ fatal: true, response: { code: 422 } }, 5)).toBe('index-failed')
   })
 
   it('fatal 409 (Media Source disabled) → fatal immediately, never retried as preparing', () => {

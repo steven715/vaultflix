@@ -39,26 +39,40 @@ type keyframeIndexer interface {
 type KeyframeService struct {
 	repo  keyframeIndexRepo
 	probe keyframeProbeFunc
+	now   func() time.Time
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
+	// failedAt remembers when each Video's latest probe failed, so polling
+	// does not rerun ffprobe until probeFailureCooldown has passed.
+	failedAt map[string]time.Time
 }
+
+// probeFailureCooldown is how long a failed probe stands before the next play
+// probes again (a disk mounted late, a file replaced).
+const probeFailureCooldown = 10 * time.Minute
 
 // NewKeyframeService 建立 KeyframeService(使用真實 ffprobe 探測)。
 func NewKeyframeService(repo keyframeIndexRepo) *KeyframeService {
 	return &KeyframeService{
 		repo:     repo,
 		probe:    streaming.ProbeKeyframes,
+		now:      time.Now,
 		inflight: make(map[string]struct{}),
+		failedAt: make(map[string]time.Time),
 	}
 }
 
 // LookupOrProbe 回傳 Video 的 Segment Boundary 表。Keyframe Index 尚不存在時,
 // 以 absPath 觸發背景探測並回 model.ErrStreamPreparing(呼叫端稍後重試);
-// 其他讀取失敗回 wrapped error。
+// 最近一次探測在 probeFailureCooldown 內失敗時,不再重探,回
+// model.ErrKeyframeIndexFailed;其他讀取失敗回 wrapped error。
 func (s *KeyframeService) LookupOrProbe(ctx context.Context, videoID, absPath string) ([]model.SegmentBoundary, error) {
 	idx, err := s.repo.Get(ctx, videoID)
 	if errors.Is(err, model.ErrNotFound) {
+		if s.failedRecently(videoID) {
+			return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrKeyframeIndexFailed)
+		}
 		s.triggerProbe(videoID, absPath)
 		return nil, fmt.Errorf("keyframe index of video %s: %w", videoID, model.ErrStreamPreparing)
 	}
@@ -113,9 +127,30 @@ func (s *KeyframeService) triggerProbe(videoID, absPath string) {
 	}()
 }
 
-// indexFile 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
-// 失敗回 wrapped error(探測、空表或寫入失敗)。
+func (s *KeyframeService) failedRecently(videoID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, failed := s.failedAt[videoID]
+	return failed && s.now().Sub(at) < probeFailureCooldown
+}
+
+// indexFile builds the Keyframe Index and records the outcome: a failure is
+// remembered for probeFailureCooldown, a success forgets an earlier failure.
 func (s *KeyframeService) indexFile(ctx context.Context, videoID, absPath string) error {
+	err := s.buildIndex(ctx, videoID, absPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.failedAt[videoID] = s.now()
+	} else {
+		delete(s.failedAt, videoID)
+	}
+	return err
+}
+
+// buildIndex 同步探測 absPath、分組成 Segment Boundary 並寫入 Keyframe Index。
+// 失敗回 wrapped error(探測、空表或寫入失敗)。
+func (s *KeyframeService) buildIndex(ctx context.Context, videoID, absPath string) error {
 	start := time.Now()
 	kf, total, err := s.probe(ctx, absPath)
 	if err != nil {
