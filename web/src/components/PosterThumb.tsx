@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { posterGradient } from '../utils/poster'
+import { posterGradient } from '../lib/posterGradient'
 
 interface PosterThumbProps {
   id: string
