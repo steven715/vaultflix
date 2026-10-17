@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listFavorites, removeFavorite } from '../api/favorites'
 import type { VideoSummaryWithURL } from '../types'
@@ -9,62 +9,28 @@ import Skeleton from '../components/Skeleton'
 import ErrorBanner from '../components/ErrorBanner'
 import EmptyState from '../components/EmptyState'
 import { useToast } from '../contexts/ToastContext'
+import { usePagedList } from '../hooks/usePagedList'
 import { formatDuration, formatFileSize } from '../utils/format'
 import { HeartIcon, HeartFilled, PlayIcon } from '../components/icons'
 
 const PAGE_SIZE = 20
 
 export default function FavoritesPage() {
-  const [favorites, setFavorites] = useState<VideoSummaryWithURL[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
   const toast = useToast()
-
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setLoadError(false)
-      try {
-        const res = await listFavorites(page, PAGE_SIZE)
-        if (cancelled) return
-        setFavorites(res.data)
-        setTotal(res.total)
-      } catch {
-        if (cancelled) return
-        setFavorites([])
-        setTotal(0)
-        setLoadError(true)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [page, reloadKey])
+  const list = usePagedList<VideoSummaryWithURL>({ load: (p) => listFavorites(p, PAGE_SIZE), page, pageSize: PAGE_SIZE, setPage })
+  const { items: favorites, total, totalPages } = list
 
   async function handleRemove(videoID: string) {
-    // Optimistic UI: remove immediately
-    setFavorites((prev) => prev.filter((f) => f.id !== videoID))
-    setTotal((prev) => prev - 1)
-
+    // Hide it at once; lower the total, which may move to another page, only
+    // once the server has removed it, so that page loads without it.
+    list.mutate((p) => ({ ...p, items: p.items.filter((f) => f.id !== videoID) }))
     try {
       await removeFavorite(videoID)
+      list.mutate((p) => ({ ...p, total: p.total - 1 }))
     } catch {
       toast.error('取消收藏失敗')
-      listFavorites(page, PAGE_SIZE)
-        .then((res) => {
-          setFavorites(res.data)
-          setTotal(res.total)
-        })
-        .catch(() => toast.error('重新載入收藏失敗'))
+      list.reload().catch(() => toast.error('重新載入收藏失敗'))
     }
   }
 
@@ -76,7 +42,7 @@ export default function FavoritesPage() {
           {total > 0 && <span className="ml-2 font-mono text-base text-faint">{total}</span>}
         </h1>
 
-        {loading ? (
+        {list.status === 'loading' ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Array.from({ length: 10 }).map((_, i) => (
               <div key={i}>
@@ -85,10 +51,10 @@ export default function FavoritesPage() {
               </div>
             ))}
           </div>
-        ) : loadError ? (
+        ) : list.status === 'error' ? (
           <ErrorBanner
             message="無法載入收藏，請確認服務是否正常運作"
-            onRetry={() => setReloadKey((k) => k + 1)}
+            onRetry={list.retry}
           />
         ) : favorites.length === 0 ? (
           <EmptyState

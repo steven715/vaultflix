@@ -96,6 +96,10 @@ const items = await listRecommendationsByDate(selectedDate)
 setRecs(items)
 ```
 
+## 分頁清單用 `usePagedList`
+
+有頁碼與總數的清單用 `hooks/usePagedList`（目前是影片管理與收藏；片庫與觀看紀錄還是手寫，搬過去時照這裡），它建在 `useRemoteResource` 上，key 包含頁碼與其他條件，所以不會拿別頁或上一次查詢的總數來判斷。頁碼超出最後一頁時（刪掉最後一頁的最後一筆、過期的書籤），它自動 `setPage(last, { replace: true })`；本地移除用 `mutate` 調整 `total`，修正就會跟著發生；但 `total` 要等伺服器確認移除後才減，否則換到的那一頁會在移除生效前載入、拿到舊的總數（樂觀地先隱藏 items 沒問題）。Job 或批次操作後的重整用 `reload()`：列保留，失敗時頁面自己 toast，不要清空列表；已經知道結果的改動（刪除成功的項目）先用 `mutate` 反映，重整失敗時畫面才不會留著已刪掉的東西。頁碼存在網址或元件狀態都可以，由頁面傳入 `page` 與 `setPage`。
+
 ## 片庫的 URL 參數用 `useLibraryParams`
 
 片庫查詢（頁碼、排序、搜尋字串、Tag 篩選）存在 URL，讀寫一律經 `hooks/useLibraryParams`，不要在頁面裡手寫 `searchParams.get` 與 `setSearchParams`。它套用後端的預設值（第 1 頁、每頁 20、最新在前），而且**任何排序或篩選的改變都回到第 1 頁**：舊頁碼指向的是另一份清單（影片管理頁的欄位排序曾經停在原頁碼）。元件只回報使用者點了哪一欄、選了哪些 Tag，排序方向與換頁由 hook 決定。
@@ -154,7 +158,7 @@ useEffect(() => {
 
 判斷標準：這份資料是否預期「回到此頁就刷新」？是 → 加 `location.key`；否（純由 URL 參數決定、deterministic 的如分頁列表）→ 不加，避免每次導航都多打一次 API。
 
-同一個陷阱也出現在程式碼自己改參數時：資料變了（例如 Import Job 完成）要帶使用者回第 1 頁看新資料，**已經在第 1 頁就遞增 `reloadKey`，否則才改 page 參數**。只改參數時，在第 1 頁不會更新（影片管理頁曾經如此）；兩個一起改則會抓兩次，因為 React Router 7 的導航在 `startTransition` 裡，比 `reloadKey` 晚一次 render 才生效。
+同一個陷阱也出現在程式碼自己改參數時：資料變了（例如 Import Job 完成）要帶使用者回第 1 頁看新資料，**已經在第 1 頁就重整（`usePagedList` 的 `reload()`），否則才改 page 參數**。只改參數時，在第 1 頁不會更新（影片管理頁曾經如此）；兩個一起做則會抓兩次。
 
 ## 具名導航控制要導到目的地，不要用 `navigate(-1)`
 

@@ -258,4 +258,35 @@ describe('VideoManagePage (library)', () => {
     expect(await screen.findByText('b41')).toBeInTheDocument()
     expect(listVideos).not.toHaveBeenCalledWith(expect.objectContaining({ q: 'b', page: 1 }))
   })
+  // A refresh after a Job is quiet: if it fails, the rows stay and a toast says so.
+  it('keeps the rows when the refresh after a Backfill Job fails', async () => {
+    vi.mocked(startBackfill).mockResolvedValue({ job_id: 'b1', kind: 'keyframe' })
+    const ws = wsHarness()
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library', ws })
+    await screen.findByText('片A')
+    fireEvent.click(screen.getByRole('button', { name: '補齊 ▾' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Keyframe Index' }))
+    await waitFor(() => expect(startBackfill).toHaveBeenCalledWith('keyframe'))
+    vi.mocked(listVideos).mockRejectedValueOnce(new Error('down'))
+
+    ws.send({ type: 'backfill_complete', payload: backfillJob('completed') })
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('無法更新影片列表'))
+    expect(screen.getByText('片A')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+  // The refresh after a batch delete is quiet; if it fails, the deleted
+  // Videos must not stay on screen.
+  it('drops deleted Videos from the page even when the refresh fails', async () => {
+    vi.mocked(deleteVideo).mockImplementation(async (id: string) => { if (id === 'v2') throw new Error('500') })
+    await selectTwo()
+    vi.mocked(listVideos).mockRejectedValue(new Error('down'))
+
+    clickBatchDelete()
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('刪除', { selector: 'button' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('無法更新影片列表'))
+    expect(screen.queryByLabelText('選取 片A')).toBeNull()
+    expect(screen.getByLabelText('選取 片B')).toBeInTheDocument()
+  })
 })
