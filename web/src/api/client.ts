@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { toApiError } from './errors'
 
 const client = axios.create({
   baseURL: '/api',
@@ -30,7 +31,8 @@ client.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    return Promise.reject(error)
+    // Callers see one error shape; errorMessage turns it into the UI's words.
+    return Promise.reject(toApiError(error))
   },
 )
 

@@ -5,7 +5,7 @@ import { useJobCancel } from './useJobCancel'
 import { backfillJobs, importJobs } from '../lib/jobKinds'
 import type { JobView } from '../lib/jobProgress'
 import type { BackfillKind } from '../types'
-import { getErrorMessage } from '../utils/error'
+import { errorMessage } from '../api/errors'
 
 /** One Job on the Media Lane, as an admin page drives it. */
 export interface LaneJob<TArgs> {
@@ -49,7 +49,7 @@ export function useMediaLane({ onImportFinished, onBackfillFinished }: MediaLane
   const report = useCallback((result: StartResult, fallback: string): StartOutcome => {
     if (result.outcome === 'adopted') toast.error('已有任務進行中')
     // A busy lane's 409 names the Job holding it.
-    else if (result.outcome === 'failed') toast.error(getErrorMessage(result.error, fallback))
+    else if (result.outcome === 'failed') toast.error(errorMessage(result.error, { fallback }))
     return result.outcome
   }, [toast])
   const startImportJob = importJob.start

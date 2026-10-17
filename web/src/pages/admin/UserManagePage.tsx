@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { listUsers, createUser, deleteUser, enableUser, resetUserPassword } from '../../api/admin'
+import { errorMessage } from '../../api/errors'
 import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { useRemoteResource } from '../../hooks/useRemoteResource'
@@ -26,7 +27,7 @@ export default function UserManagePage() {
       userList.mutate((prev) => prev.map(u => u.id === id ? { ...u, disabled_at: new Date().toISOString() } : u))
       setDeleteTarget(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'failed to disable user')
+      toast.error(errorMessage(err, { fallback: '停用失敗，請重試', not_found: '找不到這位使用者', cannot_disable_admin: '不能停用管理員帳號' }))
     }
   }
 
@@ -35,7 +36,7 @@ export default function UserManagePage() {
       await enableUser(id)
       userList.mutate((prev) => prev.map(u => u.id === id ? { ...u, disabled_at: null } : u))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'failed to enable user')
+      toast.error(errorMessage(err, { fallback: '啟用失敗，請重試', not_found: '找不到這位使用者' }))
     }
   }
 
@@ -166,7 +167,9 @@ function CreateUserModal({
     if (!username || !password) return
     setBusy(true)
     try { await onCreate(username, password, role) }
-    catch (err) { onError(err instanceof Error ? err.message : 'failed to create user') }
+    catch (err) {
+      onError(errorMessage(err, { fallback: '建立失敗，請重試', username_taken: '使用者名稱已存在', bad_request: '請填寫使用者名稱、密碼與角色' }))
+    }
     finally { setBusy(false) }
   }
 
@@ -204,7 +207,9 @@ function ResetPasswordModal({
     if (!pass) return
     setBusy(true)
     try { await onReset(user.id, pass); onClose(); onSuccess() }
-    catch (err) { onError(err instanceof Error ? err.message : 'failed to reset password') }
+    catch (err) {
+      onError(errorMessage(err, { fallback: '重設密碼失敗，請重試', not_found: '找不到這位使用者', bad_request: '請輸入新密碼' }))
+    }
     finally { setBusy(false) }
   }
 
