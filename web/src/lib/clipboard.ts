@@ -15,19 +15,22 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 function copyFromTextarea(text: string): boolean {
+  // The textarea borrows focus to select its text; give it back after.
+  const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const area = document.createElement('textarea')
   area.value = text
-  area.setAttribute('readonly', '')
-  area.style.position = 'fixed'
-  area.style.opacity = '0'
+  area.setAttribute('readonly', '') // no keyboard, no zoom on iOS
+  Object.assign(area.style, { position: 'fixed', top: '0', left: '0', opacity: '0' })
   document.body.appendChild(area)
-  area.focus()
+  area.focus({ preventScroll: true })
   area.select()
+  area.setSelectionRange(0, text.length) // iOS Safari ignores select() on a readonly field
   try {
     return document.execCommand('copy')
   } catch {
     return false
   } finally {
     area.remove()
+    focused?.focus({ preventScroll: true })
   }
 }

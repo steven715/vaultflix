@@ -8,7 +8,7 @@ function setClipboard(value: unknown) {
 describe('copyText', () => {
   afterEach(() => {
     setClipboard(undefined)
-    vi.restoreAllMocks()
+    delete (document as { execCommand?: unknown }).execCommand
   })
 
   it('uses the Clipboard API when the page has it', async () => {
@@ -31,6 +31,20 @@ describe('copyText', () => {
     expect(await copyText('D/影片 1.mkv')).toBe(true)
     expect(copied).toBe('D/影片 1.mkv')
     expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  // The fallback borrows focus to select its text; the button keeps it after.
+  it('gives focus back after the fallback copies', async () => {
+    setClipboard(undefined)
+    document.execCommand = vi.fn(() => true)
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    button.focus()
+
+    await copyText('a.mkv')
+
+    expect(document.activeElement).toBe(button)
+    button.remove()
   })
 
   it('says it failed when nothing could copy', async () => {

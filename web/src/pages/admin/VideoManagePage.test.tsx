@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
@@ -30,6 +30,10 @@ vi.mock('../../contexts/ToastContext', () => ({ useToast: () => toast }))
 
 describe('VideoManagePage (library)', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    delete (document as { execCommand?: unknown }).execCommand
+  })
   it('renders the video row and shows batch bar after selecting a row', async () => {
     renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
     await waitFor(() => expect(screen.getByText('片A')).toBeInTheDocument())
