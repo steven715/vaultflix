@@ -40,6 +40,10 @@ export default function VideoManagePage() {
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
 
   const totalPages = Math.ceil(total / pageSize)
+  // The request total was loaded for: right after the URL changes, total
+  // still belongs to the previous query until the new one returns.
+  const [totalFor, setTotalFor] = useState('')
+  const currentRequest = JSON.stringify({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined })
 
   // A quiet reload (after a Job) keeps the rows on screen while it loads.
   const quietReloadRef = useRef(false)
@@ -49,20 +53,24 @@ export default function VideoManagePage() {
     quietReloadRef.current = false
     if (!quiet) setLoading(true)
     setLoadError(false)
-    listVideos({ page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined })
-      .then((res) => { if (!cancelled) { setVideos(res.data); setTotal(res.total) } })
+    const request = { page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
+    listVideos(request)
+      .then((res) => { if (!cancelled) { setVideos(res.data); setTotal(res.total); setTotalFor(JSON.stringify(request)) } })
       .catch(() => { if (!cancelled) { setVideos([]); setTotal(0); setLoadError(true) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [page, pageSize, query, tagIdsParam, sortBy, sortOrder, reloadKey])
 
   // A page past the end (a delete emptied the last page, or a stale URL)
-  // shows the page that is now last instead of an empty list.
+  // shows the page that is now last instead of an empty list. Only a total
+  // loaded for this very page counts, and the correction replaces the URL so
+  // Back does not land on the emptied page again.
   const lastPage = Math.max(totalPages, 1)
+  const totalIsCurrent = totalFor === currentRequest
   const { setPage } = params
   useEffect(() => {
-    if (!loading && !loadError && page > lastPage) setPage(lastPage)
-  }, [loading, loadError, page, lastPage, setPage])
+    if (totalIsCurrent && page > lastPage) setPage(lastPage, { replace: true })
+  }, [totalIsCurrent, page, lastPage, setPage])
 
   useEffect(() => {
     listTags().then(setAllTags).catch((err) => { console.warn('failed to load tags', err) })

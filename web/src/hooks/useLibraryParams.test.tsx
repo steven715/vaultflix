@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { useLibraryParams } from './useLibraryParams'
 
@@ -56,5 +56,19 @@ describe('useLibraryParams', () => {
     const result = params('/?sort_order=asc')
     act(() => result.current.setSort({ by: 'title' }))
     expect([result.current.sortBy, result.current.sortOrder]).toEqual(['title', 'asc'])
+  })
+  // A correction replaces the URL: Back goes to where the admin came from,
+  // not to the page that was corrected away.
+  it('corrects the page without a history entry when asked to replace', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <MemoryRouter initialEntries={['/admin', '/admin/library?page=9']} initialIndex={1}>{children}</MemoryRouter>
+    )
+    const { result } = renderHook(() => ({ params: useLibraryParams(), navigate: useNavigate(), location: useLocation() }), { wrapper })
+
+    act(() => result.current.params.setPage(2, { replace: true }))
+    expect(result.current.location.search).toBe('?page=2')
+    act(() => { void result.current.navigate(-1) })
+
+    expect(result.current.location.pathname).toBe('/admin')
   })
 })

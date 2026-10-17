@@ -7,6 +7,7 @@ import { listVideos } from '../../api/videos'
 import { addVideoTag, deleteVideo, getActiveBackfill, getActiveImportJob, importVideos, listMediaSources, startBackfill } from '../../api/admin'
 import { listTags } from '../../api/tags'
 import type { ImportJob } from '../../types'
+import { useNavigate } from 'react-router-dom'
 import VideoManagePage from './VideoManagePage'
 
 vi.mock('../../api/videos', () => ({
@@ -144,6 +145,11 @@ describe('VideoManagePage (library)', () => {
   // Sorting by a column changes the whole order: staying on page 3 would show
   // an arbitrary slice of it.
   it('goes back to page 1 when sorting by a column', async () => {
+    // Page 3 exists: 61 Videos, 20 per page.
+    vi.mocked(listVideos).mockResolvedValue({
+      data: [{ id: 'v1', title: '片A', description: '', duration_seconds: 600, file_size_bytes: 1024, resolution: '1080p', original_filename: 'a.mp4', tags: [], minio_object_key: '', thumbnail_key: '', preview_key: '', mime_type: '', created_at: '2026-01-01T00:00:00Z', updated_at: '' }],
+      total: 61, page: 3, page_size: 20,
+    } as never)
     renderWithRouter(<VideoManagePage />, { route: '/admin/library?page=3' })
     await screen.findByText('片A')
     expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3 }))
@@ -208,5 +214,30 @@ describe('VideoManagePage (library)', () => {
     fireEvent.click(buttons[buttons.length - 1])
 
     await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })))
+  })
+  // Right after the URL changes, total still belongs to the previous query:
+  // it must not bounce the admin off a page the new query has.
+  it('keeps a later page of a new query while its total is still loading', async () => {
+    const one = (id: string) => ({
+      id, title: id, description: '', duration_seconds: 600, file_size_bytes: 1024, resolution: '1080p', original_filename: `${id}.mp4`,
+      tags: [], minio_object_key: '', thumbnail_key: '', preview_key: '', mime_type: '', created_at: '2026-01-01T00:00:00Z', updated_at: '',
+    })
+    let resolveB!: (v: unknown) => void
+    vi.mocked(listVideos)
+      .mockResolvedValueOnce({ data: [one('a1')], total: 5, page: 1, page_size: 20 } as never)
+      .mockImplementationOnce(() => new Promise((r) => { resolveB = r }) as never)
+    function GoToB() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/admin/library?q=b&page=3')}>go b</button>
+    }
+    renderWithRouter(<><GoToB /><VideoManagePage /></>, { route: '/admin/library?q=a' })
+    await screen.findByText('a1')
+
+    fireEvent.click(screen.getByText('go b'))
+    await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'b', page: 3 })))
+    resolveB({ data: [one('b41')], total: 60, page: 3, page_size: 20 })
+
+    expect(await screen.findByText('b41')).toBeInTheDocument()
+    expect(listVideos).not.toHaveBeenCalledWith(expect.objectContaining({ q: 'b', page: 1 }))
   })
 })
