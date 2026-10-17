@@ -300,8 +300,12 @@ func TestGetTodayRecommendations_InvalidDate(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body %s", w.Code, w.Body.String())
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("body %s: %v", w.Body.String(), err)
+	}
+	if w.Code != http.StatusBadRequest || resp.Error != model.CodeBadRequest {
+		t.Fatalf("got %d %q, want 400 bad_request", w.Code, resp.Error)
 	}
 	if called {
 		t.Error("GetToday ran for a malformed date")
