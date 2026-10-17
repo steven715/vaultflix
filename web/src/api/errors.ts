@@ -34,11 +34,11 @@ export type ErrorTexts = { fallback: string } & Record<string, string>
 export function errorMessage(err: unknown, texts: ErrorTexts): string {
   const e = toApiError(err)
   if (e.code && Object.hasOwn(texts, e.code)) return texts[e.code]
-  if (e.code && e.serverMessage && writtenForUsers(e.code)) return e.serverMessage
+  if (e.code && e.serverMessage && serverWritesUiText(e.code)) return e.serverMessage
   return texts.fallback
 }
 
-function writtenForUsers(code: string): boolean {
+function serverWritesUiText(code: string): boolean {
   switch (code) {
     case 'job_lane_busy':
       return true

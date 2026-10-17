@@ -50,11 +50,6 @@ export interface SuccessResponse<T> {
   data: T
 }
 
-export interface ErrorResponse {
-  error: string
-  message: string
-}
-
 export interface VideoListParams {
   page?: number
   page_size?: number
