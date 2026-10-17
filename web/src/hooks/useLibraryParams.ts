@@ -14,7 +14,8 @@ export interface LibraryParams {
   tagIds: number[]
   /** tag_ids as in the URL: a stable effect dependency, unlike the array. */
   tagIdsParam: string
-  setPage(page: number): void
+  /** replace: correct the URL without a history entry, so Back does not return to the corrected page. */
+  setPage(page: number, opts?: { replace?: boolean }): void
   /** Sort by col: the current column flips its order, another starts newest/largest first. */
   sortByColumn(col: LibrarySortBy): void
   setSort(sort: { by?: LibrarySortBy; order?: SortOrder }): void
@@ -38,7 +39,7 @@ export function useLibraryParams(): LibraryParams {
   const tagIdsParam = searchParams.get('tag_ids') || ''
   const tagIds = useMemo(() => parseTagIds(tagIdsParam), [tagIdsParam])
 
-  const update = useCallback((updates: Record<string, string>) => {
+  const update = useCallback((updates: Record<string, string>, opts?: { replace?: boolean }) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
       for (const [key, value] of Object.entries(updates)) {
@@ -46,10 +47,13 @@ export function useLibraryParams(): LibraryParams {
         else next.delete(key)
       }
       return next
-    })
+    }, opts)
   }, [setSearchParams])
 
-  const setPage = useCallback((p: number) => update({ page: p > 1 ? String(p) : '' }), [update])
+  const setPage = useCallback(
+    (p: number, opts?: { replace?: boolean }) => update({ page: p > 1 ? String(p) : '' }, opts),
+    [update],
+  )
   const setSort = useCallback(
     ({ by, order }: { by?: LibrarySortBy; order?: SortOrder }) =>
       update({ ...(by && { sort_by: by }), ...(order && { sort_order: order }), page: '' }),

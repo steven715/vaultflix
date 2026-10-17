@@ -50,7 +50,8 @@ describe('MediaSourcePage (reskin)', () => {
     await importAndFinish()
     expect(await screen.findByText('匯入完成')).toBeInTheDocument()
     expect(screen.queryByText('載入中...')).toBeNull()
-    expect(listMediaSources).toHaveBeenCalledTimes(2)
+    // The refresh starts in an effect after the summary renders.
+    await waitFor(() => expect(listMediaSources).toHaveBeenCalledTimes(2))
     fireEvent.click(screen.getByText('關閉'))
     expect(screen.queryByText('匯入完成')).toBeNull()
   })
