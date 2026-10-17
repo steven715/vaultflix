@@ -85,6 +85,11 @@ describe('VideoManagePage (library)', () => {
 
   it('reloads the list on the same page when a Backfill Job ends', async () => {
     vi.mocked(startBackfill).mockResolvedValue({ job_id: 'b1', kind: 'keyframe' })
+    // Page 2 exists: 21 Videos, 20 per page.
+    vi.mocked(listVideos).mockResolvedValue({
+      data: [{ id: 'v1', title: '片A', description: '', duration_seconds: 600, file_size_bytes: 1024, resolution: '1080p', original_filename: 'a.mp4', tags: [], minio_object_key: '', thumbnail_key: '', preview_key: '', mime_type: '', created_at: '2026-01-01T00:00:00Z', updated_at: '' }],
+      total: 21, page: 2, page_size: 20,
+    } as never)
     const ws = wsHarness()
     renderWithRouter(<VideoManagePage />, { route: '/admin/library?page=2', ws })
     await screen.findByText('片A')
@@ -185,5 +190,23 @@ describe('VideoManagePage (library)', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('2 部中有 1 部加標籤失敗'))
     expect(toast.success).not.toHaveBeenCalled()
+  })
+  // Deleting the last Video of the last page leaves a page past the end:
+  // show the page that is now last instead of an empty list.
+  it('moves to the new last page when a delete empties the current one', async () => {
+    const only = {
+      id: 'v21', title: '第21部', description: '', duration_seconds: 600, file_size_bytes: 1024, resolution: '1080p', original_filename: 'v21.mp4',
+      tags: [], minio_object_key: '', thumbnail_key: '', preview_key: '', mime_type: '', created_at: '2026-01-01T00:00:00Z', updated_at: '',
+    }
+    vi.mocked(listVideos).mockResolvedValueOnce({ data: [only], total: 21, page: 2, page_size: 20 } as never)
+    vi.mocked(deleteVideo).mockResolvedValue(undefined)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library?page=2' })
+    const row = (await screen.findByText('第21部')).closest('tr')!
+
+    fireEvent.click(within(row).getByText('刪除', { selector: 'button' }))
+    const buttons = screen.getAllByText('刪除', { selector: 'button' })
+    fireEvent.click(buttons[buttons.length - 1])
+
+    await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })))
   })
 })

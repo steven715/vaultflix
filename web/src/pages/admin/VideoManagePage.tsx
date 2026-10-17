@@ -56,6 +56,14 @@ export default function VideoManagePage() {
     return () => { cancelled = true }
   }, [page, pageSize, query, tagIdsParam, sortBy, sortOrder, reloadKey])
 
+  // A page past the end (a delete emptied the last page, or a stale URL)
+  // shows the page that is now last instead of an empty list.
+  const lastPage = Math.max(totalPages, 1)
+  const { setPage } = params
+  useEffect(() => {
+    if (!loading && !loadError && page > lastPage) setPage(lastPage)
+  }, [loading, loadError, page, lastPage, setPage])
+
   useEffect(() => {
     listTags().then(setAllTags).catch((err) => { console.warn('failed to load tags', err) })
   }, [])
