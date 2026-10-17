@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -30,39 +28,18 @@ func (h *HistoryHandler) SaveProgress(c *gin.Context) {
 
 	var req saveProgressRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "video_id is required",
-		})
+		badRequest(c, "video_id is required")
 		return
 	}
 
 	if req.ProgressSeconds < 0 {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "progress_seconds must be non-negative",
-		})
+		badRequest(c, "progress_seconds must be non-negative")
 		return
 	}
 
 	err := h.historySvc.SaveProgress(c.Request.Context(), userID, req.VideoID, req.ProgressSeconds)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to save watch progress",
-			"error", err,
-			"user_id", userID,
-			"video_id", req.VideoID,
-		)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to save watch progress",
-		})
+		writeError(c, err, "save watch progress", "user_id", userID, "video_id", req.VideoID)
 		return
 	}
 
@@ -75,11 +52,7 @@ func (h *HistoryHandler) ClearHistory(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if _, err := h.historySvc.ClearHistory(c.Request.Context(), userID); err != nil {
-		slog.Error("failed to clear watch history", "error", err, "user_id", userID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to clear watch history",
-		})
+		writeError(c, err, "clear watch history", "user_id", userID)
 		return
 	}
 
@@ -93,10 +66,7 @@ func (h *HistoryHandler) List(c *gin.Context) {
 	if raw := c.Query("page"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
-				Message: "page must be a positive integer",
-			})
+			badRequest(c, "page must be a positive integer")
 			return
 		}
 		page = parsed
@@ -106,10 +76,7 @@ func (h *HistoryHandler) List(c *gin.Context) {
 	if raw := c.Query("page_size"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > 100 {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
-				Message: "page_size must be between 1 and 100",
-			})
+			badRequest(c, "page_size must be between 1 and 100")
 			return
 		}
 		pageSize = parsed
@@ -117,11 +84,7 @@ func (h *HistoryHandler) List(c *gin.Context) {
 
 	items, total, err := h.historySvc.List(c.Request.Context(), userID, page, pageSize)
 	if err != nil {
-		slog.Error("failed to list watch history", "error", err, "user_id", userID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list watch history",
-		})
+		writeError(c, err, "list watch history", "user_id", userID)
 		return
 	}
 

@@ -3,17 +3,11 @@ package handler
 import (
 	"errors"
 
-	"github.com/steven/vaultflix/internal/model"
 	"github.com/steven/vaultflix/internal/service"
 )
 
-// jobLaneBusy is the 409 body for a Job refused by a busy lane: the code is
-// the same whoever holds the lane, and the message names that Job
-// (GLOSSARY.md「Job Lane」, ADR-0014).
-func jobLaneBusy(err error) model.ErrorResponse {
-	return model.ErrorResponse{Error: "job_lane_busy", Message: jobLaneBusyMessage(err)}
-}
-
+// jobLaneBusyMessage names the Job holding a busy lane, for the admin
+// (GLOSSARY.md「Job Lane」, ADR-0014); writeError answers it 409 job_lane_busy.
 func jobLaneBusyMessage(err error) string {
 	var busy *service.JobLaneBusyError
 	if errors.As(err, &busy) {

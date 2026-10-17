@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -39,10 +38,7 @@ type importRequest struct {
 func (h *VideoHandler) Import(c *gin.Context) {
 	var req importRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "source_id is required",
-		})
+		badRequest(c, "source_id is required")
 		return
 	}
 
@@ -50,7 +46,7 @@ func (h *VideoHandler) Import(c *gin.Context) {
 
 	job, err := h.importService.StartAsync(ctx, req.SourceID, c.GetString("user_id"))
 	if err != nil {
-		writeImportStartError(c, req.SourceID, err)
+		writeError(c, err, "start import")
 		return
 	}
 
@@ -60,20 +56,13 @@ func (h *VideoHandler) Import(c *gin.Context) {
 func (h *VideoHandler) List(c *gin.Context) {
 	filter, err := service.ParseVideoFilter(c.Query)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: err.Error(),
-		})
+		badRequest(c, err.Error())
 		return
 	}
 
 	videos, total, err := h.videoService.List(c.Request.Context(), filter)
 	if err != nil {
-		slog.Error("failed to list videos", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list videos",
-		})
+		writeError(c, err, "list videos")
 		return
 	}
 
@@ -91,18 +80,7 @@ func (h *VideoHandler) GetByID(c *gin.Context) {
 	userID := c.GetString("user_id")
 	detail, err := h.videoService.GetByID(c.Request.Context(), id, userID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to get video", "error", err, "video_id", id)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get video",
-		})
+		writeError(c, err, "get video", "video_id", id)
 		return
 	}
 
@@ -121,10 +99,7 @@ func (h *VideoHandler) Update(c *gin.Context) {
 
 	var req updateVideoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "title is required",
-		})
+		badRequest(c, "title is required")
 		return
 	}
 
@@ -135,18 +110,7 @@ func (h *VideoHandler) Update(c *gin.Context) {
 
 	video, err := h.videoService.Update(c.Request.Context(), id, input)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to update video", "error", err, "video_id", id)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to update video",
-		})
+		writeError(c, err, "update video", "video_id", id)
 		return
 	}
 
@@ -160,18 +124,7 @@ func (h *VideoHandler) Delete(c *gin.Context) {
 
 	err := h.videoService.Delete(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to delete video", "error", err, "video_id", id)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to delete video",
-		})
+		writeError(c, err, "delete video", "video_id", id)
 		return
 	}
 
@@ -189,7 +142,7 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 	// and none of them needs the detail page's Tags or image URLs.
 	src, err := h.videoService.ResolvePlayback(ctx, videoID)
 	if err != nil {
-		writeStreamResolveError(c, videoID, err)
+		writeError(c, err, "resolve video file", "video_id", videoID)
 		return
 	}
 
@@ -197,12 +150,7 @@ func (h *VideoHandler) Stream(c *gin.Context) {
 	if src.IsLegacy() {
 		presignedURL, err := h.videoService.GetPresignedURL(ctx, src.LegacyObjectKey)
 		if err != nil {
-			slog.Error("failed to generate presigned url for legacy video",
-				"error", err, "video_id", videoID)
-			c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-				Error:   "internal_error",
-				Message: "failed to generate stream url",
-			})
+			writeError(c, err, "generate stream url", "video_id", videoID)
 			return
 		}
 		c.Redirect(http.StatusTemporaryRedirect, presignedURL)
@@ -242,53 +190,4 @@ func encodePathSegments(p string) string {
 		parts[i] = url.PathEscape(s)
 	}
 	return strings.Join(parts, "/")
-}
-
-// writeImportStartError maps ImportService.StartAsync errors to the Import
-// endpoint's HTTP responses; anything else is logged as a 500.
-func writeImportStartError(c *gin.Context, sourceID string, err error) {
-	switch {
-	case errors.Is(err, model.ErrNotFound):
-		c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "media source not found"})
-	case errors.Is(err, model.ErrMediaSourceDisabled):
-		c.JSON(http.StatusConflict, model.ErrorResponse{Error: "source_disabled", Message: "media source is currently disabled"})
-	case errors.Is(err, model.ErrConflict):
-		c.JSON(http.StatusConflict, jobLaneBusy(err))
-	default:
-		slog.Error("failed to start import", "error", err, "source_id", sourceID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to start import"})
-	}
-}
-
-// writeStreamResolveError maps VideoService.ResolvePlayback errors to the
-// Stream endpoint's HTTP responses; anything else is logged as a 500.
-func writeStreamResolveError(c *gin.Context, videoID string, err error) {
-	switch {
-	case errors.Is(err, model.ErrNotFound):
-		c.JSON(http.StatusNotFound, model.ErrorResponse{
-			Error:   "not_found",
-			Message: "video not found",
-		})
-	case errors.Is(err, model.ErrMediaSourceDisabled):
-		c.JSON(http.StatusConflict, model.ErrorResponse{
-			Error:   "source_unavailable",
-			Message: "media source is currently disabled",
-		})
-	case errors.Is(err, model.ErrPathNotAllowed):
-		c.JSON(http.StatusForbidden, model.ErrorResponse{
-			Error:   "path_not_allowed",
-			Message: "resolved file path is outside allowed area",
-		})
-	case errors.Is(err, model.ErrPathNotExist):
-		c.JSON(http.StatusNotFound, model.ErrorResponse{
-			Error:   "file_not_found",
-			Message: "video file not found on disk (may have been moved or drive unmounted)",
-		})
-	default:
-		slog.Error("failed to resolve video file", "error", err, "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to access video file",
-		})
-	}
 }

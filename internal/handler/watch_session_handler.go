@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -32,10 +30,7 @@ func (h *WatchSessionHandler) Heartbeat(c *gin.Context) {
 
 	var req heartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "session_id and video_id are required",
-		})
+		badRequest(c, "session_id and video_id are required")
 		return
 	}
 
@@ -47,16 +42,7 @@ func (h *WatchSessionHandler) Heartbeat(c *gin.Context) {
 		PositionSeconds: req.PositionSeconds,
 	})
 	if err != nil {
-		if errors.Is(err, model.ErrInvalidInput) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "invalid heartbeat"})
-			return
-		}
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video not found"})
-			return
-		}
-		slog.Error("failed to record heartbeat", "error", err, "user_id", userID, "video_id", req.VideoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to record heartbeat"})
+		writeError(c, err, "record heartbeat", "user_id", userID, "video_id", req.VideoID)
 		return
 	}
 

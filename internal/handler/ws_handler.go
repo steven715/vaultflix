@@ -36,10 +36,7 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid, ok := userID.(string)
 	if !ok || uid == "" {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-			Error:   "unauthorized",
-			Message: "missing user identity",
-		})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{Error: codeUnauthorized, Message: "missing user identity"})
 		return
 	}
 
