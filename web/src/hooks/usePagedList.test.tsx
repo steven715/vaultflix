@@ -92,4 +92,22 @@ describe('usePagedList', () => {
     expect(result.current.list.status).toBe('ready')
     expect(result.current.list.items).toEqual(['a'])
   })
+  // The correction rewrites where the admin is, not where they went: Back must
+  // not land on the page that was corrected away.
+  it('corrects the page with replace', async () => {
+    const setPage = vi.fn()
+    renderHook(() => usePagedList({ load: async (page) => pageOf(page, 21, []), page: 5, pageSize: PAGE_SIZE, setPage }))
+
+    await waitFor(() => expect(setPage).toHaveBeenCalledWith(2, { replace: true }))
+  })
+
+  it('retries a failed page through loading', async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce(pageOf(1, 1, ['a']))
+    const { result } = render(load)
+    await waitFor(() => expect(result.current.list.status).toBe('error'))
+
+    act(() => result.current.list.retry())
+
+    await waitFor(() => expect(result.current.list.items).toEqual(['a']))
+  })
 })

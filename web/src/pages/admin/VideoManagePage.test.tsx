@@ -275,4 +275,18 @@ describe('VideoManagePage (library)', () => {
     expect(screen.getByText('片A')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
+  // The refresh after a batch delete is quiet; if it fails, the deleted
+  // Videos must not stay on screen.
+  it('drops deleted Videos from the page even when the refresh fails', async () => {
+    vi.mocked(deleteVideo).mockImplementation(async (id: string) => { if (id === 'v2') throw new Error('500') })
+    await selectTwo()
+    vi.mocked(listVideos).mockRejectedValue(new Error('down'))
+
+    clickBatchDelete()
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('刪除', { selector: 'button' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('無法更新影片列表'))
+    expect(screen.queryByLabelText('選取 片A')).toBeNull()
+    expect(screen.getByLabelText('選取 片B')).toBeInTheDocument()
+  })
 })

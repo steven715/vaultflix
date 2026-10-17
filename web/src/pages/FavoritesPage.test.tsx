@@ -37,4 +37,27 @@ describe('FavoritesPage', () => {
     expect(await screen.findByText('第1部', { selector: 'h3' })).toBeInTheDocument()
     expect(screen.queryByText('還沒有收藏')).toBeNull()
   })
+  // The removal must reach the server before the list moves to another page,
+  // or that page loads with the old total.
+  it('moves pages only after the server has removed the favorite', async () => {
+    let total = 21
+    let finishRemove!: () => void
+    vi.mocked(listFavorites).mockImplementation(async (page = 1) => ({
+      data: page === 2 && total > 20 ? [video('v21', '第21部')] : [video('v1', '第1部')],
+      total, page, page_size: 20,
+    }) as never)
+    vi.mocked(removeFavorite).mockImplementation(() => new Promise<void>((r) => { finishRemove = () => { total = 20; r() } }))
+    renderWithRouter(<FavoritesPage />, { route: '/favorites' })
+    await screen.findByText('第1部', { selector: 'h3' })
+    fireEvent.click(screen.getByText('2', { selector: 'button' }))
+    await screen.findByText('第21部', { selector: 'h3' })
+
+    fireEvent.click(screen.getByTitle('取消收藏'))
+    expect(screen.queryByText('第21部', { selector: 'h3' })).toBeNull()
+    expect(listFavorites).toHaveBeenCalledTimes(2)
+
+    finishRemove()
+    expect(await screen.findByText('第1部', { selector: 'h3' })).toBeInTheDocument()
+    expect(screen.queryByText('2', { selector: 'button' })).toBeNull()
+  })
 })

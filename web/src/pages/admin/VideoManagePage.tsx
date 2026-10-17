@@ -38,10 +38,11 @@ export default function VideoManagePage() {
 
   // The library's current page. A refresh (after a Job or a batch) is quiet:
   // the rows stay while it loads, and a failure only says so.
+  const filter = { page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
   const list = usePagedList<VideoWithTags>({
-    load: (p) => listVideos({ page: p, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }),
+    load: (p) => listVideos({ ...filter, page: p }),
     page, pageSize, setPage: params.setPage,
-    key: JSON.stringify([sortBy, sortOrder, query, tagIdsParam]),
+    key: JSON.stringify(filter),
   })
   const { items: videos, total, totalPages } = list
   function refreshList() {
@@ -112,6 +113,8 @@ export default function VideoManagePage() {
     setConfirmingBatchDelete(false)
     const ids = [...selected]
     const failed = await runOnEach(ids, deleteVideo)
+    const deleted = ids.filter((id) => !failed.includes(id))
+    list.mutate((p) => ({ items: p.items.filter((v) => !deleted.includes(v.id)), total: p.total - deleted.length }))
     setSelected(failed); refreshList()
     if (failed.length > 0) toast.error(`${ids.length} 部中有 ${failed.length} 部刪除失敗`)
     else toast.success(`已刪除 ${ids.length} 部影片`)

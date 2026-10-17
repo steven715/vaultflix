@@ -22,10 +22,12 @@ export default function FavoritesPage() {
   const { items: favorites, total, totalPages } = list
 
   async function handleRemove(videoID: string) {
-    // Optimistic UI: remove immediately
-    list.mutate((p) => ({ items: p.items.filter((f) => f.id !== videoID), total: p.total - 1 }))
+    // Hide it at once; lower the total, which may move to another page, only
+    // once the server has removed it, so that page loads without it.
+    list.mutate((p) => ({ ...p, items: p.items.filter((f) => f.id !== videoID) }))
     try {
       await removeFavorite(videoID)
+      list.mutate((p) => ({ ...p, total: p.total - 1 }))
     } catch {
       toast.error('取消收藏失敗')
       list.reload().catch(() => toast.error('重新載入收藏失敗'))
