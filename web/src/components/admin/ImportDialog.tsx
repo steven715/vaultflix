@@ -28,7 +28,8 @@ export default function ImportDialog({ job, blockedReason, open, onClose }: Impo
 function ImportDialogBody({ job, blockedReason, onClose }: Omit<ImportDialogProps, 'open'>) {
   const sources = useRemoteResource(async () => (await listMediaSources()).filter((s) => s.enabled))
   const [chosen, setChosen] = useState('')
-  const sourceId = chosen || sources.data?.[0]?.id || ''
+  // The chosen Media Source, unless a reload no longer lists it.
+  const sourceId = sources.data?.some((s) => s.id === chosen) ? chosen : sources.data?.[0]?.id ?? ''
   const view = job.view
   const running = view?.phase === 'running'
 

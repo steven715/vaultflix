@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
 import { deleteVideo } from '../../api/admin'
-import type { VideoWithTags, TagWithCount, BackfillKind } from '../../types'
+import type { Video, VideoWithTags, TagWithCount, BackfillKind } from '../../types'
 import LibraryToolbar from '../../components/admin/LibraryToolbar'
 import LibraryTable from '../../components/admin/LibraryTable'
 import { BatchTagDialog, DeleteConfirm } from '../../components/admin/LibraryModals'
@@ -64,6 +64,12 @@ export default function VideoManagePage() {
     onImportFinished: (view) => { if (view.counts.succeeded > 0) showFromPageOne() },
     onBackfillFinished: refreshList,
   })
+
+  // A saved edit shows in its row; the Video keeps its Tags.
+  function applyEdit(updated: Video) {
+    setEditingVideo(null)
+    list.mutate((p) => ({ ...p, items: p.items.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v) }))
+  }
 
   async function handleDelete() {
     if (!deletingVideo) return
@@ -147,10 +153,7 @@ export default function VideoManagePage() {
 
       {editingVideo && (
         <EditVideoDialog video={editingVideo} onClose={() => setEditingVideo(null)}
-          onSaved={(updated) => {
-            setEditingVideo(null)
-            list.mutate((p) => ({ ...p, items: p.items.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v) }))
-          }} />
+          onSaved={applyEdit} />
       )}
 
       {deletingVideo && (

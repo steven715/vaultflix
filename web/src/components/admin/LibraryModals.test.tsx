@@ -40,4 +40,21 @@ describe('BatchTagDialog', () => {
     expect(vi.mocked(addVideoTag).mock.calls[0]).toEqual(['v1', 7])
     expect(onDone).toHaveBeenCalled()
   })
+  // While the batch runs, a second 套用 or a close would start a second batch
+  // or hide the one still running.
+  it('runs the batch once and stays open while it runs', async () => {
+    let finish!: () => void
+    vi.mocked(addVideoTag).mockImplementationOnce(() => new Promise<void>((r) => { finish = r })).mockResolvedValue(undefined)
+    const onClose = vi.fn()
+    render(<BatchTagDialog videoIds={['v1', 'v2']} tags={tags} onDone={vi.fn()} onClose={onClose} />)
+
+    fireEvent.click(screen.getByText('套用'))
+    fireEvent.click(screen.getByText('套用中...'))
+    fireEvent.click(screen.getByText('取消'))
+    expect(onClose).not.toHaveBeenCalled()
+
+    finish()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(addVideoTag).toHaveBeenCalledTimes(2)
+  })
 })

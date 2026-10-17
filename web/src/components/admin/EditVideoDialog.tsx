@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { updateVideo } from '../../api/admin'
+import { errorMessage } from '../../api/errors'
 import { useToast } from '../../contexts/ToastContext'
 import type { Video } from '../../types'
 
@@ -23,10 +24,9 @@ export default function EditVideoDialog({ video, onSaved, onClose }: EditVideoDi
     try {
       onSaved(await updateVideo(video.id, { title, description: desc }))
       toast.success('已儲存')
-    } catch {
-      toast.error('儲存失敗，請重試')
-    } finally {
+    } catch (err) {
       setSaving(false)
+      toast.error(errorMessage(err, { fallback: '儲存失敗，請重試', not_found: '這部影片已經不存在' }))
     }
   }
 
