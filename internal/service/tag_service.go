@@ -33,7 +33,7 @@ func isAllowedCategory(category string) bool {
 // Returns model.ErrInvalidInput (wrapped) for an unknown category.
 func (s *TagService) List(ctx context.Context, category string) ([]model.TagWithCount, error) {
 	if category != "" && !isAllowedCategory(category) {
-		return nil, fmt.Errorf("tag category %q: %w", category, model.ErrInvalidInput)
+		return nil, &model.InvalidParamError{Message: badTagCategory}
 	}
 	tags, err := s.tags.List(ctx, category)
 	if err != nil {
@@ -50,7 +50,7 @@ func (s *TagService) Create(ctx context.Context, tag *model.Tag) error {
 		tag.Category = "custom"
 	}
 	if !isAllowedCategory(tag.Category) {
-		return fmt.Errorf("tag category %q: %w", tag.Category, model.ErrInvalidInput)
+		return &model.InvalidParamError{Message: badTagCategory}
 	}
 	if err := s.tags.Create(ctx, tag); err != nil {
 		return fmt.Errorf("failed to create tag %q: %w", tag.Name, err)
@@ -97,3 +97,6 @@ func missing(err error, what, subject string) error {
 	}
 	return fmt.Errorf("failed to get %s: %w", subject, err)
 }
+
+// badTagCategory says a Tag category is outside the allowed list.
+const badTagCategory = "category must be one of: genre, actor, studio, custom"

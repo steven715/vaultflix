@@ -159,7 +159,7 @@ type ErrorResponse struct {
 }
 ```
 
-錯誤回應一律經 `internal/handler/errors.go`：domain error 交給 `writeError(c, err, op, logAttrs...)`（唯一的 sentinel → 狀態碼／錯誤碼對照表，500 一定先 log），handler 自己的輸入驗證用 `badRequest(c, msg)`。不要在 handler 裡手寫 `ErrorResponse`；錯誤碼是那裡的具名常數，新增時同步前端 `ErrorCode`（有測試把關）。
+錯誤回應經 `internal/handler/errors.go`：domain error 交給 `writeError(c, err, op, logAttrs...)`（唯一的 sentinel → 狀態碼／錯誤碼對照表，500 一定先 log），handler 自己的輸入驗證用 `badRequest(c, msg)`。不要在 handler 裡自己判斷 sentinel 決定狀態碼；只有同一個 sentinel 在該端點語意不同時才覆寫（例：新增 Media Source 的路徑錯誤是 400）。錯誤碼一律用 `model.Code*` 常數（`internal/model/error_codes.go`），新增時同步前端 `ErrorCode`，有測試把關。
 
 前端 API client 依這兩種形狀解包（頂層有 `total` 就視為分頁、不解包），改形狀前先看 [`docs/conventions/frontend.md`](docs/conventions/frontend.md)「前後端 Response 契約」。
 

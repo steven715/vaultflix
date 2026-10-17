@@ -59,5 +59,5 @@ func guard(r Route) gin.HandlerFunc {
 }
 
 func forbid(c *gin.Context, message string) {
-	c.AbortWithStatusJSON(http.StatusForbidden, model.ErrorResponse{Error: "forbidden", Message: message})
+	c.AbortWithStatusJSON(http.StatusForbidden, model.ErrorResponse{Error: model.CodeForbidden, Message: message})
 }

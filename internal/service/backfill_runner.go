@@ -53,7 +53,7 @@ const JobKindBackfill = "backfill"
 func (r *BackfillRunner) Start(ctx context.Context, kind model.BackfillKind, userID string) (*model.BackfillJob, error) {
 	task, ok := r.tasks[kind]
 	if !ok {
-		return nil, fmt.Errorf("backfill kind %q: %w", kind, model.ErrInvalidInput)
+		return nil, &model.InvalidParamError{Message: fmt.Sprintf("unknown backfill kind %q", kind)}
 	}
 	job, err := r.jobs.Start(JobSpec{
 		Kind: JobKindBackfill, Meta: kind, Task: &backfillItems{task: task},

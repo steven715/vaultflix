@@ -69,7 +69,7 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 	videoID := c.Param("id")
 	manifest, err := h.hls.Manifest(c.Request.Context(), videoID)
 	if err != nil {
-		writeError(c, err, "serve hls")
+		writeError(c, err, "serve hls", "video_id", videoID)
 		return
 	}
 	c.Header("Cache-Control", "no-cache")
@@ -82,7 +82,7 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 	videoID := c.Param("id")
 	path, err := h.hls.Segment(c.Request.Context(), videoID, c.Param("segment"))
 	if err != nil {
-		writeError(c, err, "serve hls")
+		writeError(c, err, "serve hls", "video_id", videoID)
 		return
 	}
 	c.Header("Content-Type", "video/mp2t")

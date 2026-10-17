@@ -40,7 +40,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 
 		if tokenString == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "missing token",
 			})
 			return
@@ -54,7 +54,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 		})
 		if err != nil || !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "invalid or expired token",
 			})
 			return
@@ -63,7 +63,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "invalid or expired token",
 			})
 			return

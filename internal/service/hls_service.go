@@ -69,7 +69,7 @@ func (s *HLSService) Manifest(ctx context.Context, videoID string) ([]byte, erro
 func (s *HLSService) Segment(ctx context.Context, videoID, name string) (string, error) {
 	idx, ok := streaming.ParseSegmentName(name)
 	if !ok {
-		return "", fmt.Errorf("segment name %q: %w", name, model.ErrInvalidInput)
+		return "", &model.InvalidParamError{Message: "invalid segment name"}
 	}
 	inputPath, segs, err := s.boundaries(ctx, videoID)
 	if err != nil {

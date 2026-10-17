@@ -56,8 +56,7 @@ export type ErrorTexts = { fallback: string } & Partial<Record<ErrorCode, string
 // the admin (a busy Job Lane names the Job holding it).
 export function errorMessage(err: unknown, texts: ErrorTexts): string {
   const e = toApiError(err)
-  const text = e.code ? texts[e.code as ErrorCode] : undefined
-  if (text !== undefined) return text
+  if (e.code && Object.hasOwn(texts, e.code)) return texts[e.code as ErrorCode] as string
   if (e.code && e.serverMessage && serverWritesUiText(e.code)) return e.serverMessage
   return texts.fallback
 }

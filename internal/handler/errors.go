@@ -11,28 +11,6 @@ import (
 	"github.com/steven/vaultflix/internal/service"
 )
 
-// Error codes of ErrorResponse. The frontend matches on them (keep
-// web/src/api/errors.ts ErrorCode in step); messages are for API callers.
-const (
-	codeBadRequest          = "bad_request"
-	codeUnauthorized        = "unauthorized"
-	codeForbidden           = "forbidden"
-	codeNotFound            = "not_found"
-	codeFileNotFound        = "file_not_found"
-	codePathNotAllowed      = "path_not_allowed"
-	codePathNotExist        = "path_not_exist"
-	codeAlreadyExists       = "already_exists"
-	codeUsernameTaken       = "username_taken"
-	codeConflict            = "conflict"
-	codeJobLaneBusy         = "job_lane_busy"
-	codeSourceDisabled      = "source_disabled"
-	codeCannotDisableAdmin  = "cannot_disable_admin"
-	codeNoCode              = "no_code"
-	codeKeyframeIndexFailed = "keyframe_index_failed"
-	codeStreamNotReady      = "stream_not_ready"
-	codeInternal            = "internal_error"
-)
-
 // httpError is how one domain error is answered.
 type httpError struct {
 	status int
@@ -47,26 +25,26 @@ func httpErrorFor(err error) (h httpError, ok bool) {
 	var busy *service.JobLaneBusyError
 	switch {
 	case errors.As(err, &busy):
-		return httpError{http.StatusConflict, codeJobLaneBusy, jobLaneBusyMessage(err)}, true
+		return httpError{http.StatusConflict, model.CodeJobLaneBusy, jobLaneBusyMessage(err)}, true
 	case errors.Is(err, service.ErrUsernameAlreadyExists):
-		return httpError{http.StatusConflict, codeUsernameTaken, "username already exists"}, true
+		return httpError{http.StatusConflict, model.CodeUsernameTaken, "username already exists"}, true
 	case errors.Is(err, model.ErrAlreadyExists):
-		return httpError{http.StatusConflict, codeAlreadyExists, "already exists"}, true
+		return httpError{http.StatusConflict, model.CodeAlreadyExists, "already exists"}, true
 	case errors.Is(err, model.ErrMediaSourceDisabled):
 		// 409, not 503: the player polls on 503 only (web/src/lib/hlsError.ts).
-		return httpError{http.StatusConflict, codeSourceDisabled, "media source is disabled"}, true
+		return httpError{http.StatusConflict, model.CodeSourceDisabled, "media source is disabled"}, true
 	case errors.Is(err, model.ErrConflict):
-		return httpError{http.StatusConflict, codeConflict, "conflicts with the current state"}, true
+		return httpError{http.StatusConflict, model.CodeConflict, "conflicts with the current state"}, true
 	case errors.Is(err, model.ErrPathNotExist):
-		return httpError{http.StatusNotFound, codeFileNotFound, "file not found"}, true
+		return httpError{http.StatusNotFound, model.CodeFileNotFound, "file not found"}, true
 	case errors.Is(err, model.ErrNotFound), errors.Is(err, model.ErrNotRemux):
-		return httpError{http.StatusNotFound, codeNotFound, "not found"}, true
+		return httpError{http.StatusNotFound, model.CodeNotFound, "not found"}, true
 	case errors.Is(err, model.ErrPathNotAllowed):
-		return httpError{http.StatusForbidden, codePathNotAllowed, "path outside the allowed area"}, true
+		return httpError{http.StatusForbidden, model.CodePathNotAllowed, "path outside the allowed area"}, true
 	case errors.Is(err, model.ErrInvalidInput):
-		return httpError{http.StatusBadRequest, codeBadRequest, "invalid input"}, true
+		return httpError{http.StatusBadRequest, model.CodeBadRequest, "invalid input"}, true
 	case errors.Is(err, model.ErrCannotDisableAdmin):
-		return httpError{http.StatusBadRequest, codeCannotDisableAdmin, "cannot disable an admin account"}, true
+		return httpError{http.StatusBadRequest, model.CodeCannotDisableAdmin, "cannot disable an admin account"}, true
 	}
 	return authOrStreamError(err)
 }
@@ -74,17 +52,17 @@ func httpErrorFor(err error) (h httpError, ok bool) {
 func authOrStreamError(err error) (httpError, bool) {
 	switch {
 	case errors.Is(err, service.ErrInvalidCredentials):
-		return httpError{http.StatusUnauthorized, codeUnauthorized, "invalid username or password"}, true
+		return httpError{http.StatusUnauthorized, model.CodeUnauthorized, "invalid username or password"}, true
 	case errors.Is(err, model.ErrAccountDisabled):
-		return httpError{http.StatusForbidden, codeForbidden, "account is disabled"}, true
+		return httpError{http.StatusForbidden, model.CodeForbidden, "account is disabled"}, true
 	case errors.Is(err, model.ErrCodeNotFound):
-		return httpError{http.StatusUnprocessableEntity, codeNoCode, "no code in filename"}, true
+		return httpError{http.StatusUnprocessableEntity, model.CodeNoCode, "no code in filename"}, true
 	case errors.Is(err, model.ErrKeyframeIndexFailed):
 		// 422, not 503: the player must stop polling and say why.
-		return httpError{http.StatusUnprocessableEntity, codeKeyframeIndexFailed, "the keyframe index could not be built"}, true
+		return httpError{http.StatusUnprocessableEntity, model.CodeKeyframeIndexFailed, "the keyframe index could not be built"}, true
 	case errors.Is(err, model.ErrStreamPreparing):
 		// The only 503: the player polls on it (docs/streaming.md).
-		return httpError{http.StatusServiceUnavailable, codeStreamNotReady, "preparing the stream, retry shortly"}, true
+		return httpError{http.StatusServiceUnavailable, model.CodeStreamNotReady, "preparing the stream, retry shortly"}, true
 	}
 	return httpError{}, false
 }
@@ -98,7 +76,7 @@ func writeError(c *gin.Context, err error, op string, logAttrs ...any) {
 	h, ok := httpErrorFor(err)
 	if !ok {
 		slog.Error(op+" failed", append([]any{"error", err, "path", c.FullPath()}, logAttrs...)...)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: codeInternal, Message: op + " failed"})
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: model.CodeInternal, Message: op + " failed"})
 		return
 	}
 	message := op + ": " + h.reason
@@ -109,7 +87,7 @@ func writeError(c *gin.Context, err error, op string, logAttrs ...any) {
 		message = invalid.Message
 	case errors.As(err, &missing):
 		message = op + ": " + missing.Error()
-	case h.code == codeJobLaneBusy:
+	case h.code == model.CodeJobLaneBusy:
 		message = h.reason
 	}
 	c.JSON(h.status, model.ErrorResponse{Error: h.code, Message: message})
@@ -118,5 +96,5 @@ func writeError(c *gin.Context, err error, op string, logAttrs ...any) {
 // badRequest answers a request the handler itself found invalid (a missing
 // field, a malformed parameter), with a message saying what is wrong.
 func badRequest(c *gin.Context, message string) {
-	c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: codeBadRequest, Message: message})
+	c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: model.CodeBadRequest, Message: message})
 }

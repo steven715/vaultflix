@@ -23,7 +23,7 @@ func NewWatchSessionService(repo repository.WatchSessionRepository) *WatchSessio
 // RecordHeartbeat validates and clamps a heartbeat, then upserts its session.
 func (s *WatchSessionService) RecordHeartbeat(ctx context.Context, in model.HeartbeatInput) error {
 	if in.SessionID == "" || in.UserID == "" || in.VideoID == "" || in.PlayedDelta < 0 {
-		return fmt.Errorf("heartbeat requires session/user/video and non-negative delta: %w", model.ErrInvalidInput)
+		return &model.InvalidParamError{Message: "heartbeat requires session_id, video_id, a user and a non-negative delta"}
 	}
 	if in.PlayedDelta > MaxHeartbeatDelta {
 		in.PlayedDelta = MaxHeartbeatDelta

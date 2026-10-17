@@ -46,7 +46,7 @@ func (h *VideoHandler) Import(c *gin.Context) {
 
 	job, err := h.importService.StartAsync(ctx, req.SourceID, c.GetString("user_id"))
 	if err != nil {
-		writeError(c, err, "start import")
+		writeError(c, err, "start import", "source_id", req.SourceID)
 		return
 	}
 

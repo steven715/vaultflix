@@ -30,7 +30,7 @@ func RequireActiveUser(checker UserStatusChecker) gin.HandlerFunc {
 		userID := c.GetString("user_id")
 		if userID == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "invalid token subject",
 			})
 			return
@@ -39,7 +39,7 @@ func RequireActiveUser(checker UserStatusChecker) gin.HandlerFunc {
 		user, err := checker.GetByID(c.Request.Context(), userID)
 		if err != nil || user == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "account no longer valid",
 			})
 			return
@@ -47,7 +47,7 @@ func RequireActiveUser(checker UserStatusChecker) gin.HandlerFunc {
 
 		if user.DisabledAt != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
+				Error:   model.CodeUnauthorized,
 				Message: "account is disabled",
 			})
 			return

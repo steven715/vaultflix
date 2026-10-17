@@ -22,9 +22,6 @@ type tagService interface {
 	RemoveVideoTag(ctx context.Context, videoID string, tagID int) error
 }
 
-// badCategory says a category is outside the allowed list.
-const badCategory = "category must be one of: genre, actor, studio, custom"
-
 type TagHandler struct {
 	tags tagService
 }

@@ -97,9 +97,9 @@ func (h *MediaSourceHandler) Delete(c *gin.Context) {
 func writeCreateSourceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, model.ErrPathNotAllowed):
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: codePathNotAllowed, Message: "mount_path is outside the allowed mount prefix"})
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: model.CodePathNotAllowed, Message: "mount_path is outside the allowed mount prefix"})
 	case errors.Is(err, model.ErrPathNotExist):
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: codePathNotExist, Message: "mount_path does not exist"})
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: model.CodePathNotExist, Message: "mount_path does not exist"})
 	default:
 		writeError(c, err, "create media source")
 	}
