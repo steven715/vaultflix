@@ -23,8 +23,31 @@ export function toApiError(err: unknown): ApiError {
   return new ApiError(res?.status ?? null, res?.data?.error ?? null, res?.data?.message ?? null, err)
 }
 
+/**
+ * The error codes the API answers with. Keep in step with the code constants
+ * in internal/handler/errors.go (TestErrorCodes_MatchTheFrontend checks it).
+ */
+export type ErrorCode =
+  | 'bad_request'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not_found'
+  | 'file_not_found'
+  | 'path_not_allowed'
+  | 'path_not_exist'
+  | 'already_exists'
+  | 'username_taken'
+  | 'conflict'
+  | 'job_lane_busy'
+  | 'source_disabled'
+  | 'cannot_disable_admin'
+  | 'no_code'
+  | 'keyframe_index_failed'
+  | 'stream_not_ready'
+  | 'internal_error'
+
 /** What to tell the user for each error code the page expects; fallback for anything else. */
-export type ErrorTexts = { fallback: string } & Record<string, string>
+export type ErrorTexts = { fallback: string } & Partial<Record<ErrorCode, string>>
 
 // errorMessage is the text a page shows for a failed call. The UI's words are
 // the page's: it names the error codes it expects, and anything else gets the
@@ -33,7 +56,8 @@ export type ErrorTexts = { fallback: string } & Record<string, string>
 // the admin (a busy Job Lane names the Job holding it).
 export function errorMessage(err: unknown, texts: ErrorTexts): string {
   const e = toApiError(err)
-  if (e.code && Object.hasOwn(texts, e.code)) return texts[e.code]
+  const text = e.code ? texts[e.code as ErrorCode] : undefined
+  if (text !== undefined) return text
   if (e.code && e.serverMessage && serverWritesUiText(e.code)) return e.serverMessage
   return texts.fallback
 }

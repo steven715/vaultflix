@@ -159,6 +159,8 @@ type ErrorResponse struct {
 }
 ```
 
+錯誤回應一律經 `internal/handler/errors.go`：domain error 交給 `writeError(c, err, op, logAttrs...)`（唯一的 sentinel → 狀態碼／錯誤碼對照表，500 一定先 log），handler 自己的輸入驗證用 `badRequest(c, msg)`。不要在 handler 裡手寫 `ErrorResponse`；錯誤碼是那裡的具名常數，新增時同步前端 `ErrorCode`（有測試把關）。
+
 前端 API client 依這兩種形狀解包（頂層有 `total` 就視為分頁、不解包），改形狀前先看 [`docs/conventions/frontend.md`](docs/conventions/frontend.md)「前後端 Response 契約」。
 
 HTTP Status Code 使用規則：

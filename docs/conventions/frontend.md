@@ -32,7 +32,7 @@ return res.data.data
 
 API client 一律以 `ApiError`（`api/errors.ts`）reject，帶 `status`、錯誤碼 `code` 與後端的 `serverMessage`。後端的 message 是給 API 呼叫端看的英文；畫面上的中文由頁面負責：
 
-- 用 `errorMessage(err, { fallback, <錯誤碼>: '中文' })`，列出這個操作預期的錯誤碼，其餘一律顯示 fallback。不要顯示 `err.message`（會是 axios 的「Request failed with status code 409」），也不要自己轉型讀 `err.response`。
+- 用 `errorMessage(err, { fallback, <錯誤碼>: '中文' })`，列出這個操作預期的錯誤碼（鍵的型別是 `ErrorCode`，打錯字編譯不過），其餘一律顯示 fallback。不要顯示 `err.message`（會是 axios 的「Request failed with status code 409」），也不要自己轉型讀 `err.response`。
 - 前端需要分辨的狀況，後端要給**專屬錯誤碼**（如 `username_taken`、`path_not_exist`），不要讓前端比對 message 字串或只看狀態碼。
 - 例外：後端寫給 admin 看的訊息（目前只有 `job_lane_busy`，會寫出是哪個 Job 占著 Lane）由 `errorMessage` 直接顯示。
 

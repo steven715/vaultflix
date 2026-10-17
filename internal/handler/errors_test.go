@@ -4,8 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -95,5 +103,49 @@ func TestBadRequest(t *testing.T) {
 	status, body := respond(t, func(c *gin.Context) { badRequest(c, "source_id is required") })
 	if status != http.StatusBadRequest || body.Error != codeBadRequest || body.Message != "source_id is required" {
 		t.Errorf("got %d %+v", status, body)
+	}
+}
+
+// The frontend's ErrorCode (web/src/api/errors.ts) must list exactly the
+// codes this package answers with, or a page's error texts silently miss.
+func TestErrorCodes_MatchTheFrontend(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "errors.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backend []string
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs := spec.(*ast.ValueSpec)
+			for i, name := range vs.Names {
+				if lit, ok := vs.Values[i].(*ast.BasicLit); ok && strings.HasPrefix(name.Name, "code") {
+					backend = append(backend, strings.Trim(lit.Value, `"`))
+				}
+			}
+		}
+	}
+
+	ts, err := os.ReadFile("../../web/src/api/errors.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	union := regexp.MustCompile(`(?s)export type ErrorCode =(.*?)\n\n`).FindSubmatch(ts)
+	if union == nil {
+		t.Fatal("no `export type ErrorCode =` union in web/src/api/errors.ts")
+	}
+	var frontend []string
+	for _, m := range regexp.MustCompile(`'([a-z_]+)'`).FindAllSubmatch(union[1], -1) {
+		frontend = append(frontend, string(m[1]))
+	}
+
+	sort.Strings(backend)
+	sort.Strings(frontend)
+	if !reflect.DeepEqual(backend, frontend) {
+		t.Errorf("error codes differ:\nbackend  %v\nfrontend %v", backend, frontend)
 	}
 }
