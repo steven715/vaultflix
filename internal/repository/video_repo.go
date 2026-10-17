@@ -23,7 +23,6 @@ import (
 // SetEnrichmentStatus updates the enrichment_status column for the given video.
 // ListByEnrichmentStatus returns videos matching the given enrichment_status, ordered by created_at.
 type VideoRepository interface {
-	ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error)
 	Create(ctx context.Context, video *model.Video) error
 	List(ctx context.Context, filter model.VideoFilter) ([]model.Video, int64, error)
 	GetByID(ctx context.Context, id string) (*model.Video, error)
@@ -70,13 +69,6 @@ func sortColumn(sortBy model.VideoSort) string {
 	}
 	return "v.created_at"
 }
-
-const queryExistsVideoByFilenameAndSize = `
-    SELECT EXISTS(
-        SELECT 1 FROM videos
-        WHERE original_filename = $1 AND file_size_bytes = $2
-    )
-`
 
 const queryCreateVideo = `
     INSERT INTO videos (id, title, description, minio_object_key, thumbnail_key, preview_key,
@@ -127,17 +119,6 @@ type videoRepository struct {
 
 func NewVideoRepository(pool *pgxpool.Pool) VideoRepository {
 	return &videoRepository{pool: pool}
-}
-
-func (r *videoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
-	var exists bool
-
-	err := r.pool.QueryRow(ctx, queryExistsVideoByFilenameAndSize, filename, sizeBytes).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("failed to check video existence for %s: %w", filename, err)
-	}
-
-	return exists, nil
 }
 
 func (r *videoRepository) Create(ctx context.Context, video *model.Video) error {
