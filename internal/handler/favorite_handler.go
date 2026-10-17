@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -29,27 +27,13 @@ func (h *FavoriteHandler) Add(c *gin.Context) {
 
 	var req addFavoriteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "video_id is required",
-		})
+		badRequest(c, "video_id is required")
 		return
 	}
 
 	err := h.favoriteSvc.Add(c.Request.Context(), userID, req.VideoID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to add favorite", "error", err, "user_id", userID, "video_id", req.VideoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to add favorite",
-		})
+		writeError(c, err, "add favorite", "user_id", userID, "video_id", req.VideoID)
 		return
 	}
 
@@ -64,18 +48,7 @@ func (h *FavoriteHandler) Remove(c *gin.Context) {
 
 	err := h.favoriteSvc.Remove(c.Request.Context(), userID, videoID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "favorite not found",
-			})
-			return
-		}
-		slog.Error("failed to remove favorite", "error", err, "user_id", userID, "video_id", videoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to remove favorite",
-		})
+		writeError(c, err, "remove favorite", "user_id", userID, "video_id", videoID)
 		return
 	}
 
@@ -89,10 +62,7 @@ func (h *FavoriteHandler) List(c *gin.Context) {
 	if raw := c.Query("page"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
-				Message: "page must be a positive integer",
-			})
+			badRequest(c, "page must be a positive integer")
 			return
 		}
 		page = parsed
@@ -102,10 +72,7 @@ func (h *FavoriteHandler) List(c *gin.Context) {
 	if raw := c.Query("page_size"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > 100 {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
-				Message: "page_size must be between 1 and 100",
-			})
+			badRequest(c, "page_size must be between 1 and 100")
 			return
 		}
 		pageSize = parsed
@@ -113,11 +80,7 @@ func (h *FavoriteHandler) List(c *gin.Context) {
 
 	items, total, err := h.favoriteSvc.List(c.Request.Context(), userID, page, pageSize)
 	if err != nil {
-		slog.Error("failed to list favorites", "error", err, "user_id", userID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list favorites",
-		})
+		writeError(c, err, "list favorites", "user_id", userID)
 		return
 	}
 

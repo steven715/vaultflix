@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -37,8 +36,7 @@ func (h *AnalyticsHandler) Get(c *gin.Context) {
 
 	summary, err := h.service.Summary(c.Request.Context(), q)
 	if err != nil {
-		slog.Error("failed to build analytics summary", "error", err, "days", q.Days, "limit", q.Limit)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to build analytics"})
+		writeError(c, err, "build analytics", "days", q.Days, "limit", q.Limit)
 		return
 	}
 

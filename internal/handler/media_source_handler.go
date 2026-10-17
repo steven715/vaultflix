@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,11 +21,7 @@ func NewMediaSourceHandler(service *service.MediaSourceService) *MediaSourceHand
 func (h *MediaSourceHandler) List(c *gin.Context) {
 	sources, err := h.service.List(c.Request.Context())
 	if err != nil {
-		slog.Error("failed to list media sources", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list media sources",
-		})
+		writeError(c, err, "list media sources")
 		return
 	}
 
@@ -41,10 +36,7 @@ type createMediaSourceRequest struct {
 func (h *MediaSourceHandler) Create(c *gin.Context) {
 	var req createMediaSourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "label and mount_path are required",
-		})
+		badRequest(c, "label and mount_path are required")
 		return
 	}
 
@@ -55,32 +47,7 @@ func (h *MediaSourceHandler) Create(c *gin.Context) {
 
 	err := h.service.Create(c.Request.Context(), source)
 	if err != nil {
-		if errors.Is(err, model.ErrPathNotAllowed) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "path_not_allowed",
-				Message: err.Error(),
-			})
-			return
-		}
-		if errors.Is(err, model.ErrPathNotExist) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "path_not_exist",
-				Message: err.Error(),
-			})
-			return
-		}
-		if errors.Is(err, model.ErrAlreadyExists) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "already_exists",
-				Message: "a media source with this mount_path already exists",
-			})
-			return
-		}
-		slog.Error("failed to create media source", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to create media source",
-		})
+		writeCreateSourceError(c, err)
 		return
 	}
 
@@ -97,27 +64,13 @@ func (h *MediaSourceHandler) Update(c *gin.Context) {
 
 	var req updateMediaSourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "label and enabled are required",
-		})
+		badRequest(c, "label and enabled are required")
 		return
 	}
 
 	err := h.service.Update(c.Request.Context(), id, req.Label, *req.Enabled)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "media source not found",
-			})
-			return
-		}
-		slog.Error("failed to update media source", "error", err, "media_source_id", id)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to update media source",
-		})
+		writeError(c, err, "update media source", "media_source_id", id)
 		return
 	}
 
@@ -131,20 +84,23 @@ func (h *MediaSourceHandler) Delete(c *gin.Context) {
 
 	err := h.service.Delete(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "media source not found",
-			})
-			return
-		}
-		slog.Error("failed to delete media source", "error", err, "media_source_id", id)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to delete media source",
-		})
+		writeError(c, err, "delete media source", "media_source_id", id)
 		return
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// writeCreateSourceError answers a refused new Media Source. Its mount path is
+// the admin's own input, so a path outside the prefix or missing on disk is a
+// 400 with its own code, not the 403/404 a resolved stream path gets.
+func writeCreateSourceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, model.ErrPathNotAllowed):
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: model.CodePathNotAllowed, Message: "mount_path is outside the allowed mount prefix"})
+	case errors.Is(err, model.ErrPathNotExist):
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: model.CodePathNotExist, Message: "mount_path does not exist"})
+	default:
+		writeError(c, err, "create media source")
+	}
 }

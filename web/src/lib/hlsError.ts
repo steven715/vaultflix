@@ -2,7 +2,7 @@
 // Keyframe Index 探測進行中)屬「準備中」可輪詢重試;401 是 Stream Token 過期
 // (segment 網址帶的是載入 manifest 當下的 token),由呼叫端換新 token 後重載;
 // 其他 fatal 錯誤即失敗。
-// 後端保證 503 只用於「準備中」—— Media Source 停用回 409 source_unavailable,
+// 後端保證 503 只用於「準備中」—— Media Source 停用回 409 source_disabled,
 // 檔案無法建立 Keyframe Index 回 422 keyframe_index_failed,兩者都立即失敗不重試。
 // hls.js 只暴露狀態碼(拿不到 body),所以契約必須落在狀態碼上。
 // 重試上限 20 次 ×(3s 自訂延遲 + hls.js 內部 manifestLoadPolicy 預設重試約 1s)

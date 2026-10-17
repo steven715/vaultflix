@@ -33,10 +33,10 @@ func NewPlaybackTelemetryService(repo repository.PlaybackTelemetryRepository) *P
 // unknown play_mode, and propagates model.ErrNotFound when the video is gone.
 func (s *PlaybackTelemetryService) Record(ctx context.Context, in model.PlaybackTelemetryInput) error {
 	if in.SessionID == "" || in.UserID == "" || in.VideoID == "" {
-		return fmt.Errorf("telemetry requires session/user/video: %w", model.ErrInvalidInput)
+		return &model.InvalidParamError{Message: "telemetry requires session_id, video_id and a user"}
 	}
 	if !isValidPlayMode(in.PlayMode) {
-		return fmt.Errorf("invalid play_mode %q: %w", in.PlayMode, model.ErrInvalidInput)
+		return &model.InvalidParamError{Message: fmt.Sprintf("invalid play_mode %q", in.PlayMode)}
 	}
 	in.NetworkScope = classifyNetworkScope(in.RemoteIP)
 	clampTelemetry(&in)

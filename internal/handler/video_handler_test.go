@@ -338,8 +338,8 @@ func TestImportHandler_SourceDisabled(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
-	if resp.Message != "media source is currently disabled" {
-		t.Errorf("expected message 'media source is currently disabled', got %s", resp.Message)
+	if resp.Error != "source_disabled" {
+		t.Errorf("expected error 'source_disabled', got %s", resp.Error)
 	}
 }
 

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,26 +30,13 @@ type loginRequest struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "username and password are required",
-		})
+		badRequest(c, "username and password are required")
 		return
 	}
 
 	user, err := h.authService.Register(c.Request.Context(), req.Username, req.Password, model.RoleViewer)
 	if err != nil {
-		if errors.Is(err, service.ErrUsernameAlreadyExists) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "username_taken",
-				Message: "username already exists",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to register user",
-		})
+		writeError(c, err, "register user")
 		return
 	}
 
@@ -65,33 +51,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "username and password are required",
-		})
+		badRequest(c, "username and password are required")
 		return
 	}
 
 	token, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidCredentials) {
-			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
-				Error:   "unauthorized",
-				Message: "invalid username or password",
-			})
-			return
-		}
-		if errors.Is(err, model.ErrAccountDisabled) {
-			c.JSON(http.StatusForbidden, model.ErrorResponse{
-				Error:   "forbidden",
-				Message: "account is disabled",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to login",
-		})
+		writeError(c, err, "login")
 		return
 	}
 
@@ -114,10 +80,7 @@ func (h *AuthHandler) StreamToken(c *gin.Context) {
 
 	token, expiresIn, err := h.authService.GenerateStreamToken(userID, username, role, videoID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to issue stream token",
-		})
+		writeError(c, err, "issue stream token")
 		return
 	}
 

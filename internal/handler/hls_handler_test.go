@@ -79,10 +79,10 @@ func TestWriteHLSError_MapsSentinelsToHTTP(t *testing.T) {
 		{model.ErrStreamPreparing, http.StatusServiceUnavailable, "stream_not_ready"},
 		// Not 503: the player polls on 503 only, and must stop on a failed probe.
 		{model.ErrKeyframeIndexFailed, http.StatusUnprocessableEntity, "keyframe_index_failed"},
-		{model.ErrMediaSourceDisabled, http.StatusConflict, "source_unavailable"},
+		{model.ErrMediaSourceDisabled, http.StatusConflict, "source_disabled"},
 		{model.ErrNotRemux, http.StatusNotFound, "not_found"},
 		{model.ErrNotFound, http.StatusNotFound, "not_found"},
-		{model.ErrPathNotExist, http.StatusNotFound, "not_found"},
+		{model.ErrPathNotExist, http.StatusNotFound, "file_not_found"},
 		{model.ErrPathNotAllowed, http.StatusForbidden, "path_not_allowed"},
 		{fmt.Errorf("ffmpeg exploded"), http.StatusInternalServerError, "internal_error"},
 	}

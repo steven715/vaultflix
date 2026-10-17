@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,17 +12,7 @@ func (h *VideoHandler) GetImportJob(c *gin.Context) {
 	jobID := c.Param("id")
 	job, err := h.importService.GetJob(jobID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "import job not found",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get import job",
-		})
+		writeError(c, err, "get import job", "job_id", jobID)
 		return
 	}
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: job})
@@ -42,12 +30,7 @@ func (h *VideoHandler) GetActiveImportJob(c *gin.Context) {
 func (h *VideoHandler) CancelImportJob(c *gin.Context) {
 	jobID := c.Param("id")
 	if err := h.importService.Cancel(c.Request.Context(), jobID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "import job not found"})
-			return
-		}
-		slog.Error("failed to cancel import", "error", err, "job_id", jobID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "取消匯入失敗"})
+		writeError(c, err, "cancel import job", "job_id", jobID)
 		return
 	}
 	c.Status(http.StatusNoContent)

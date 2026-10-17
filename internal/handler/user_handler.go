@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,11 +20,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) List(c *gin.Context) {
 	users, err := h.userService.List(c.Request.Context())
 	if err != nil {
-		slog.Error("failed to list users", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list users",
-		})
+		writeError(c, err, "list users")
 		return
 	}
 
@@ -42,27 +36,13 @@ type createUserRequest struct {
 func (h *UserHandler) Create(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "username, password, and role (admin/viewer) are required",
-		})
+		badRequest(c, "username, password, and role (admin/viewer) are required")
 		return
 	}
 
 	user, err := h.userService.Create(c.Request.Context(), req.Username, req.Password, req.Role)
 	if err != nil {
-		if errors.Is(err, service.ErrUsernameAlreadyExists) {
-			c.JSON(http.StatusConflict, model.ErrorResponse{
-				Error:   "username_taken",
-				Message: "username already exists",
-			})
-			return
-		}
-		slog.Error("failed to create user", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to create user",
-		})
+		writeError(c, err, "create user")
 		return
 	}
 
@@ -80,25 +60,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 
 	err := h.userService.Disable(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "user not found",
-			})
-			return
-		}
-		if errors.Is(err, model.ErrCannotDisableAdmin) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "cannot_disable_admin",
-				Message: "cannot disable admin account",
-			})
-			return
-		}
-		slog.Error("failed to disable user", "user_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to disable user",
-		})
+		writeError(c, err, "disable user", "user_id", id)
 		return
 	}
 
@@ -110,18 +72,7 @@ func (h *UserHandler) Enable(c *gin.Context) {
 
 	err := h.userService.Enable(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "user not found",
-			})
-			return
-		}
-		slog.Error("failed to enable user", "user_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to enable user",
-		})
+		writeError(c, err, "enable user", "user_id", id)
 		return
 	}
 
@@ -139,27 +90,13 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 
 	var req resetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "password is required",
-		})
+		badRequest(c, "password is required")
 		return
 	}
 
 	err := h.userService.ResetPassword(c.Request.Context(), id, req.Password)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "user not found",
-			})
-			return
-		}
-		slog.Error("failed to reset password", "user_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to reset password",
-		})
+		writeError(c, err, "reset password", "user_id", id)
 		return
 	}
 

@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"log/slog"
 	"math"
 	"net/http"
 
@@ -45,10 +43,7 @@ func (h *PlaybackTelemetryHandler) Record(c *gin.Context) {
 
 	var req telemetryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "bad_request",
-			Message: "session_id, video_id and play_mode are required",
-		})
+		badRequest(c, "session_id, video_id and play_mode are required")
 		return
 	}
 
@@ -72,16 +67,7 @@ func (h *PlaybackTelemetryHandler) Record(c *gin.Context) {
 		FatalErrorFamily: req.FatalErrorFamily,
 	})
 	if err != nil {
-		if errors.Is(err, model.ErrInvalidInput) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "invalid telemetry"})
-			return
-		}
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{Error: "not_found", Message: "video not found"})
-			return
-		}
-		slog.Error("failed to record playback telemetry", "error", err, "user_id", userID, "video_id", req.VideoID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to record telemetry"})
+		writeError(c, err, "record playback telemetry", "user_id", userID, "video_id", req.VideoID)
 		return
 	}
 
@@ -97,8 +83,7 @@ func (h *PlaybackTelemetryHandler) Summary(c *gin.Context) {
 
 	summary, err := h.service.Summary(c.Request.Context(), q)
 	if err != nil {
-		slog.Error("failed to build telemetry summary", "error", err, "days", q.Days, "scope", q.Scope)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: "internal_error", Message: "failed to build telemetry"})
+		writeError(c, err, "build telemetry summary", "days", q.Days, "scope", q.Scope)
 		return
 	}
 

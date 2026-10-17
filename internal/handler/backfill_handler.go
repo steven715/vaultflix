@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -44,24 +42,12 @@ type startBackfillRequest struct {
 func (h *BackfillHandler) Start(c *gin.Context) {
 	var req startBackfillRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "kind is required"})
+		badRequest(c, "kind is required")
 		return
 	}
 	job, err := h.jobs.Start(c.Request.Context(), req.Kind, c.GetString("user_id"))
 	if err != nil {
-		if errors.Is(err, model.ErrInvalidInput) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "bad_request", Message: "unknown backfill kind"})
-			return
-		}
-		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, jobLaneBusy(err))
-			return
-		}
-		slog.Error("failed to start backfill", "error", err, "kind", req.Kind)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "啟動 backfill 失敗",
-		})
+		writeError(c, err, "start backfill", "kind", req.Kind)
 		return
 	}
 	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: gin.H{"job_id": job.ID, "kind": job.Kind}})
@@ -82,18 +68,7 @@ func (h *BackfillHandler) GetActive(c *gin.Context) {
 func (h *BackfillHandler) Cancel(c *gin.Context) {
 	jobID := c.Param("id")
 	if err := h.jobs.Cancel(c.Request.Context(), jobID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "backfill job not found",
-			})
-			return
-		}
-		slog.Error("failed to cancel backfill", "error", err, "job_id", jobID)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "取消 backfill 失敗",
-		})
+		writeError(c, err, "cancel backfill", "job_id", jobID)
 		return
 	}
 	c.Status(http.StatusNoContent)

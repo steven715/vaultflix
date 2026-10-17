@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -36,25 +35,7 @@ func (h *EnrichmentHandler) EnrichVideo(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if err := h.svc.EnrichVideo(c.Request.Context(), id, userID); err != nil {
-		if errors.Is(err, model.ErrCodeNotFound) {
-			c.JSON(http.StatusUnprocessableEntity, model.ErrorResponse{
-				Error:   "no_code",
-				Message: "no code in filename",
-			})
-			return
-		}
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "video not found",
-			})
-			return
-		}
-		slog.Error("failed to enrich video", "video_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "enrichment failed",
-		})
+		writeError(c, err, "enrich video", "video_id", id)
 		return
 	}
 	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: gin.H{"video_id": id}})
@@ -66,11 +47,7 @@ func (h *EnrichmentHandler) ListSuggestions(c *gin.Context) {
 	id := c.Param("id")
 	suggestions, err := h.svc.ListSuggestions(c.Request.Context(), id)
 	if err != nil {
-		slog.Error("failed to list suggestions", "video_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to list suggestions",
-		})
+		writeError(c, err, "list suggestions", "video_id", id)
 		return
 	}
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: suggestions})
@@ -85,26 +62,12 @@ func (h *EnrichmentHandler) AcceptSuggestion(c *gin.Context) {
 
 	var ov model.SuggestionOverride
 	if err := c.ShouldBindJSON(&ov); err != nil && !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "invalid_body",
-			Message: "request body is not valid JSON",
-		})
+		badRequest(c, "request body is not valid JSON")
 		return
 	}
 
 	if err := h.svc.AcceptSuggestion(c.Request.Context(), id, sid, ov); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "suggestion not found",
-			})
-			return
-		}
-		slog.Error("failed to accept suggestion", "video_id", id, "suggestion_id", sid, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to accept suggestion",
-		})
+		writeError(c, err, "accept suggestion", "video_id", id, "suggestion_id", sid)
 		return
 	}
 	c.JSON(http.StatusOK, model.SuccessResponse{Data: gin.H{"status": "accepted"}})
@@ -117,18 +80,7 @@ func (h *EnrichmentHandler) RejectSuggestion(c *gin.Context) {
 	sid := c.Param("sid")
 
 	if err := h.svc.RejectSuggestion(c.Request.Context(), id, sid); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "suggestion not found",
-			})
-			return
-		}
-		slog.Error("failed to reject suggestion", "video_id", id, "suggestion_id", sid, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to reject suggestion",
-		})
+		writeError(c, err, "reject suggestion", "video_id", id, "suggestion_id", sid)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -143,24 +95,13 @@ func (h *EnrichmentHandler) StartBatch(c *gin.Context) {
 	var req model.EnrichBatchRequest
 	// Empty body is fine; ignore EOF.
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "invalid_body",
-			Message: "request body is not valid JSON",
-		})
+		badRequest(c, "request body is not valid JSON")
 		return
 	}
 
 	job, err := h.svc.StartBatchAsync(c.Request.Context(), req, userID)
 	if err != nil {
-		if errors.Is(err, model.ErrConflict) {
-			c.JSON(http.StatusConflict, jobLaneBusy(err))
-			return
-		}
-		slog.Error("failed to start batch enrichment", "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to start batch enrichment",
-		})
+		writeError(c, err, "start batch enrichment")
 		return
 	}
 	c.JSON(http.StatusAccepted, model.SuccessResponse{Data: gin.H{"job_id": job.ID}})
@@ -179,18 +120,7 @@ func (h *EnrichmentHandler) CancelBatch(c *gin.Context) {
 	jobID := c.Param("jid")
 
 	if err := h.svc.CancelBatch(jobID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			c.JSON(http.StatusNotFound, model.ErrorResponse{
-				Error:   "not_found",
-				Message: "enrichment job not found",
-			})
-			return
-		}
-		slog.Error("failed to cancel batch enrichment", "job_id", jobID, "error", err)
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to cancel enrichment job",
-		})
+		writeError(c, err, "cancel enrichment job", "job_id", jobID)
 		return
 	}
 	c.Status(http.StatusNoContent)
