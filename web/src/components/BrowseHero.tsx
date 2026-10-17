@@ -4,7 +4,7 @@ import type { VideoWithTags } from '../types'
 import { addFavorite } from '../api/favorites'
 import { useToast } from '../contexts/ToastContext'
 import { formatDuration } from '../utils/format'
-import { posterGradient } from '../utils/poster'
+import { posterGradient } from '../lib/posterGradient'
 import { PlayIcon, HeartIcon } from './icons'
 
 // BrowseHero is the full-bleed featured banner at the top of the browse page.
