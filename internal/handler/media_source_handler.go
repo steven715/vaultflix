@@ -57,14 +57,14 @@ func (h *MediaSourceHandler) Create(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, model.ErrPathNotAllowed) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
+				Error:   "path_not_allowed",
 				Message: err.Error(),
 			})
 			return
 		}
 		if errors.Is(err, model.ErrPathNotExist) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
+				Error:   "path_not_exist",
 				Message: err.Error(),
 			})
 			return
