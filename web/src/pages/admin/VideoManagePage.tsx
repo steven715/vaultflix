@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { listVideos } from '../../api/videos'
 import { listTags } from '../../api/tags'
-import { updateVideo, deleteVideo, listMediaSources, addVideoTag } from '../../api/admin'
-import type { VideoWithTags, TagWithCount, MediaSource, BackfillKind } from '../../types'
+import { deleteVideo } from '../../api/admin'
+import type { Video, VideoWithTags, TagWithCount, BackfillKind } from '../../types'
 import LibraryToolbar from '../../components/admin/LibraryToolbar'
 import LibraryTable from '../../components/admin/LibraryTable'
-import { BatchTagPicker, ImportModal, EditModal, DeleteConfirm } from '../../components/admin/LibraryModals'
+import { BatchTagDialog, DeleteConfirm } from '../../components/admin/LibraryModals'
+import ImportDialog from '../../components/admin/ImportDialog'
+import EditVideoDialog from '../../components/admin/EditVideoDialog'
 import Pagination from '../../components/Pagination'
 import JobProgressPanel from '../../components/admin/JobProgressPanel'
 import { backfillLabels } from '../../lib/jobLabels'
@@ -22,17 +24,12 @@ export default function VideoManagePage() {
   const [allTags, setAllTags] = useState<TagWithCount[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [copyFeedback, setCopyFeedback] = useState<Record<string, boolean>>({})
-  const [batchTagPickerId, setBatchTagPickerId] = useState<number | null>(null)
+  const [batchTagging, setBatchTagging] = useState(false)
   const toast = useToast()
 
   const [showImport, setShowImport] = useState(false)
-  const [mediaSources, setMediaSources] = useState<MediaSource[]>([])
-  const [selectedSourceID, setSelectedSourceID] = useState('')
 
   const [editingVideo, setEditingVideo] = useState<VideoWithTags | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDesc, setEditDesc] = useState('')
-  const [saving, setSaving] = useState(false)
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
   const [confirmingBatchDelete, setConfirmingBatchDelete] = useState(false)
 
@@ -53,17 +50,6 @@ export default function VideoManagePage() {
     listTags().then(setAllTags).catch((err) => { console.warn('failed to load tags', err) })
   }, [])
 
-  useEffect(() => {
-    if (!showImport) return
-    listMediaSources()
-      .then((sources) => {
-        const enabled = sources.filter((s) => s.enabled)
-        setMediaSources(enabled)
-        if (enabled.length > 0) setSelectedSourceID((prev) => prev || enabled[0].id)
-      })
-      .catch((err) => { console.warn('failed to load media sources', err); setMediaSources([]) })
-  }, [showImport])
-
   // Show the newest Videos on page 1, loaded once: navigating to the page
   // already shown does not refetch (frontend.md「同路徑重新導航的 refetch」).
   function showFromPageOne() {
@@ -78,26 +64,11 @@ export default function VideoManagePage() {
     onImportFinished: (view) => { if (view.counts.succeeded > 0) showFromPageOne() },
     onBackfillFinished: refreshList,
   })
-  // An adopted Import keeps the dialog open until its summary is closed.
-  const importModalOpen = showImport || lane.import.view !== null
 
-  async function handleStartImport() {
-    if (selectedSourceID) await lane.import.start(selectedSourceID)
-  }
-
-  function openEdit(video: VideoWithTags) {
-    setEditingVideo(video); setEditTitle(video.title); setEditDesc(video.description)
-  }
-
-  async function handleSaveEdit() {
-    if (!editingVideo) return
-    setSaving(true)
-    try {
-      const updated = await updateVideo(editingVideo.id, { title: editTitle, description: editDesc })
-      list.mutate((p) => ({ ...p, items: p.items.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v) }))
-      setEditingVideo(null); toast.success('已儲存')
-    } catch { toast.error('儲存失敗，請重試') }
-    finally { setSaving(false) }
+  // A saved edit shows in its row; the Video keeps its Tags.
+  function applyEdit(updated: Video) {
+    setEditingVideo(null)
+    list.mutate((p) => ({ ...p, items: p.items.map((v) => v.id === updated.id ? { ...v, title: updated.title, description: updated.description } : v) }))
   }
 
   async function handleDelete() {
@@ -118,16 +89,6 @@ export default function VideoManagePage() {
     setSelected(failed); refreshList()
     if (failed.length > 0) toast.error(`${ids.length} 部中有 ${failed.length} 部刪除失敗`)
     else toast.success(`已刪除 ${ids.length} 部影片`)
-  }
-
-  async function handleBatchTag() {
-    if (batchTagPickerId === null) return
-    const ids = [...selected]
-    const tagId = batchTagPickerId
-    const failed = await runOnEach(ids, (id) => addVideoTag(id, tagId))
-    setBatchTagPickerId(null); refreshList()
-    if (failed.length > 0) toast.error(`${ids.length} 部中有 ${failed.length} 部加標籤失敗`)
-    else toast.success('批次標籤完成')
   }
 
   function handleCopyPath(filename: string, id: string) {
@@ -152,7 +113,7 @@ export default function VideoManagePage() {
         onTagFilter={params.setTagIds}
         onStartBackfill={(kind) => { void lane.backfill.start(kind) }}
         onOpenImport={() => { lane.import.dismiss(); setShowImport(true) }}
-        onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
+        onBatchTag={() => { if (allTags.length > 0) setBatchTagging(true) }}
         onBatchDelete={() => setConfirmingBatchDelete(true)}
         onClearSelection={() => setSelected([])}
       />
@@ -178,27 +139,21 @@ export default function VideoManagePage() {
         <LibraryTable
           videos={videos} allTags={allTags} selected={selected} sortBy={sortBy} sortOrder={sortOrder}
           copyFeedback={copyFeedback} onSelect={setSelected} onColSort={params.sortByColumn}
-          onCopyPath={handleCopyPath} onEdit={openEdit} onDelete={setDeletingVideo} onTagsChange={refreshTags}
+          onCopyPath={handleCopyPath} onEdit={setEditingVideo} onDelete={setDeletingVideo} onTagsChange={refreshTags}
         />
       )}
 
       <Pagination page={page} totalPages={totalPages} onPageChange={params.setPage} />
 
-      {selected.length > 0 && batchTagPickerId !== null && (
-        <BatchTagPicker selectedCount={selected.length} allTags={allTags} tagId={batchTagPickerId}
-          onTagChange={setBatchTagPickerId} onApply={handleBatchTag} onClose={() => setBatchTagPickerId(null)} />
+      {selected.length > 0 && batchTagging && (
+        <BatchTagDialog videoIds={selected} tags={allTags} onDone={refreshList} onClose={() => setBatchTagging(false)} />
       )}
 
-      {importModalOpen && (
-        <ImportModal job={lane.import.view} mediaSources={mediaSources} selectedSourceID={selectedSourceID}
-          onSourceChange={setSelectedSourceID} onClose={() => { setShowImport(false); lane.import.dismiss() }}
-          onStartImport={handleStartImport} onCancelImport={lane.import.cancel} onResetImport={lane.import.dismiss}
-          startDisabledReason={lane.importBlockedReason} />
-      )}
+      <ImportDialog job={lane.import} blockedReason={lane.importBlockedReason} open={showImport} onClose={() => setShowImport(false)} />
 
       {editingVideo && (
-        <EditModal title={editTitle} desc={editDesc} saving={saving}
-          onTitleChange={setEditTitle} onDescChange={setEditDesc} onSave={handleSaveEdit} onClose={() => setEditingVideo(null)} />
+        <EditVideoDialog video={editingVideo} onClose={() => setEditingVideo(null)}
+          onSaved={applyEdit} />
       )}
 
       {deletingVideo && (
