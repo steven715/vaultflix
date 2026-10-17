@@ -43,8 +43,8 @@ type KeyframeService struct {
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
-	// failedAt remembers when each Video's latest probe failed, so polling
-	// does not rerun ffprobe until probeFailureCooldown has passed.
+	// failedAt remembers when each Video's file last failed to index, so
+	// polling does not rerun ffprobe until probeFailureCooldown has passed.
 	failedAt map[string]time.Time
 }
 
@@ -127,6 +127,8 @@ func (s *KeyframeService) triggerProbe(videoID, absPath string) {
 	}()
 }
 
+// failedRecently reports whether videoID's file failed to index within
+// probeFailureCooldown.
 func (s *KeyframeService) failedRecently(videoID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,16 +136,22 @@ func (s *KeyframeService) failedRecently(videoID string) bool {
 	return failed && s.now().Sub(at) < probeFailureCooldown
 }
 
-// indexFile builds the Keyframe Index and records the outcome: a failure is
-// remembered for probeFailureCooldown, a success forgets an earlier failure.
+// errUnindexable marks a failure the file is to blame for: ffprobe failed or
+// found no keyframes. A store failure or a cancelled context is not one.
+var errUnindexable = errors.New("file cannot be indexed")
+
+// indexFile builds the Keyframe Index and records the outcome: a file that
+// cannot be indexed is remembered for probeFailureCooldown, a success
+// forgets an earlier failure.
 func (s *KeyframeService) indexFile(ctx context.Context, videoID, absPath string) error {
 	err := s.buildIndex(ctx, videoID, absPath)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err != nil {
-		s.failedAt[videoID] = s.now()
-	} else {
+	switch {
+	case err == nil:
 		delete(s.failedAt, videoID)
+	case errors.Is(err, errUnindexable) && !errors.Is(err, context.Canceled):
+		s.failedAt[videoID] = s.now()
 	}
 	return err
 }
@@ -154,11 +162,11 @@ func (s *KeyframeService) buildIndex(ctx context.Context, videoID, absPath strin
 	start := time.Now()
 	kf, total, err := s.probe(ctx, absPath)
 	if err != nil {
-		return fmt.Errorf("probe failed: %w", err)
+		return fmt.Errorf("probe failed (%w): %w", errUnindexable, err)
 	}
 	segs := streaming.GroupSegments(kf, total, streaming.DefaultSegmentTarget)
 	if len(segs) == 0 {
-		return fmt.Errorf("empty segment table for video %s", videoID)
+		return fmt.Errorf("empty segment table for video %s: %w", videoID, errUnindexable)
 	}
 	idx := &model.KeyframeIndex{VideoID: videoID, Segments: segs, ProbedAt: time.Now()}
 	if err := s.repo.Upsert(ctx, idx); err != nil {

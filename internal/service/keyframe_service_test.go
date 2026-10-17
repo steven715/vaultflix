@@ -11,10 +11,11 @@ import (
 )
 
 type fakeKeyframeRepo struct {
-	mu      sync.Mutex
-	stored  map[string]*model.KeyframeIndex
-	getErr  error
-	upserts int
+	mu        sync.Mutex
+	stored    map[string]*model.KeyframeIndex
+	getErr    error
+	upsertErr error
+	upserts   int
 }
 
 func newFakeKeyframeRepo() *fakeKeyframeRepo {
@@ -37,6 +38,9 @@ func (f *fakeKeyframeRepo) Get(ctx context.Context, videoID string) (*model.Keyf
 func (f *fakeKeyframeRepo) Upsert(ctx context.Context, idx *model.KeyframeIndex) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
 	f.upserts++
 	f.stored[idx.VideoID] = idx
 	return nil
@@ -223,12 +227,15 @@ func lookupUntilSettled(t *testing.T, s *KeyframeService, p *probeCounter) error
 		}
 		// The probe's bookkeeping runs after it returns.
 		deadline := time.Now().Add(time.Second)
-		for time.Now().Before(deadline) {
+		for {
 			s.mu.Lock()
 			_, busy := s.inflight["v1"]
 			s.mu.Unlock()
 			if !busy {
 				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("triggered probe never cleared its in-flight mark")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -306,5 +313,22 @@ func TestEnsureIndex_ForgetsAnEarlierFailure(t *testing.T) {
 
 	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
 		t.Errorf("lookup = %v, want preparing: the old failure must be forgotten", err)
+	}
+}
+
+// Only the file is to blame for a failed probe: a database that could not
+// store the index (a passing outage) must not hold the Video back.
+func TestLookupOrProbe_StoreFailureIsNotAFailedProbe(t *testing.T) {
+	repo := newFakeKeyframeRepo()
+	repo.upsertErr = errors.New("db down")
+	s := NewKeyframeService(repo)
+	p := &probeCounter{done: make(chan struct{}, 4)}
+	s.probe = p.probe
+
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Fatalf("first lookup = %v", err)
+	}
+	if err := lookupUntilSettled(t, s, p); !errors.Is(err, model.ErrStreamPreparing) {
+		t.Errorf("lookup after a store failure = %v, want preparing (a new probe)", err)
 	}
 }

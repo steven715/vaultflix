@@ -27,8 +27,8 @@ type mediaDeriver interface {
 // processOneFile registers one scanned file as a Video and builds its Keyframe
 // Index if it plays by remux. Returns model.ErrJobItemSkipped when the file is
 // already registered, or a wrapped error naming the file when it can't be
-// registered. A Keyframe Index that can't be built only logs: the first play
-// probes it again.
+// registered. A Keyframe Index that can't be built only logs: a play probes it
+// again (after KeyframeService's cooldown when the file itself was to blame).
 func (s *ImportService) processOneFile(ctx context.Context, source *model.MediaSource, filePath string) error {
 	filename := filepath.Base(filePath)
 

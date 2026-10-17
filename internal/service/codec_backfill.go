@@ -47,8 +47,9 @@ func (s *CodecBackfill) List(ctx context.Context) ([]model.Video, error) {
 
 // ProcessOne probes and stores the codecs of v. Returns
 // model.ErrMediaSourceDisabled (wrapped) when v's Media Source is disabled.
-// A Keyframe Index that can't be built only logs: the codecs are stored, and
-// the first play probes it again.
+// A Keyframe Index that can't be built only logs: the codecs are stored, and a
+// play probes it again (after KeyframeService's cooldown when the file itself
+// was to blame).
 func (s *CodecBackfill) ProcessOne(ctx context.Context, v *model.Video) error {
 	abs, err := resolveVideoFile(ctx, s.files, v)
 	if err != nil {
