@@ -284,3 +284,47 @@ func TestDeleteRecommendation_NotFound(t *testing.T) {
 		t.Errorf("expected error 'not_found', got %s", resp.Error)
 	}
 }
+
+// The date is the browser's local day; a malformed one must be refused, not
+// silently replaced by the server's UTC day.
+func TestGetTodayRecommendations_InvalidDate(t *testing.T) {
+	called := false
+	r, _ := setupRecommendationRouter(&mock.RecommendationService{
+		GetTodayFunc: func(ctx context.Context, userID string, date time.Time, fallbackCount int) ([]model.RecommendationItem, error) {
+			called = true
+			return nil, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/recommendations/today?date=2026-13-40", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp model.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("body %s: %v", w.Body.String(), err)
+	}
+	if w.Code != http.StatusBadRequest || resp.Error != model.CodeBadRequest {
+		t.Fatalf("got %d %q, want 400 bad_request", w.Code, resp.Error)
+	}
+	if called {
+		t.Error("GetToday ran for a malformed date")
+	}
+}
+
+func TestGetTodayRecommendations_UsesTheGivenDate(t *testing.T) {
+	var got time.Time
+	r, _ := setupRecommendationRouter(&mock.RecommendationService{
+		GetTodayFunc: func(ctx context.Context, userID string, date time.Time, fallbackCount int) ([]model.RecommendationItem, error) {
+			got = date
+			return nil, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/recommendations/today?date=2026-10-11", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if want := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("date = %v, want %v", got, want)
+	}
+}
