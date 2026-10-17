@@ -13,6 +13,7 @@ import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { useMediaLane } from '../../hooks/useMediaLane'
 import { useLibraryParams } from '../../hooks/useLibraryParams'
+import { runOnEach } from '../../lib/batch'
 
 export default function VideoManagePage() {
   const params = useLibraryParams()
@@ -114,15 +115,23 @@ export default function VideoManagePage() {
     catch { toast.error('刪除失敗，請重試') }
   }
 
+  // A batch keeps going past a failure, then says how many failed and keeps
+  // those selected, so the admin can retry them.
   async function handleBatchDelete() {
-    for (const id of [...selected]) { try { await deleteVideo(id) } catch { /* continue */ } }
-    setSelected([]); setReloadKey((k) => k + 1)
+    const ids = [...selected]
+    const failed = await runOnEach(ids, deleteVideo)
+    setSelected(failed); setReloadKey((k) => k + 1)
+    if (failed.length > 0) toast.error(`${ids.length} 部中有 ${failed.length} 部刪除失敗`)
+    else toast.success(`已刪除 ${ids.length} 部影片`)
   }
 
   async function handleBatchTag() {
     if (batchTagPickerId === null) return
-    for (const id of selected) { try { await addVideoTag(id, batchTagPickerId) } catch { /* continue */ } }
-    setBatchTagPickerId(null); setReloadKey((k) => k + 1); toast.success('批次標籤完成')
+    const tagId = batchTagPickerId
+    const failed = await runOnEach(selected, (id) => addVideoTag(id, tagId))
+    setBatchTagPickerId(null); setReloadKey((k) => k + 1)
+    if (failed.length > 0) toast.error(`${selected.length} 部中有 ${failed.length} 部加標籤失敗`)
+    else toast.success('批次標籤完成')
   }
 
   function handleCopyPath(filename: string, id: string) {

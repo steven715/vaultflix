@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import { wsHarness } from '../../test/wsHarness'
 import { listVideos } from '../../api/videos'
-import { getActiveBackfill, getActiveImportJob, importVideos, listMediaSources, startBackfill } from '../../api/admin'
+import { addVideoTag, deleteVideo, getActiveBackfill, getActiveImportJob, importVideos, listMediaSources, startBackfill } from '../../api/admin'
+import { listTags } from '../../api/tags'
 import type { ImportJob } from '../../types'
 import VideoManagePage from './VideoManagePage'
 
@@ -23,7 +24,8 @@ vi.mock('../../api/admin', () => ({
   startBackfill: vi.fn(), getActiveBackfill: vi.fn(() => Promise.resolve(null)),
   addVideoTag: vi.fn(), removeVideoTag: vi.fn(),
 }))
-vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
+vi.mock('../../contexts/ToastContext', () => ({ useToast: () => toast }))
 
 describe('VideoManagePage (library)', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -146,5 +148,41 @@ describe('VideoManagePage (library)', () => {
     await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1, sort_by: 'title', sort_order: 'desc' }),
     ))
+  })
+  // Two Videos on the page, both selected.
+  async function selectTwo() {
+    const row = (id: string, title: string) => ({
+      id, title, description: '', duration_seconds: 600, file_size_bytes: 1024, resolution: '1080p', original_filename: `${id}.mp4`,
+      tags: [], minio_object_key: '', thumbnail_key: '', preview_key: '', mime_type: '', created_at: '2026-01-01T00:00:00Z', updated_at: '',
+    })
+    vi.mocked(listVideos).mockResolvedValue({ data: [row('v1', '片A'), row('v2', '片B')], total: 2, page: 1, page_size: 20 } as never)
+    renderWithRouter(<VideoManagePage />, { route: '/admin/library' })
+    await userEvent.click(await screen.findByLabelText('選取 片A'))
+    await userEvent.click(screen.getByLabelText('選取 片B'))
+  }
+
+  // A failure in a batch must not read as done: say how many failed, and
+  // keep those selected so the admin can retry them.
+  it('says how many Videos a batch delete could not delete, and keeps them selected', async () => {
+    vi.mocked(deleteVideo).mockImplementation(async (id: string) => { if (id === 'v2') throw new Error('500') })
+    await selectTwo()
+
+    const batchBar = screen.getByText(/已選取/).closest('div')!
+    fireEvent.click(within(batchBar).getByText('刪除', { selector: 'button' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('2 部中有 1 部刪除失敗'))
+    expect(screen.getByLabelText('選取 片B')).toBeChecked()
+  })
+
+  it('says how many Videos a batch tag could not tag, instead of done', async () => {
+    vi.mocked(listTags).mockResolvedValue([{ id: 7, name: '動作', category: 'genre', video_count: 1 }] as never)
+    vi.mocked(addVideoTag).mockImplementation(async (id: string) => { if (id === 'v1') throw new Error('500') })
+    await selectTwo()
+
+    fireEvent.click(screen.getByText('批次加標籤', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('套用'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('2 部中有 1 部加標籤失敗'))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 })
