@@ -38,7 +38,7 @@ describe('HistoryPage', () => {
     await waitFor(() => expect(screen.getByText('還沒有觀看記錄')).toBeInTheDocument())
   })
 
-  // Removing one row only hides it here (per the design): no request, total unchanged.
+  // Removing one row only hides it here (per the design): no request.
   it('hides a removed row without asking the server', async () => {
     vi.mocked(listWatchHistory).mockResolvedValue({ data: [item('h1', '片A'), item('h2', '片B')], total: 2, page: 1, page_size: 20 } as never)
     renderWithRouter(<HistoryPage />, { route: '/history' })

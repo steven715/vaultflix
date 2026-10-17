@@ -36,7 +36,7 @@ export default function BrowsePage() {
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
   const [continueWatching, setContinueWatching] = useState<WatchHistoryItem[]>([])
 
-  const filter = { page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
+  const { filter } = params
   const list = usePagedList<VideoWithTags>({
     load: (p) => listVideos({ ...filter, page: p }),
     page, pageSize, setPage: params.setPage,

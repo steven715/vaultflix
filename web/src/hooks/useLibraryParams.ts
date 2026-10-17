@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   parseSortBy, parseSortOrder, parseTagIds, serializeTagIds, toggleSort, type LibrarySortBy, type SortOrder,
 } from '../lib/libraryParams'
+import type { VideoListParams } from '../types'
 
 /** The Library query a page shows, kept in the URL. */
 export interface LibraryParams {
@@ -14,6 +15,8 @@ export interface LibraryParams {
   tagIds: number[]
   /** tag_ids as in the URL: a stable effect dependency, unlike the array. */
   tagIdsParam: string
+  /** The video list request for this query, without the page (listVideos takes it with one). */
+  filter: Omit<VideoListParams, 'page'>
   /** replace: correct the URL without a history entry, so Back does not return to the corrected page. */
   setPage(page: number, opts?: { replace?: boolean }): void
   /** Sort by col: the current column flips its order, another starts newest/largest first. */
@@ -38,6 +41,7 @@ export function useLibraryParams(): LibraryParams {
   const query = searchParams.get('q') || ''
   const tagIdsParam = searchParams.get('tag_ids') || ''
   const tagIds = useMemo(() => parseTagIds(tagIdsParam), [tagIdsParam])
+  const filter = { page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
 
   const update = useCallback((updates: Record<string, string>, opts?: { replace?: boolean }) => {
     setSearchParams((prev) => {
@@ -68,5 +72,5 @@ export function useLibraryParams(): LibraryParams {
   )
   const setTagIds = useCallback((ids: number[]) => update({ tag_ids: serializeTagIds(ids), page: '' }), [update])
 
-  return { page, pageSize, sortBy, sortOrder, query, tagIds, tagIdsParam, setPage, sortByColumn, setSort, setTagIds }
+  return { page, pageSize, sortBy, sortOrder, query, tagIds, tagIdsParam, filter, setPage, sortByColumn, setSort, setTagIds }
 }

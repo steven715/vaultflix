@@ -28,6 +28,7 @@ describe('BrowsePage', () => {
     renderWithRouter(<BrowsePage />, { route: '/?q=a&page=9' })
 
     await waitFor(() => expect(listVideos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })))
+    expect((await screen.findAllByText('片A')).length).toBeGreaterThan(0)
   })
 
   it('says the Library failed to load, and retries', async () => {
