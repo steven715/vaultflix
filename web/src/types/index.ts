@@ -182,18 +182,6 @@ export interface DailyRecommendation {
   created_at: string
 }
 
-export interface RecommendationWithVideo {
-  id: string
-  video_id: string
-  recommend_date: string
-  sort_order: number
-  title: string
-  thumbnail_url?: string
-  duration_seconds: number
-  resolution: string
-  file_size_bytes: number
-}
-
 export interface User {
   id: string
   username: string

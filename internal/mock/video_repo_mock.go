@@ -8,29 +8,21 @@ import (
 )
 
 type VideoRepository struct {
-	ExistsByFilenameAndSizeFunc func(ctx context.Context, filename string, sizeBytes int64) (bool, error)
-	CreateFunc                  func(ctx context.Context, video *model.Video) error
-	ListFunc                    func(ctx context.Context, filter model.VideoFilter) ([]model.Video, int64, error)
-	GetByIDFunc                 func(ctx context.Context, id string) (*model.Video, error)
-	UpdateFunc                  func(ctx context.Context, id string, input model.UpdateVideoInput) error
-	DeleteFunc                  func(ctx context.Context, id string) error
-	FindBySourceAndPathFunc     func(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
-	ListMissingPreviewsFunc     func(ctx context.Context) ([]model.Video, error)
-	UpdatePreviewKeyFunc        func(ctx context.Context, id string, previewKey string) error
-	UpdateMetadataFunc          func(ctx context.Context, id string, m model.VideoMetadataUpdate) error
-	SetEnrichmentStatusFunc     func(ctx context.Context, id, status string) error
-	ListByEnrichmentStatusFunc  func(ctx context.Context, status string) ([]model.Video, error)
-	SeedCodeFunc                func(ctx context.Context, id, code, status string) error
-	UpdateCodecsFunc            func(ctx context.Context, id, videoCodec, audioCodec string) error
-	ListMissingCodecsFunc       func(ctx context.Context, limit int) ([]model.Video, error)
-	ListKeyframeCandidatesFunc  func(ctx context.Context, limit int) ([]model.Video, error)
-}
-
-func (m *VideoRepository) ExistsByFilenameAndSize(ctx context.Context, filename string, sizeBytes int64) (bool, error) {
-	if m.ExistsByFilenameAndSizeFunc == nil {
-		return false, fmt.Errorf("mock: ExistsByFilenameAndSizeFunc not set")
-	}
-	return m.ExistsByFilenameAndSizeFunc(ctx, filename, sizeBytes)
+	CreateFunc                 func(ctx context.Context, video *model.Video) error
+	ListFunc                   func(ctx context.Context, filter model.VideoFilter) ([]model.Video, int64, error)
+	GetByIDFunc                func(ctx context.Context, id string) (*model.Video, error)
+	UpdateFunc                 func(ctx context.Context, id string, input model.UpdateVideoInput) error
+	DeleteFunc                 func(ctx context.Context, id string) error
+	FindBySourceAndPathFunc    func(ctx context.Context, sourceID string, filePath string) (*model.Video, error)
+	ListMissingPreviewsFunc    func(ctx context.Context) ([]model.Video, error)
+	UpdatePreviewKeyFunc       func(ctx context.Context, id string, previewKey string) error
+	UpdateMetadataFunc         func(ctx context.Context, id string, m model.VideoMetadataUpdate) error
+	SetEnrichmentStatusFunc    func(ctx context.Context, id, status string) error
+	ListByEnrichmentStatusFunc func(ctx context.Context, status string) ([]model.Video, error)
+	SeedCodeFunc               func(ctx context.Context, id, code, status string) error
+	UpdateCodecsFunc           func(ctx context.Context, id, videoCodec, audioCodec string) error
+	ListMissingCodecsFunc      func(ctx context.Context, limit int) ([]model.Video, error)
+	ListKeyframeCandidatesFunc func(ctx context.Context, limit int) ([]model.Video, error)
 }
 
 func (m *VideoRepository) Create(ctx context.Context, video *model.Video) error {
