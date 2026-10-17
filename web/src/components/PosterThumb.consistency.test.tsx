@@ -9,6 +9,7 @@ describe('poster fallback colour', () => {
   it.each(['v1', '3f2a9c1e-0b7d-4e55-9a10-6c2f8d4e7b21', 'DASD-626'])('is the same for the viewer and the admin (%s)', (id) => {
     const viewer = render(<PosterThumb id={id} title="t" />).container.querySelector<HTMLElement>('[style*="gradient"]')
     const admin = render(<AdminPosterThumb id={id} />).container.querySelector<HTMLElement>('[data-poster-fallback]')
+    expect(viewer?.style.background).toContain('linear-gradient')
     expect(admin?.style.background).toBe(viewer?.style.background)
   })
 })
