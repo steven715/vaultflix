@@ -127,10 +127,11 @@ export default function VideoManagePage() {
 
   async function handleBatchTag() {
     if (batchTagPickerId === null) return
+    const ids = [...selected]
     const tagId = batchTagPickerId
-    const failed = await runOnEach(selected, (id) => addVideoTag(id, tagId))
+    const failed = await runOnEach(ids, (id) => addVideoTag(id, tagId))
     setBatchTagPickerId(null); setReloadKey((k) => k + 1)
-    if (failed.length > 0) toast.error(`${selected.length} 部中有 ${failed.length} 部加標籤失敗`)
+    if (failed.length > 0) toast.error(`${ids.length} 部中有 ${failed.length} 部加標籤失敗`)
     else toast.success('批次標籤完成')
   }
 

@@ -172,6 +172,7 @@ describe('VideoManagePage (library)', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('2 部中有 1 部刪除失敗'))
     expect(screen.getByLabelText('選取 片B')).toBeChecked()
+    expect(screen.getByLabelText('選取 片A')).not.toBeChecked()
   })
 
   it('says how many Videos a batch tag could not tag, instead of done', async () => {
