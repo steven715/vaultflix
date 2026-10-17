@@ -38,7 +38,7 @@ export default function VideoManagePage() {
 
   // The library's current page. A refresh (after a Job or a batch) is quiet:
   // the rows stay while it loads, and a failure only says so.
-  const filter = { page_size: pageSize, sort_by: sortBy, sort_order: sortOrder, q: query || undefined, tag_ids: tagIdsParam || undefined }
+  const { filter } = params
   const list = usePagedList<VideoWithTags>({
     load: (p) => listVideos({ ...filter, page: p }),
     page, pageSize, setPage: params.setPage,
