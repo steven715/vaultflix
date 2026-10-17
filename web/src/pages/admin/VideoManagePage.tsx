@@ -38,6 +38,7 @@ export default function VideoManagePage() {
   const [editDesc, setEditDesc] = useState('')
   const [saving, setSaving] = useState(false)
   const [deletingVideo, setDeletingVideo] = useState<VideoWithTags | null>(null)
+  const [confirmingBatchDelete, setConfirmingBatchDelete] = useState(false)
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -118,6 +119,7 @@ export default function VideoManagePage() {
   // A batch keeps going past a failure, then says how many failed and keeps
   // those selected, so the admin can retry them.
   async function handleBatchDelete() {
+    setConfirmingBatchDelete(false)
     const ids = [...selected]
     const failed = await runOnEach(ids, deleteVideo)
     setSelected(failed); setReloadKey((k) => k + 1)
@@ -158,7 +160,7 @@ export default function VideoManagePage() {
         onStartBackfill={(kind) => { void lane.backfill.start(kind) }}
         onOpenImport={() => { lane.import.dismiss(); setShowImport(true) }}
         onBatchTag={() => setBatchTagPickerId(allTags[0]?.id ?? null)}
-        onBatchDelete={handleBatchDelete}
+        onBatchDelete={() => setConfirmingBatchDelete(true)}
         onClearSelection={() => setSelected([])}
       />
 
@@ -207,7 +209,10 @@ export default function VideoManagePage() {
       )}
 
       {deletingVideo && (
-        <DeleteConfirm video={deletingVideo} onConfirm={handleDelete} onClose={() => setDeletingVideo(null)} />
+        <DeleteConfirm what={`「${deletingVideo.title}」`} onConfirm={handleDelete} onClose={() => setDeletingVideo(null)} />
+      )}
+      {confirmingBatchDelete && (
+        <DeleteConfirm what={`選取的 ${selected.length} 部影片`} onConfirm={handleBatchDelete} onClose={() => setConfirmingBatchDelete(false)} />
       )}
     </div>
   )

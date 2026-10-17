@@ -161,14 +161,32 @@ describe('VideoManagePage (library)', () => {
     await userEvent.click(screen.getByLabelText('選取 片B'))
   }
 
+  function clickBatchDelete() {
+    const batchBar = screen.getByText(/已選取/).closest('div')!
+    fireEvent.click(within(batchBar).getByText('刪除', { selector: 'button' }))
+  }
+
+  // Deleting is final, so a batch delete asks first, like a single one.
+  it('asks before a batch delete, and deletes nothing when cancelled', async () => {
+    await selectTwo()
+
+    clickBatchDelete()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('選取的 2 部影片')
+    fireEvent.click(within(dialog).getByText('取消'))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(deleteVideo).not.toHaveBeenCalled()
+  })
+
   // A failure in a batch must not read as done: say how many failed, and
   // keep those selected so the admin can retry them.
   it('says how many Videos a batch delete could not delete, and keeps them selected', async () => {
     vi.mocked(deleteVideo).mockImplementation(async (id: string) => { if (id === 'v2') throw new Error('500') })
     await selectTwo()
 
-    const batchBar = screen.getByText(/已選取/).closest('div')!
-    fireEvent.click(within(batchBar).getByText('刪除', { selector: 'button' }))
+    clickBatchDelete()
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('刪除', { selector: 'button' }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('2 部中有 1 部刪除失敗'))
     expect(screen.getByLabelText('選取 片B')).toBeChecked()
