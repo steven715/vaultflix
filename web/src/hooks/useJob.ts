@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { toApiError } from '../api/errors'
 import { useWS } from '../contexts/WebSocketContext'
 import { reduceJob, type JobEvent, type JobKind, type JobView } from '../lib/jobProgress'
 import type { WSMessage } from './useWebSocket'
@@ -42,8 +43,7 @@ function eventFor<TArgs>(kind: JobKind<TArgs>, msg: WSMessage): JobEvent | null 
 // A busy Job Lane (ADR-0014) is the one 409 that means a job is running;
 // others, such as a disabled Media Source, are this start's own failure.
 function isLaneBusy(err: unknown): boolean {
-  const res = (err as { response?: { status?: number; data?: { error?: string } } })?.response
-  return res?.status === 409 && res.data?.error === 'job_lane_busy'
+  return toApiError(err).code === 'job_lane_busy'
 }
 
 // useJob runs one kind of job for an admin page: it takes over a job already

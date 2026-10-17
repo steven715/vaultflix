@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { cancelImportJob, deleteMediaSource, getActiveBackfill, importVideos, listMediaSources, updateMediaSource } from '../../api/admin'
+import { cancelImportJob, createMediaSource, deleteMediaSource, getActiveBackfill, importVideos, listMediaSources, updateMediaSource } from '../../api/admin'
 import { wsHarness } from '../../test/wsHarness'
 import MediaSourcePage from './MediaSourcePage'
 
@@ -103,5 +103,21 @@ describe('MediaSourcePage (reskin)', () => {
     await waitFor(() => expect(listMediaSources).toHaveBeenCalledTimes(2))
     expect(screen.getByText('D槽')).toBeInTheDocument()
     expect(screen.queryByText('載入中...')).toBeNull()
+  })
+  // A refused mount path says why in the form, in Chinese, not the server's English.
+  it.each([
+    ['path_not_allowed', 'path is not within allowed mount prefix', '路徑必須在允許的掛載目錄之下'],
+    ['path_not_exist', 'path does not exist on filesystem', '路徑不存在，請確認磁碟已掛載'],
+  ])('says why a new source\'s path is refused (%s)', async (code, serverMessage, shown) => {
+    vi.mocked(createMediaSource).mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { error: code, message: serverMessage } },
+    }))
+    renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
+    fireEvent.click(await screen.findByText('+ 新增來源'))
+    const [label] = screen.getAllByRole('textbox')
+    fireEvent.change(label, { target: { value: 'E槽' } })
+    fireEvent.click(screen.getByText('建立', { selector: 'button' }))
+
+    expect(await screen.findByText(shown)).toBeInTheDocument()
   })
 })

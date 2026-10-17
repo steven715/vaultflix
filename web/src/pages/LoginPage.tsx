@@ -2,8 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import type { AxiosError } from 'axios'
-import type { ErrorResponse } from '../types'
+import { errorMessage, toApiError } from '../api/errors'
 import { LogoMark, UserIcon, LockIcon } from '../components/icons'
 
 export default function LoginPage() {
@@ -30,14 +29,14 @@ export default function LoginPage() {
       await login(username, password)
       navigate('/', { replace: true })
     } catch (err) {
-      const axiosErr = err as AxiosError<ErrorResponse>
-      if (axiosErr.response) {
-        setError(axiosErr.response.data?.message || '帳號或密碼錯誤')
-      } else if (axiosErr.request) {
-        setError('伺服器連線失敗，請稍後再試')
-      } else {
-        setError('登入失敗，請稍後再試')
-      }
+      setError(toApiError(err).status === null
+        ? '伺服器連線失敗，請稍後再試'
+        : errorMessage(err, {
+          fallback: '登入失敗，請稍後再試',
+          unauthorized: '帳號或密碼錯誤',
+          forbidden: '此帳號已停用',
+          bad_request: '請輸入帳號和密碼',
+        }))
     } finally {
       setLoading(false)
     }

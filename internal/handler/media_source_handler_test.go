@@ -257,3 +257,35 @@ func TestMediaSourceHandler_Delete_NotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
+
+// A mount path is refused for a reason the admin can fix; each has its own code.
+func TestMediaSourceHandler_Create_PathRefusalCodes(t *testing.T) {
+	prefix, validPath := setupTempMountForHandler(t)
+	tests := []struct {
+		name, mountPath, wantCode string
+	}{
+		{"outside the mount prefix", t.TempDir(), "path_not_allowed"},
+		{"missing on disk", filepath.Join(validPath, "nope"), "path_not_exist"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := setupMediaSourceRouter(service.NewMediaSourceService(&mock.MediaSourceRepository{}, prefix))
+			body, err := json.Marshal(map[string]string{"label": "Videos", "mount_path": tt.mountPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/media-sources", bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			var resp model.ErrorResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("body %s: %v", w.Body.String(), err)
+			}
+			if w.Code != http.StatusBadRequest || resp.Error != tt.wantCode {
+				t.Errorf("got %d %q, want 400 %q", w.Code, resp.Error, tt.wantCode)
+			}
+		})
+	}
+}

@@ -52,8 +52,8 @@ func (h *UserHandler) Create(c *gin.Context) {
 	user, err := h.userService.Create(c.Request.Context(), req.Username, req.Password, req.Role)
 	if err != nil {
 		if errors.Is(err, service.ErrUsernameAlreadyExists) {
-			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
+			c.JSON(http.StatusConflict, model.ErrorResponse{
+				Error:   "username_taken",
 				Message: "username already exists",
 			})
 			return
@@ -89,7 +89,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		}
 		if errors.Is(err, model.ErrCannotDisableAdmin) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{
-				Error:   "bad_request",
+				Error:   "cannot_disable_admin",
 				Message: "cannot disable admin account",
 			})
 			return

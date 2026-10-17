@@ -5,7 +5,7 @@ import { useJobCancel } from './useJobCancel'
 import { backfillJobs, importJobs } from '../lib/jobKinds'
 import type { JobView } from '../lib/jobProgress'
 import type { BackfillKind } from '../types'
-import { getErrorMessage } from '../utils/error'
+import { errorMessage, type ErrorTexts } from '../api/errors'
 
 /** One Job on the Media Lane, as an admin page drives it. */
 export interface LaneJob<TArgs> {
@@ -29,6 +29,13 @@ export interface MediaLane {
   backfillBlockedReason: string | null
 }
 
+// Why an Import did not start, by the API's error code.
+const importStartTexts: ErrorTexts = {
+  fallback: '匯入啟動失敗',
+  source_disabled: '媒體來源已停用，啟用後再匯入',
+  not_found: '找不到這個媒體來源',
+}
+
 export interface MediaLaneOptions {
   onImportFinished?: (view: JobView) => void
   onBackfillFinished?: (view: JobView) => void
@@ -46,20 +53,20 @@ export function useMediaLane({ onImportFinished, onBackfillFinished }: MediaLane
   const importJob = useJob(importJobs, { onFinished: onImportFinished })
   const backfillJob = useJob(backfillJobs, { onFinished: onBackfillFinished })
 
-  const report = useCallback((result: StartResult, fallback: string): StartOutcome => {
+  const report = useCallback((result: StartResult, texts: ErrorTexts): StartOutcome => {
     if (result.outcome === 'adopted') toast.error('已有任務進行中')
     // A busy lane's 409 names the Job holding it.
-    else if (result.outcome === 'failed') toast.error(getErrorMessage(result.error, fallback))
+    else if (result.outcome === 'failed') toast.error(errorMessage(result.error, texts))
     return result.outcome
   }, [toast])
   const startImportJob = importJob.start
   const startBackfillJob = backfillJob.start
   const startImport = useCallback(
-    async (sourceId: string) => report(await startImportJob(sourceId), '匯入啟動失敗'),
+    async (sourceId: string) => report(await startImportJob(sourceId), importStartTexts),
     [report, startImportJob],
   )
   const startBackfill = useCallback(
-    async (kind: BackfillKind) => report(await startBackfillJob(kind), '啟動補齊失敗'),
+    async (kind: BackfillKind) => report(await startBackfillJob(kind), { fallback: '啟動補齊失敗' }),
     [report, startBackfillJob],
   )
   const cancelImport = useJobCancel(importJob.cancel)

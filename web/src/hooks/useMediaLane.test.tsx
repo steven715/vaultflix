@@ -96,6 +96,15 @@ describe('useMediaLane', () => {
     expect(toast.error).toHaveBeenCalledWith('已有任務進行中')
   })
 
+  it('says why an Import did not start', async () => {
+    vi.mocked(importVideos).mockRejectedValue(Object.assign(new Error('409'), {
+      response: { status: 409, data: { error: 'source_disabled', message: 'media source is currently disabled' } },
+    }))
+    const { result } = lane()
+    await act(async () => { await result.current.import.start('s1') })
+    expect(toast.error).toHaveBeenCalledWith('媒體來源已停用，啟用後再匯入')
+  })
+
   it('says each Job is busy while it starts or runs', async () => {
     vi.mocked(getActiveBackfill).mockResolvedValue(runningBackfill)
     const { result } = lane()

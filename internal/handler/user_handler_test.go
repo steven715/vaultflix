@@ -174,3 +174,40 @@ func TestUserHandler_ResetPassword_MissingPassword(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
+
+// Each refusal has its own error code, so the admin UI can say what went wrong.
+func TestUserHandler_RefusalCodes(t *testing.T) {
+	repo := &mock.UserRepository{
+		GetByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+			return &model.User{ID: "u1", Username: username}, nil
+		},
+		GetByIDFunc: func(ctx context.Context, id string) (*model.User, error) {
+			return &model.User{ID: id, Role: model.RoleAdmin}, nil
+		},
+	}
+	r := setupUserRouter(service.NewUserService(repo))
+	tests := []struct {
+		name, method, path, body string
+		wantStatus               int
+		wantCode                 string
+	}{
+		{"username taken", http.MethodPost, "/api/users", `{"username":"steven","password":"pass123","role":"viewer"}`, http.StatusConflict, "username_taken"},
+		{"disabling an admin", http.MethodDelete, "/api/users/u1", "", http.StatusBadRequest, "cannot_disable_admin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			var resp model.ErrorResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("body %s: %v", w.Body.String(), err)
+			}
+			if w.Code != tt.wantStatus || resp.Error != tt.wantCode {
+				t.Errorf("got %d %q, want %d %q", w.Code, resp.Error, tt.wantStatus, tt.wantCode)
+			}
+		})
+	}
+}

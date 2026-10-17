@@ -23,17 +23,17 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "${API_BASE}/api/auth/register" \
 CODE=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | sed '$d')
 
-# 201 = 新建, 400 = 已存在（重複執行時）
-if [ "$CODE" = "201" ] || [ "$CODE" = "400" ]; then
+# 201 = 新建, 409 = 已存在（重複執行時）
+if [ "$CODE" = "201" ] || [ "$CODE" = "409" ]; then
     green "  [PASS] POST /api/auth/register (HTTP $CODE)"
     _PASS=$((_PASS + 1)); _TOTAL=$((_TOTAL + 1))
 else
-    red "  [FAIL] POST /api/auth/register (expected 201 or 400, got $CODE)"
+    red "  [FAIL] POST /api/auth/register (expected 201 or 409, got $CODE)"
     _FAIL=$((_FAIL + 1)); _TOTAL=$((_TOTAL + 1))
 fi
 
 # ---------------------------------------------------------------------------
-# 2. 重複註冊應回 400
+# 2. 重複註冊應回 409
 # ---------------------------------------------------------------------------
 echo ""
 bold "[2] 重複註冊同一帳號"
@@ -41,7 +41,7 @@ bold "[2] 重複註冊同一帳號"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE}/api/auth/register" \
     -H "Content-Type: application/json" \
     -d '{"username":"test_auth_viewer","password":"test1234"}')
-assert_eq "重複註冊回 400" "400" "$CODE"
+assert_eq "重複註冊回 409" "409" "$CODE"
 
 # ---------------------------------------------------------------------------
 # 3. 正確密碼登入

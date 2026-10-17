@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { errorMessage } from '../../api/errors'
 import { listMediaSources, createMediaSource, updateMediaSource, deleteMediaSource } from '../../api/admin'
 import type { MediaSource } from '../../types'
 import NavIcon from '../../components/admin/NavIcon'
@@ -200,16 +201,13 @@ function CreateSourceModal({ onClose, onCreated }: { onClose: () => void; onCrea
       await createMediaSource({ label: label.trim(), mount_path: mountPath.trim() })
       onCreated()
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { message?: string } } }
-      const status = axiosErr?.response?.status
-      const message = axiosErr?.response?.data?.message
-      if (status === 400) {
-        setError(message || '路徑驗證失敗，請確認路徑正確')
-      } else if (status === 409) {
-        setError('此路徑已被其他來源使用')
-      } else {
-        setError('建立失敗，請重試')
-      }
+      setError(errorMessage(err, {
+        fallback: '建立失敗，請重試',
+        bad_request: '請填寫名稱與路徑',
+        path_not_allowed: '路徑必須在允許的掛載目錄之下',
+        path_not_exist: '路徑不存在，請確認磁碟已掛載',
+        already_exists: '此路徑已被其他來源使用',
+      }))
     } finally {
       setSubmitting(false)
     }
