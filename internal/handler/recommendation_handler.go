@@ -22,13 +22,15 @@ func NewRecommendationHandler(recSvc service.RecommendationService) *Recommendat
 func (h *RecommendationHandler) GetToday(c *gin.Context) {
 	userID := c.GetString("user_id")
 
-	// Parse date from client (browser local date) with fallback to server UTC date
+	// The day is the browser's local date; without one, the server's UTC day.
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	if raw := c.Query("date"); raw != "" {
 		parsed, err := time.Parse("2006-01-02", raw)
-		if err == nil {
-			today = parsed
+		if err != nil {
+			badRequest(c, "date must be in YYYY-MM-DD format")
+			return
 		}
+		today = parsed
 	}
 
 	fallbackCount := 5
