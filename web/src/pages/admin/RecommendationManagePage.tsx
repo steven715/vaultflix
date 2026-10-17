@@ -8,13 +8,10 @@ import ErrorBanner from '../../components/ErrorBanner'
 import { useToast } from '../../contexts/ToastContext'
 import { useRemoteResource } from '../../hooks/useRemoteResource'
 import { formatDuration } from '../../utils/format'
-
-function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10)
-}
+import { localDate, shiftLocalDate } from '../../lib/localDate'
 
 export default function RecommendationManagePage() {
-  const [selectedDate, setSelectedDate] = useState(() => formatDate(new Date()))
+  const [selectedDate, setSelectedDate] = useState(() => localDate(new Date()))
   const recList = useRemoteResource(() => listRecommendationsByDate(selectedDate), selectedDate)
   const recs: RecommendationItem[] = recList.data ?? []
   const toast = useToast()
@@ -29,9 +26,7 @@ export default function RecommendationManagePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   function shiftDate(days: number) {
-    const d = new Date(selectedDate + 'T00:00:00')
-    d.setDate(d.getDate() + days)
-    setSelectedDate(formatDate(d))
+    setSelectedDate(shiftLocalDate(selectedDate, days))
   }
 
   function handlePickVideo(video: VideoWithTags) {
@@ -95,7 +90,7 @@ export default function RecommendationManagePage() {
           className="bg-surface-2 text-cream text-sm rounded-btn px-3 py-1.5 outline-none focus:ring-1 focus:ring-accent"
         />
         <button onClick={() => shiftDate(1)} className="bg-surface-2 text-muted hover:text-cream px-3 py-1.5 rounded-btn transition-colors">&gt;</button>
-        <button onClick={() => setSelectedDate(formatDate(new Date()))} className="text-xs text-accent hover:text-accent/80">今天</button>
+        <button onClick={() => setSelectedDate(localDate(new Date()))} className="text-xs text-accent hover:text-accent/80">今天</button>
       </div>
 
       {/* Recommendations list */}
