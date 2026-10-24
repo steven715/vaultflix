@@ -1,0 +1,28 @@
+{
+  "$comment": "Read by the control room (steven715/control-room) and by scripts/cockpit/record.mjs. Format: cockpit.policy/v1. This repo owns the values; the control room owns the format.",
+  "schema": "cockpit.policy/v1",
+  "repo": "steven715/vaultflix",
+  "done_requires": ["verify_evidence", "integration_evidence_when_required", "pr_ci_green", "code_review"],
+  "integration_required_when_changed": [
+    "internal/streaming/",
+    "internal/service/import_",
+    "internal/service/media_",
+    "internal/service/keyframe_",
+    "internal/service/hls_",
+    "internal/service/play_mode",
+    "internal/service/preview_",
+    "internal/service/backfill_runner",
+    "internal/service/codec_backfill",
+    "internal/repository/",
+    "migrations/",
+    "docker-compose",
+    "Dockerfile",
+    "nginx/",
+    "scripts/test_"
+  ],
+  "stop_hook": {
+    "max_consecutive_blocks": 3
+  },
+  "priority_source": "ROADMAP.md#優先級框架",
+  "importance_order": ["安全性", "穩定性", "正確性", "開發速度", "體驗優化"]
+}

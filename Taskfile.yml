@@ -19,6 +19,9 @@ vars:
   # Integration tests deliberately exclude it — they mount .ci/fixtures instead,
   # so they stay host-OS independent.
   COMPOSE: docker compose -f docker-compose.yml -f docker-compose.media.yml
+  # Per-test results of the latest test-fast run (gitignored). scripts/cockpit/
+  # record.mjs copies them into an evidence pack for the control room.
+  TEST_REPORT_DIR: '{{.ROOT_DIR}}/.cockpit/last-run'
 
 tasks:
   default:
@@ -34,13 +37,22 @@ tasks:
     desc: "Fast checks (lint/type/unit) - native"
     deps: [golangci-lint:install]
     cmds:
+      # Clear the last run's reports first, so a red step never leaves an
+      # older green report behind for the evidence pack to pick up.
+      - rm -rf "{{.TEST_REPORT_DIR}}"
+      - mkdir -p "{{.TEST_REPORT_DIR}}"
       # Kept beside golangci's govet, which runs a different analyzer set.
       - go vet ./...
       # gofmt, import groups and CLAUDE.md's mechanical Go rules (.golangci.yml)
       - '"{{.GOLANGCI_LINT}}" run ./...'
-      - go test ./...
+      # Every test event goes to go-test.jsonl; the terminal shows what a plain
+      # `go test ./...` would. The reporter's exit code is the verdict (fails
+      # closed when go reports no package at all).
+      - go test -json ./... 2>&1 | node scripts/cockpit/go-test-report.mjs "{{.TEST_REPORT_DIR}}/go-test.jsonl"
       # The pre-push hook's own filter (which commands get gated).
       - bash scripts/hooks/verify-before-push_test.sh
+      # The evidence recorder and the go test reporter.
+      - node --test scripts/cockpit/go-test-report.test.mjs scripts/cockpit/record.test.mjs
       - task: web:typecheck
       - task: web:lint
       - task: web:test
@@ -61,7 +73,13 @@ tasks:
     desc: "Vitest unit tests (web)"
     dir: web
     cmds:
-      - npm run test
+      # Same console output as before, plus every test's result in vitest.json.
+      - npm run test -- --reporter=default --reporter=json --outputFile.json="{{.TEST_REPORT_DIR}}/vitest.json"
+
+  record:
+    desc: "Run a command and leave an evidence pack in .cockpit/evidence (e.g. task record -- task test-integration)"
+    cmds:
+      - node scripts/cockpit/record.mjs -- {{.CLI_ARGS}}
 
   golangci-lint:install:
     desc: "Install the pinned golangci-lint into .bin/ (skipped when already there)"

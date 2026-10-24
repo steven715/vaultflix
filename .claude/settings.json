@@ -17,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "task verify"
+               "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/cockpit/record.mjs --stop-hook -- task verify",
+   "timeout": 600
           }
         ]
       }

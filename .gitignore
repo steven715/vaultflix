@@ -12,6 +12,9 @@ vendor/
 # Pinned dev tools (task golangci-lint:install)
 /.bin/
 
+# Evidence packs and last test reports (scripts/cockpit, read by the control room)
+/.cockpit/
+
 # Node / React
 web/node_modules/
 web/dist/
