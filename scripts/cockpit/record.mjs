@@ -15,13 +15,17 @@
 //   - after `max_consecutive_blocks` red runs in one session it stops
 //     blocking (exit 1: shown to you, the session may stop) and the evidence
 //     stays red for the control room to show.
+// After each run, packs that finished over RETENTION_DAYS ago are deleted.
 // Formats: cockpit.evidence/v1 and cockpit.results/v1, owned by the control room.
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const TAIL_LINES = 40
+// The control room's ADR-0008: this repo keeps 30 days of evidence packs and
+// the control room reports a gap if a snapshot missed the ones pruned.
+const RETENTION_DAYS = 30
 
 function parseArgs(argv) {
   const sep = argv.indexOf('--')
@@ -116,6 +120,22 @@ function listEvidence(dir) {
     .map((f) => readJSON(join(dir, f)))
     .filter(Boolean)
     .sort((a, b) => String(a.finished_at).localeCompare(String(b.finished_at)))
+}
+
+// Deletes packs whose own finished_at is older than RETENTION_DAYS, with their
+// results. A pack that cannot be read or dated stays, and so does keepId.
+// Results go first, so a failed delete never leaves results without a pack.
+function pruneEvidence(dir, keepId, now) {
+  const cutoff = now - RETENTION_DAYS * 24 * 60 * 60 * 1000
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.json') || f.endsWith('.results.json')) continue
+    const id = f.slice(0, -'.json'.length)
+    if (id === keepId) continue
+    const finished = Date.parse(readJSON(join(dir, f))?.finished_at)
+    if (!(finished < cutoff)) continue // NaN (no date) is not old
+    rmSync(join(dir, `${id}.results.json`), { force: true })
+    rmSync(join(dir, f))
+  }
 }
 
 function runCommand(root, command, { tee }) {
@@ -278,6 +298,11 @@ async function main() {
     }
   } catch (err) {
     console.error(`record.mjs: could not write evidence: ${err.message}`)
+  }
+  try {
+    pruneEvidence(evidenceDir, ev.id, Date.now())
+  } catch (err) {
+    console.error(`record.mjs: could not prune old evidence: ${err.message}`)
   }
 
   if (!stopHook) return run.code
