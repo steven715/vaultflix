@@ -62,7 +62,7 @@ export default function LoginPage() {
               你的私人放映室
             </h2>
             <p className="mt-4 max-w-sm text-lg text-cream/80">
-              收藏、續看、隨選即播。專屬於你的影音收藏，隨時隨地。
+              收藏、繼續觀看、隨選即播。專屬於你的影音收藏，隨時隨地。
             </p>
           </div>
           <p className="font-mono text-xs text-cream/60">© Vaultflix · Private Screening Room</p>

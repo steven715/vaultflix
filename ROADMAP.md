@@ -13,8 +13,8 @@
 
 - [ ] **程式碼對齊術語表** — 2026-09-28 建立術語表時只統一了文件用語，程式碼仍用舊名。拆成獨立 Refactor PR：
   - **Performer / Maker 遷移（ADR-0010）**：`actresses` → performers（DB / Go / API）；`actor`、`studio` Tag 資料遷移成 Performer / Maker 後淘汰這兩個 category
-  - **UI 文案**：「掃描匯入」→「匯入」、BackfillProgress「掃描影片」、admin 選單「精選」→「今日推薦」、「續看 / 繼續播放」→「繼續觀看」、「觀看記錄」→「觀看紀錄」
   - **識別字**：Watch Progress 欄位（`progress_seconds` vs `watch_progress`）、裸用的 `label` / `source` / `scope` 視改動成本決定是否改名
+  - **追蹤**：#93（識別字 #95；Performer / Maker 遷移不在內，等 Enrichment 恢復）
   - 觸發：開始 Enrichment ② 之前（Performer 遷移是其前提）
 
 ### ⏸ 暫停

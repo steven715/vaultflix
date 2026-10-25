@@ -153,7 +153,7 @@ export default function PlayerPage() {
   const handlePositionSet = useCallback(
     (seconds: number, reason: PositionReason) => {
       positionSet(seconds)
-      if (reason === 'resume') toast.info(`從 ${formatDuration(seconds)} 繼續播放`)
+      if (reason === 'resume') toast.info(`從 ${formatDuration(seconds)} 繼續觀看`)
     },
     [positionSet, toast],
   )

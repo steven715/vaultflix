@@ -36,7 +36,7 @@ export function backfillLabels(kind: BackfillKind): JobLabels {
   return {
     running: `補齊${spaced(backfillKindLabel[kind])}中`,
     done: { completed: '補齊完成', failed: '補齊失敗', cancelled: '已取消' },
-    total: '掃描影片',
+    total: '處理影片',
     succeeded: '成功補齊',
     skipped: '略過',
     skippedShort: '略過',

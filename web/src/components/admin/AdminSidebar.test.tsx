@@ -6,7 +6,7 @@ import AdminSidebar from './AdminSidebar'
 describe('AdminSidebar', () => {
   it('renders all 6 nav labels', () => {
     renderWithRouter(<AdminSidebar />, { route: '/admin/library' })
-    for (const label of ['影片', '精選', '標籤', '來源', '帳號', '分析']) {
+    for (const label of ['影片', '今日推薦', '標籤', '來源', '帳號', '分析']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(screen.queryByText('總覽')).toBeNull()

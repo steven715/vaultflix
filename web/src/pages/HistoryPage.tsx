@@ -39,9 +39,9 @@ export default function HistoryPage() {
       setConfirmClear(false)
       // Nothing is left: a later page is now past the end, and moves to page 1.
       list.mutate(() => ({ items: [], total: 0 }))
-      toast.success('已清除全部觀看記錄')
+      toast.success('已清除全部觀看紀錄')
     } catch {
-      toast.error('清除觀看記錄失敗，請重試')
+      toast.error('清除觀看紀錄失敗，請重試')
     } finally {
       setClearing(false)
     }
@@ -56,7 +56,7 @@ export default function HistoryPage() {
     <AppShell>
       <Container width="narrow" className="py-8">
         <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-cream">觀看記錄</h1>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-cream">觀看紀錄</h1>
           {list.status === 'ready' && items.length > 0 && (
             <button
               onClick={() => setConfirmClear(true)}
@@ -81,13 +81,13 @@ export default function HistoryPage() {
           </div>
         ) : list.status === 'error' ? (
           <ErrorBanner
-            message="無法載入觀看記錄，請確認服務是否正常運作"
+            message="無法載入觀看紀錄，請確認服務是否正常運作"
             onRetry={list.retry}
           />
         ) : items.length === 0 ? (
           <EmptyState
             icon={<ClockIcon className="h-full w-full" />}
-            title="還沒有觀看記錄"
+            title="還沒有觀看紀錄"
             description="開始觀看影片後，這裡會記錄你的進度，方便隨時繼續。"
             ctaLabel="去逛片庫"
             ctaTo="/"
@@ -174,9 +174,9 @@ export default function HistoryPage() {
               className="w-full max-w-sm rounded-card border border-border bg-surface p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="mb-2 text-lg font-semibold text-cream">清除全部觀看記錄</h2>
+              <h2 className="mb-2 text-lg font-semibold text-cream">清除全部觀看紀錄</h2>
               <p className="mb-5 text-sm text-muted">
-                確定要清除所有觀看記錄嗎？續看清單會一併清空，此操作無法復原。
+                確定要清除所有觀看紀錄嗎？繼續觀看清單會一併清空，此操作無法復原。
               </p>
               <div className="flex justify-end gap-2">
                 <button

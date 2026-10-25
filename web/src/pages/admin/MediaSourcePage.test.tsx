@@ -38,7 +38,7 @@ describe('MediaSourcePage (reskin)', () => {
     vi.mocked(importVideos).mockResolvedValue(runningJob as never)
     const ws = wsHarness()
     renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources', ws })
-    fireEvent.click(await screen.findByText('掃描匯入'))
+    fireEvent.click(await screen.findByText('匯入'))
     await screen.findByText('匯入中')
     expect(screen.queryByText('關閉')).toBeNull()
     // The refresh after the job ends hangs: the summary must not wait for it.
@@ -69,27 +69,27 @@ describe('MediaSourcePage (reskin)', () => {
   it('cancels a running Import from its panel', async () => {
     vi.mocked(importVideos).mockResolvedValue(runningJob as never)
     renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
-    fireEvent.click(await screen.findByText('掃描匯入'))
+    fireEvent.click(await screen.findByText('匯入'))
     await screen.findByText('匯入中')
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => expect(cancelImportJob).toHaveBeenCalledWith('j1'))
   })
 
-  it('keeps 掃描匯入 shut, and says why, while a Backfill holds the Media Lane', async () => {
+  it('keeps 匯入 shut, and says why, while a Backfill holds the Media Lane', async () => {
     vi.mocked(getActiveBackfill).mockResolvedValue({
       id: 'b1', kind: 'keyframe', status: 'running', total: 4, processed: 1, succeeded: 1, failed: 0, skipped: 0, errors: [], started_at: '',
     })
     renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '掃描匯入' })).toBeDisabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: '匯入' })).toBeDisabled())
     expect(screen.getByText('補齊執行中，完成或取消後再匯入')).toBeInTheDocument()
   })
 
   it('does not repeat its own running Import above the list', async () => {
     vi.mocked(importVideos).mockResolvedValue(runningJob as never)
     renderWithRouter(<MediaSourcePage />, { route: '/admin/media-sources' })
-    fireEvent.click(await screen.findByText('掃描匯入'))
+    fireEvent.click(await screen.findByText('匯入'))
     await screen.findByText('匯入中')
     expect(screen.queryByText('匯入執行中')).toBeNull()
   })
