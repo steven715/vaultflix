@@ -22,7 +22,7 @@ export default function MediaSourcePage() {
   }
 
   // The Media Lane: Import Jobs run here, and a Backfill started elsewhere
-  // holds the lane too, so 掃描匯入 waits for it (ADR-0014).
+  // holds the lane too, so 匯入 waits for it (ADR-0014).
   const lane = useMediaLane({ onImportFinished: () => refreshSources() })
   const importJob = lane.import
   // The card whose Import Job is shown: it stays after the job ends, until closed.
@@ -121,7 +121,7 @@ export default function MediaSourcePage() {
                     title={lane.importBlockedReason ?? undefined}
                     className="text-xs text-accent hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-btn transition-colors"
                   >
-                    掃描匯入
+                    匯入
                   </button>
                   <button
                     onClick={() => setConfirmAction({

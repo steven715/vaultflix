@@ -30,12 +30,12 @@ describe('HistoryPage', () => {
     await screen.findAllByText('第2頁')
 
     fireEvent.click(screen.getByText('清除全部', { selector: 'button' }))
-    const dialog = screen.getByText('清除全部觀看記錄').closest('div')!
+    const dialog = screen.getByText('清除全部觀看紀錄').closest('div')!
     fireEvent.click(within(dialog).getByText('清除全部', { selector: 'button' }))
 
     // It passes through loading page 1; assert where it settles.
     await waitFor(() => expect(listWatchHistory).toHaveBeenLastCalledWith(1, 20))
-    await waitFor(() => expect(screen.getByText('還沒有觀看記錄')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('還沒有觀看紀錄')).toBeInTheDocument())
   })
 
   // Removing one row only hides it here (per the design): no request.

@@ -12,7 +12,7 @@ export interface AdminNavItem {
 // 側邊欄 6 項，全部已實作上線。
 export const ADMIN_NAV: readonly AdminNavItem[] = [
   { key: 'library', label: '影片', path: '/admin/library', enabled: true, icon: 'video' },
-  { key: 'recommendations', label: '精選', path: '/admin/recommendations', enabled: true, icon: 'star' },
+  { key: 'recommendations', label: '今日推薦', path: '/admin/recommendations', enabled: true, icon: 'star' },
   { key: 'tags', label: '標籤', path: '/admin/tags', enabled: true, icon: 'tag' },
   { key: 'media-sources', label: '來源', path: '/admin/media-sources', enabled: true, icon: 'folder' },
   { key: 'users', label: '帳號', path: '/admin/users', enabled: true, icon: 'users' },
