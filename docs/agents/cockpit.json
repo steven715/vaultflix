@@ -3,6 +3,7 @@
   "schema": "cockpit.policy/v1",
   "repo": "steven715/vaultflix",
   "done_requires": ["verify_evidence", "integration_evidence_when_required", "pr_ci_green", "code_review"],
+  "verify_command": "task verify",
   "integration_required_when_changed": [
     "internal/streaming/",
     "internal/service/import_",
@@ -24,5 +25,158 @@
     "max_consecutive_blocks": 3
   },
   "priority_source": "ROADMAP.md#優先級框架",
-  "importance_order": ["安全性", "穩定性", "正確性", "開發速度", "體驗優化"]
+  "importance_order": ["安全性", "穩定性", "正確性", "開發速度", "體驗優化"],
+  "trigger_checks": [
+    {
+      "item": "程式碼對齊術語表",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "開始 Enrichment ② 之前（Performer 遷移是其前提）"
+        }
+      ]
+    },
+    {
+      "item": "API Gateway",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "後端拆成 ≥2 個獨立服務且需統一入口路由（如 CV 抽幀做成獨立 worker）"
+        },
+        {
+          "kind": "manual",
+          "label": "正式對外曝露公網且面對不可信流量（rate limiting / WAF / SSL 才有實質安全價值）"
+        },
+        {
+          "kind": "manual",
+          "label": "多使用者上線，需 per-user API key 或差異化限流"
+        }
+      ]
+    },
+    {
+      "item": "ABR（自適應位元率）",
+      "combine": "all",
+      "conditions": [
+        {
+          "kind": "contains",
+          "label": "Transcode Play Mode 完成（完成的項目會從 ROADMAP 刪除）",
+          "path": "ROADMAP.md",
+          "text": "**Transcode Play Mode（即時轉碼）**",
+          "expect": "absent"
+        },
+        {
+          "kind": "manual",
+          "label": "Playback Telemetry 數據證明外網 rebuffer ratio 確實高到值得 ABR 的複雜度（單人自用未必成立）"
+        }
+      ]
+    },
+    {
+      "item": "MinIO → SeaweedFS 遷移",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "github_release_age",
+          "label": "pgsty fork 超過 6 個月無新 release",
+          "repo": "pgsty/minio",
+          "months_at_least": 6
+        },
+        {
+          "kind": "manual",
+          "label": "出現未修補的 CVE"
+        },
+        {
+          "kind": "manual",
+          "label": "fork 映像檔無法拉取"
+        }
+      ]
+    },
+    {
+      "item": "`videos.mime_type` 依 codec 重算全庫",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "有任何正式環境路徑或前端開始讀 `mime_type`"
+        }
+      ]
+    },
+    {
+      "item": "移除 Suggestion 的舊 key 相容讀取",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "`metadata_suggestions` 已無 2026-10-10 以前 staged 的待審列"
+        }
+      ]
+    },
+    {
+      "item": "刻意清除 Cover / Avatar",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "前端 Enrichment UI 需要「移除這張圖」的操作"
+        }
+      ]
+    },
+    {
+      "item": "孤兒檔案清理排程 / MinIO 刪除失敗追蹤",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "manual",
+          "label": "實際觀察到孤兒物件累積"
+        },
+        {
+          "kind": "manual",
+          "label": "MinIO 刪除失敗重複發生"
+        }
+      ]
+    },
+    {
+      "item": "統一 Job 的對外格式",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "contains",
+          "label": "前端要接第三種 Job（例如 Enrichment 恢復）",
+          "path": "web/src",
+          "text": "enrich_progress",
+          "expect": "present"
+        },
+        {
+          "kind": "manual",
+          "label": "某個 Job kind 的格式需要改動時"
+        }
+      ]
+    },
+    {
+      "item": "前端 Client / Admin 拆分為獨立專案",
+      "combine": "any",
+      "conditions": [
+        {
+          "kind": "glob_count",
+          "label": "Admin 頁面 ≥ 5 頁",
+          "include": [
+            "web/src/pages/admin/*Page.tsx"
+          ],
+          "exclude": [
+            "**/*.test.tsx"
+          ],
+          "at_least": 5
+        },
+        {
+          "kind": "manual",
+          "label": "發生第 2 次因共用元件改動導致另一端非預期 side effect"
+        },
+        {
+          "kind": "manual",
+          "label": "Admin 需要獨立的認證流程或部署節奏"
+        }
+      ]
+    }
+  ]
 }
