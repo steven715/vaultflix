@@ -260,19 +260,21 @@ const queryGetVideoByID = `
 | 指令 | 用途 | 跑在哪 |
 |---|---|---|
 | `task verify` | 快層 gate（= `test-fast`），Stop hook 與 `git push` 前的 hook 自動跑 | 原生 |
-| `task test-fast` | `go vet` + `golangci-lint`（gofmt、import 分組、[`.golangci.yml`](.golangci.yml) 的規則）+ `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest` | 原生 |
+| `task test-fast` | `go vet` + `golangci-lint`（gofmt、import 分組、[`.golangci.yml`](.golangci.yml) 的規則）+ `go test ./...` + web `tsc`(typecheck) + `eslint` + `vitest`；逐測試結果寫到 `.cockpit/last-run/` | 原生 |
 | `task lint` | `go vet` + `golangci-lint` + 前端 `eslint`（手動 lint-only 便捷指令；兩者都已含在 `test-fast` gate 內） | 原生 |
 | `task test-integration` | 乾淨全棧 + fixture 跑 `scripts/test_all.sh`（up -d api → run --rm test-runner） | Docker |
 | `task test-full` | `test-fast` + `test-integration` | Docker |
 | `task up` / `task down` / `task logs` | build 並起/停/看唯一的執行 stack（改 code 後重跑 `task up`；自動疊 `docker-compose.media.yml`） | Docker |
 | `task reset-admin-password` | 把 admin 密碼重設為 `.env` 的 `ADMIN_DEFAULT_PASSWORD` | Docker |
+| `task record -- <指令>` | 跑指令並在 `.cockpit/evidence/` 留證據包（例：`task record -- task test-integration`） | 依指令 |
 
 ### 各場景 done-condition
 
 - **Bug Fix / Feature / Refactor done** = `task verify` 綠 + 相關範圍的 `task test-integration`（或 `task test-full`）綠 + PR 的 CI 綠。
 - 純前端改動：至少 `task test-fast`（含 vitest）綠。
-- 改到 import / 影片掃描 / 串流：要跑 `task test-integration`。
-- Stop hook（收工前）與 PreToolUse hook（agent 執行 `git push` 前，`scripts/hooks/verify-before-push.sh`）都會強制 `task verify`；紅燈時 push 會被擋下，修到綠再推。後者由腳本自己判斷指令是不是 push（含 `git -C … push`；字串或 heredoc 裡出現 `git push` 也會多跑一次），讀不到指令（沒有 jq）就照樣跑。
+- 改到 import / 影片掃描 / 串流：要跑 `task test-integration`，並用 `task record -- task test-integration` 跑，讓結果留成證據包。哪些路徑算數寫在 [`docs/agents/cockpit.json`](docs/agents/cockpit.json) 的 `integration_required_when_changed`，證據包的 `integration.required` 依此判斷。
+- Stop hook（收工前，`scripts/cockpit/record.mjs --stop-hook -- task verify`）與 PreToolUse hook（agent 執行 `git push` 前，`scripts/hooks/verify-before-push.sh`）都會強制 `task verify`；紅燈時 push 會被擋下，修到綠再推。後者由腳本自己判斷指令是不是 push（含 `git -C … push`；字串或 heredoc 裡出現 `git push` 也會多跑一次），讀不到指令（沒有 jq）就照樣跑。
+- Stop hook 每次跑都在 `.cockpit/evidence/` 寫一份證據包（commit、tree 指紋、exit code、逐測試結果、session id）。紅燈以 exit 2 擋住收工並列出失敗的測試；同一 session 連續紅燈達 `cockpit.json` 的 `max_consecutive_blocks` 次後改為不擋（exit 1，提示給人看），證據包仍記為失敗。同一份 tree 已有綠的證據包時不重跑。**回報「完成」前，證據包要是綠的；沒有證據包的完成不算完成。**
 
 ### 執行 stack 與部署（ADR-0011）
 
