@@ -1,7 +1,7 @@
 // node --test scripts/cockpit/record.test.mjs
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -137,4 +137,69 @@ test('a command that cannot start is a failure, not a crash', () => {
   const r = record(dir, ['definitely-not-a-command-xyz'])
   assert.equal(r.status, 127)
   assert.equal(evidence(dir)[0].result, 'fail')
+})
+
+const day = 24 * 60 * 60 * 1000
+
+// Leaves a pack (and its results) that finished `daysAgo` days ago.
+function seedPack(dir, id, daysAgo, { results = true } = {}) {
+  const evDir = join(dir, '.cockpit/evidence')
+  mkdirSync(evDir, { recursive: true })
+  const finished = new Date(Date.now() - daysAgo * day).toISOString()
+  const pack = { schema: 'cockpit.evidence/v1', id, trigger: 'manual', result: 'pass', finished_at: finished, git: {} }
+  writeFileSync(join(evDir, `${id}.json`), JSON.stringify(pack))
+  if (results) writeFileSync(join(evDir, `${id}.results.json`), '{}')
+}
+
+function packFiles(dir) {
+  return readdirSync(join(dir, '.cockpit/evidence')).sort()
+}
+
+test('retention: a pack that finished over 30 days ago goes, with its results', () => {
+  const { dir } = repo()
+  seedPack(dir, 'old', 31)
+  assert.equal(record(dir, fakeVerify(dir)).status, 0)
+  const files = packFiles(dir)
+  assert.ok(!files.includes('old.json'))
+  assert.ok(!files.includes('old.results.json'))
+  assert.equal(evidence(dir).length, 1, 'the new pack stays')
+})
+
+test('retention: judged by finished_at, not mtime; recent packs stay', () => {
+  const { dir } = repo()
+  seedPack(dir, 'recent', 29)
+  const longAgo = new Date(Date.now() - 365 * day)
+  utimesSync(join(dir, '.cockpit/evidence/recent.json'), longAgo, longAgo)
+  record(dir, fakeVerify(dir))
+  const files = packFiles(dir)
+  assert.ok(files.includes('recent.json'))
+  assert.ok(files.includes('recent.results.json'))
+})
+
+test('retention: a pack that cannot be parsed or dated stays', () => {
+  const { dir } = repo()
+  const evDir = join(dir, '.cockpit/evidence')
+  mkdirSync(evDir, { recursive: true })
+  writeFileSync(join(evDir, 'broken.json'), '{ not json')
+  writeFileSync(join(evDir, 'undated.json'), JSON.stringify({ schema: 'cockpit.evidence/v1' }))
+  const longAgo = new Date(Date.now() - 365 * day)
+  utimesSync(join(evDir, 'broken.json'), longAgo, longAgo)
+  record(dir, fakeVerify(dir))
+  assert.ok(existsSync(join(evDir, 'broken.json')))
+  assert.ok(existsSync(join(evDir, 'undated.json')))
+})
+
+test('retention: a failed prune is reported on stderr and changes no exit code', () => {
+  const { dir } = repo()
+  seedPack(dir, 'stuck', 40, { results: false })
+  // A non-empty directory where the results file should be: deleting it throws.
+  mkdirSync(join(dir, '.cockpit/evidence/stuck.results.json/x'), { recursive: true })
+
+  const manual = record(dir, fakeVerify(dir))
+  assert.equal(manual.status, 0)
+  assert.match(manual.stderr, /could not prune old evidence/)
+  const red = record(dir, fakeVerify(dir, { fail: true }), { stopHook: true })
+  assert.equal(red.status, 2, 'a red stop hook still blocks')
+  assert.match(red.stderr, /could not prune old evidence/)
+  assert.ok(existsSync(join(dir, '.cockpit/evidence/stuck.json')), 'the pack stays with its results')
 })
