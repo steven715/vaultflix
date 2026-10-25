@@ -25,6 +25,15 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
+## GitHub Project (trial)
+
+Executable work is also tracked on the user-level Project [Vaultflix](https://github.com/users/steven715/projects/3) (number `3`, owner `steven715`). `ROADMAP.md` stays the source of truth for priority, trigger conditions and rejected options; the Project only shows the status of issues already being worked on. Don't copy ROADMAP prose into Project fields.
+
+- **Scope**: an issue goes on the Project only when its ROADMAP item is in progress. Link back from the ROADMAP item with a `追蹤：#N` sub-bullet; never edit the item's bold title, which `docs/agents/cockpit.json` matches by text.
+- **Add**: `gh project item-add 3 --owner steven715 --url <issue-url>`. Sub-issues of an issue already on the Project are added automatically.
+- **Status**: `Todo` / `In Progress` / `Done`. Built-in workflows set new items to `Todo` and move them to `Done` when the issue closes or the PR merges; set `In Progress` by hand when claiming: `gh project item-edit --project-id PVT_kwHOAg0nfs4BoprS --id <item-id> --field-id PVTSSF_lAHOAg0nfs4BoprSzhnIw14 --single-select-option-id 47fc9ee4` (item id from `gh project item-list 3 --owner steven715 --format json`).
+- Requires the `project` scope on the `gh` token (`gh auth refresh -s project`).
+
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue.
