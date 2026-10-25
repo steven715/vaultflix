@@ -32,7 +32,7 @@ const base = {
   updated_at: '2026-06-30T00:00:00Z',
   stream_url: '/api/videos/v1/stream',
   is_favorited: false,
-  watch_progress: 0,
+  progress_seconds: 0,
   minio_object_key: '',
   thumbnail_key: '',
   preview_key: '',
