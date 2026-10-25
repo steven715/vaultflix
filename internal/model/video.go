@@ -40,10 +40,10 @@ type VideoWithTags struct {
 
 type VideoDetail struct {
 	VideoWithTags
-	StreamURL     string   `json:"stream_url"`
-	PlayMode      PlayMode `json:"play_mode"`
-	IsFavorited   bool     `json:"is_favorited"`
-	WatchProgress int      `json:"watch_progress"`
+	StreamURL       string   `json:"stream_url"`
+	PlayMode        PlayMode `json:"play_mode"`
+	IsFavorited     bool     `json:"is_favorited"`
+	ProgressSeconds int      `json:"progress_seconds"`
 }
 
 type UpdateVideoInput struct {

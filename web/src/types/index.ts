@@ -35,7 +35,7 @@ export interface VideoDetail extends VideoWithTags {
   stream_url: string
   thumbnail_url: string
   is_favorited: boolean
-  watch_progress: number
+  progress_seconds: number
   play_mode: 'direct' | 'remux' | 'transcode'
 }
 

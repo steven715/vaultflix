@@ -167,7 +167,7 @@ func (s *VideoService) GetByID(ctx context.Context, id string, userID string) (*
 				"error", err,
 			)
 		} else {
-			detail.WatchProgress = progress
+			detail.ProgressSeconds = progress
 		}
 	}
 

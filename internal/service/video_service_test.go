@@ -441,6 +441,34 @@ func TestGetByID_SetsPlayModeRemux(t *testing.T) {
 	}
 }
 
+func TestGetByID_SetsProgressSecondsFromWatchHistory(t *testing.T) {
+	videoRepo := &mock.VideoRepository{
+		GetByIDFunc: func(ctx context.Context, id string) (*model.Video, error) {
+			return &model.Video{ID: id, OriginalFilename: "movie.mp4"}, nil
+		},
+	}
+	tagRepo := &mock.TagRepository{
+		GetByVideoIDFunc: func(ctx context.Context, videoID string) ([]model.Tag, error) {
+			return []model.Tag{}, nil
+		},
+	}
+	historyRepo := &mock.WatchHistoryRepository{
+		GetByUserAndVideoFunc: func(ctx context.Context, userID, videoID string) (*model.WatchHistory, error) {
+			return &model.WatchHistory{UserID: userID, VideoID: videoID, ProgressSeconds: 754}, nil
+		},
+	}
+
+	svc := NewVideoService(videoRepo, &mock.MediaFileResolver{}, tagRepo, &mock.MinIOClient{})
+	svc.SetUserServices(nil, NewWatchHistoryService(historyRepo, videoRepo, &mock.MinIOClient{}))
+	detail, err := svc.GetByID(context.Background(), "v1", "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detail.ProgressSeconds != 754 {
+		t.Errorf("ProgressSeconds = %d, want 754", detail.ProgressSeconds)
+	}
+}
+
 func TestVideoService_Delete_LocalPathMode(t *testing.T) {
 	sourceID := "src-1"
 	filePath := "movies/test.mp4"

@@ -31,11 +31,11 @@ export function useStreamSource({ mediaRef, video, ready, onPositionSet }: UseSt
   const onPositionSetRef = useRef(onPositionSet)
   // Watch Progress is read once, when a Video's source starts; a later refetch
   // of the same Video must not restart its stream.
-  const startAtRef = useRef(video?.watch_progress ?? 0)
+  const startAtRef = useRef(video?.progress_seconds ?? 0)
   useEffect(() => {
     onPositionSetRef.current = onPositionSet
-    startAtRef.current = video?.watch_progress ?? 0
-  }, [onPositionSet, video?.watch_progress])
+    startAtRef.current = video?.progress_seconds ?? 0
+  }, [onPositionSet, video?.progress_seconds])
 
   useEffect(() => {
     const media = mediaRef.current
